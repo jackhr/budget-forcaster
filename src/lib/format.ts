@@ -25,8 +25,13 @@ export function getCurrency() {
   return _currency;
 }
 
+// Currencies that conventionally have no minor unit.
+const ZERO_DECIMAL = new Set(['JPY', 'KRW', 'VND', 'CLP', 'ISK']);
+
 export function formatMoney(n: number, opts: { whole?: boolean } = {}): string {
-  const fractionDigits = opts.whole ? 0 : 2;
+  const zeroDecimal = ZERO_DECIMAL.has(_currency);
+  // `whole` forces no decimals; otherwise let the currency's own convention decide.
+  const fractionDigits = opts.whole || zeroDecimal ? 0 : 2;
   return new Intl.NumberFormat(_locale, {
     style: 'currency',
     currency: _currency,

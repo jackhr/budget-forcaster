@@ -19,6 +19,9 @@ type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at'>;
 type ExpenseInput = Omit<Expense, 'id' | 'created_at' | 'updated_at'>;
 type ScheduledInput = Omit<ScheduledPayment, 'id' | 'created_at' | 'updated_at'>;
 
+const reorder = (resource: string, ids: number[]) =>
+  req<{ ok: boolean }>(`/${resource}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) });
+
 export const incomeApi = {
   getAll: () => req<IncomeSource[]>('/income'),
   create: (data: IncomeInput) =>
@@ -26,6 +29,7 @@ export const incomeApi = {
   update: (id: number, data: Partial<IncomeInput>) =>
     req<IncomeSource>(`/income/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => req<void>(`/income/${id}`, { method: 'DELETE' }),
+  reorder: (ids: number[]) => reorder('income', ids),
 };
 
 export const expensesApi = {
@@ -35,6 +39,7 @@ export const expensesApi = {
   update: (id: number, data: Partial<ExpenseInput>) =>
     req<Expense>(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => req<void>(`/expenses/${id}`, { method: 'DELETE' }),
+  reorder: (ids: number[]) => reorder('expenses', ids),
 };
 
 export const scheduledApi = {
@@ -53,6 +58,29 @@ export const groupsApi = {
   update: (id: number, data: { name: string }) =>
     req<LineItemGroup>(`/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => req<void>(`/groups/${id}`, { method: 'DELETE' }),
+  reorder: (ids: number[]) => reorder('groups', ids),
+};
+
+export interface Scenario {
+  id: number;
+  name: string;
+  snapshot: unknown;
+  created_at: string;
+}
+
+export const scenariosApi = {
+  getAll: () => req<Scenario[]>('/scenarios'),
+  save: (name: string) =>
+    req<Scenario>('/scenarios', { method: 'POST', body: JSON.stringify({ name }) }),
+  restore: (id: number) =>
+    req<{ ok: boolean }>(`/scenarios/${id}/restore`, { method: 'POST' }),
+  delete: (id: number) => req<void>(`/scenarios/${id}`, { method: 'DELETE' }),
+};
+
+export const dataApi = {
+  export: () => req<{ version: number; exported_at: string; data: unknown }>('/export'),
+  import: (data: unknown) =>
+    req<{ ok: boolean }>('/import', { method: 'POST', body: JSON.stringify({ data }) }),
 };
 
 type DebtInput = Omit<Debt, 'id' | 'created_at' | 'updated_at'>;
@@ -64,6 +92,7 @@ export const debtsApi = {
   update: (id: number, data: Partial<DebtInput>) =>
     req<Debt>(`/debts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => req<void>(`/debts/${id}`, { method: 'DELETE' }),
+  reorder: (ids: number[]) => reorder('debts', ids),
 };
 
 export const settingsApi = {

@@ -1,14 +1,19 @@
 import {
-  ComposedChart, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ComposedChart, Area, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from 'recharts';
 import type { SavingsPoint } from '../types';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 
+interface PayoffMarker { label: string; name: string }
+
 interface Props {
   data: SavingsPoint[];
   months: number;
   onMonthsChange: (m: number) => void;
+  payoffMarkers?: PayoffMarker[];
+  compareData?: number[];
+  compareName?: string;
 }
 
 function CustomTooltip({ active, payload, label }: {
@@ -65,8 +70,9 @@ function PaymentLabel(props: { x: number; y: number; width: number; index: numbe
   );
 }
 
-export default function SavingsChart({ data, months, onMonthsChange }: Props) {
+export default function SavingsChart({ data, months, onMonthsChange, payoffMarkers = [], compareData, compareName }: Props) {
   const todayLabel = data[0]?.label;
+  const merged = compareData ? data.map((d, i) => ({ ...d, compare: compareData[i] })) : data;
   return (
     <div style={{
       background: 'var(--color-surface)',
@@ -93,7 +99,7 @@ export default function SavingsChart({ data, months, onMonthsChange }: Props) {
       </div>
 
       <ResponsiveContainer width="100%" height={360}>
-        <ComposedChart data={data} margin={{ top: 16, right: 16, left: 8, bottom: 4 }}>
+        <ComposedChart data={merged} margin={{ top: 16, right: 16, left: 8, bottom: 4 }}>
           <defs>
             <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--color-net-pos)" stopOpacity={0.35} />
@@ -129,6 +135,15 @@ export default function SavingsChart({ data, months, onMonthsChange }: Props) {
               label={{ value: 'Today', position: 'insideTopLeft', fill: 'var(--color-text-muted)', fontSize: 11 }}
             />
           )}
+          {payoffMarkers.map((mk, i) => (
+            <ReferenceLine
+              key={i}
+              x={mk.label}
+              stroke="var(--color-income)"
+              strokeDasharray="3 3"
+              label={{ value: `${mk.name} paid`, position: 'top', fill: 'var(--color-income)', fontSize: 10 }}
+            />
+          ))}
           <Bar dataKey="incomeLump" name="Lump Income" fill="var(--color-income)" barSize={12} radius={[3, 3, 0, 0]} />
           <Bar dataKey="scheduledOut" name="Future Expense" fill="var(--color-net-neg)" barSize={12} radius={[3, 3, 0, 0]}>
             <LabelList
@@ -154,6 +169,9 @@ export default function SavingsChart({ data, months, onMonthsChange }: Props) {
             dot={false}
             activeDot={{ r: 4 }}
           />
+          {compareData && (
+            <Line type="monotone" dataKey="compare" name={`${compareName ?? 'Scenario'} (balance)`} stroke="var(--color-text-muted)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

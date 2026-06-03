@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { reorder, ORDER_BY } = require('../lib/data');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
 
@@ -8,15 +9,24 @@ function normalizeFrequency(freq, fallback = 'monthly') {
   return VALID_FREQUENCIES.includes(freq) ? freq : fallback;
 }
 
+function isAmount(v) {
+  return typeof v === 'number' && isFinite(v);
+}
+
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM income_sources ORDER BY created_at ASC').all();
+  const rows = db.prepare(`SELECT * FROM income_sources ${ORDER_BY}`).all();
   res.json(rows);
+});
+
+router.post('/reorder', (req, res) => {
+  reorder(db, 'income_sources', req.body.ids);
+  res.json({ ok: true });
 });
 
 router.post('/', (req, res) => {
   const { name, monthly_amount, frequency, group_id } = req.body;
-  if (!name || monthly_amount == null) {
-    return res.status(400).json({ error: 'name and monthly_amount are required' });
+  if (!name || !isAmount(monthly_amount) || monthly_amount < 0) {
+    return res.status(400).json({ error: 'name and a non-negative numeric monthly_amount are required' });
   }
   const stmt = db.prepare(
     'INSERT INTO income_sources (name, monthly_amount, frequency, group_id) VALUES (?, ?, ?, ?)'

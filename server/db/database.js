@@ -60,7 +60,22 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS scenarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    snapshot TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+// --- Migration: add sort_order to reorderable tables ---
+for (const table of ['income_sources', 'expenses', 'debts', 'line_item_groups']) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === 'sort_order')) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN sort_order INTEGER`);
+  }
+}
 
 // --- Migration: add group_id to income_sources and expenses if missing ---
 const incomeColsForGroup = db.prepare('PRAGMA table_info(income_sources)').all();
@@ -70,6 +85,10 @@ if (!incomeColsForGroup.some((c) => c.name === 'group_id')) {
 const expenseColsForGroup = db.prepare('PRAGMA table_info(expenses)').all();
 if (!expenseColsForGroup.some((c) => c.name === 'group_id')) {
   db.exec('ALTER TABLE expenses ADD COLUMN group_id INTEGER');
+}
+const debtColsForGroup = db.prepare('PRAGMA table_info(debts)').all();
+if (!debtColsForGroup.some((c) => c.name === 'group_id')) {
+  db.exec('ALTER TABLE debts ADD COLUMN group_id INTEGER');
 }
 
 // --- Migration: add frequency column to income_sources if it doesn't exist ---

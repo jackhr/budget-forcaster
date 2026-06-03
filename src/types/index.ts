@@ -6,7 +6,7 @@ export type Frequency =
   | 'annually'
   | 'one-time';
 
-export type GroupKind = 'income' | 'expense';
+export type GroupKind = 'income' | 'expense' | 'debt';
 
 export interface LineItemGroup {
   id: number;
@@ -42,6 +42,7 @@ export interface Debt {
   apr: number; // annual percentage rate, e.g. 19.9
   credit_limit: number | null;
   monthly_payment: number;
+  group_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -76,6 +77,14 @@ export interface SavingsPoint {
   debtOut: number; // debt payments this month (decline to 0 at payoff)
   net: number;
   balance: number;
+}
+
+export interface NetWorthPoint {
+  month: number;
+  label: string;
+  cash: number;
+  debt: number; // remaining debt (positive number)
+  netWorth: number; // cash - debt
 }
 
 export type LineItem = IncomeSource | Expense;

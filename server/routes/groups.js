@@ -1,12 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { reorder, ORDER_BY } = require('../lib/data');
 
-const VALID_KINDS = ['income', 'expense'];
+const VALID_KINDS = ['income', 'expense', 'debt'];
 
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM line_item_groups ORDER BY created_at ASC').all();
+  const rows = db.prepare(`SELECT * FROM line_item_groups ${ORDER_BY}`).all();
   res.json(rows);
+});
+
+router.post('/reorder', (req, res) => {
+  reorder(db, 'line_item_groups', req.body.ids);
+  res.json({ ok: true });
 });
 
 router.post('/', (req, res) => {
@@ -40,6 +46,7 @@ router.delete('/:id', (req, res) => {
 
   db.prepare('UPDATE income_sources SET group_id = NULL WHERE group_id = ?').run(id);
   db.prepare('UPDATE expenses SET group_id = NULL WHERE group_id = ?').run(id);
+  db.prepare('UPDATE debts SET group_id = NULL WHERE group_id = ?').run(id);
   db.prepare('DELETE FROM line_item_groups WHERE id = ?').run(id);
   res.status(204).end();
 });

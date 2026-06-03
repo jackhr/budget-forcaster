@@ -6,9 +6,11 @@ interface Props {
   onStartingBalanceChange: (value: number) => void;
   currency: string;
   onCurrencyChange: (code: string) => void;
+  inflation: number;
+  onInflationChange: (value: number) => void;
 }
 
-export default function HeaderControls({ startingBalance, onStartingBalanceChange, currency, onCurrencyChange }: Props) {
+export default function HeaderControls({ startingBalance, onStartingBalanceChange, currency, onCurrencyChange, inflation, onInflationChange }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(startingBalance));
 
@@ -60,6 +62,27 @@ export default function HeaderControls({ startingBalance, onStartingBalanceChang
             {formatMoney(startingBalance, { whole: true })}
           </button>
         )}
+      </div>
+
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-sm)', padding: '5px 10px',
+      }}>
+        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+          Inflation
+        </span>
+        <input
+          type="number"
+          value={inflation}
+          onChange={(e) => onInflationChange(parseFloat(e.target.value) || 0)}
+          min={0}
+          max={50}
+          step="any"
+          title="Annual inflation applied to ongoing expenses"
+          style={{ width: 52, padding: '2px 4px', fontWeight: 600 }}
+        />
+        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>%</span>
       </div>
 
       <select

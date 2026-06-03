@@ -12,13 +12,15 @@ interface Props {
   accentColor: string;
   showFrequency?: boolean;
   groups?: LineItemGroup[];
+  drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  dragging?: boolean;
 }
 
 function hasFrequency(item: LineItem): item is IncomeSource {
   return 'frequency' in item;
 }
 
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, groups }: Props) {
+export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, groups, drag, dragging }: Props) {
   const itemFreq = hasFrequency(item) ? item.frequency : 'monthly';
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
@@ -55,7 +57,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
 
   return (
     <>
-      <div style={{
+      <div {...drag} style={{
         display: 'grid',
         gridTemplateColumns: '1fr 140px 96px',
         gap: '8px',
@@ -63,6 +65,8 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
         borderRadius: 'var(--radius-sm)',
         alignItems: 'center',
         transition: 'background 0.1s',
+        cursor: drag ? 'grab' : undefined,
+        outline: dragging ? '2px dashed var(--color-primary)' : undefined,
       }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}

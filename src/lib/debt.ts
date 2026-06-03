@@ -79,3 +79,113 @@ export function debtOutflowTotals(debts: Debt[], months: number): number[] {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+export type DebtStrategy = 'none' | 'avalanche' | 'snowball';
+
+export interface DebtPlan {
+  outflow: number[];   // total debt payment each month
+  remaining: number[]; // total remaining balance at each month-end (for net worth)
+  payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
+  totalInterest: number;
+  debtFreeMonthIndex: number | null; // when the last debt clears
+}
+
+interface DebtState {
+  id: number;
+  bal: number;
+  rate: number;
+  min: number;
+  paidMonth: number | null;
+}
+
+// Simulate a combined payoff plan across all debts.
+// 'none' = each debt independent (no rollover, extra ignored).
+// 'avalanche' = highest APR first; 'snowball' = smallest balance first. Both roll freed
+// payments forward and apply the global `extra` to the current target debt.
+export function simulateDebtPlan(
+  debts: Debt[],
+  extra: number,
+  strategy: DebtStrategy,
+  months: number,
+): DebtPlan {
+  const outflow = new Array(months).fill(0);
+  const remaining = new Array(months).fill(0);
+  const payoffMonthByDebt = new Map<number, number | null>();
+  const states: DebtState[] = debts.map((d) => ({
+    id: d.id,
+    bal: d.balance,
+    rate: d.apr / 1200,
+    min: d.monthly_payment,
+    paidMonth: null,
+  }));
+  for (const d of debts) payoffMonthByDebt.set(d.id, null);
+
+  const baseBudget = states.reduce((s, d) => s + d.min, 0) + (strategy === 'none' ? 0 : extra);
+  let totalInterest = 0;
+  let debtFreeMonthIndex: number | null = states.every((d) => d.bal <= 0.005) ? -1 : null;
+
+  for (let m = 0; m < months; m++) {
+    // Accrue interest.
+    for (const d of states) {
+      if (d.bal > 0.005) {
+        const interest = d.bal * d.rate;
+        d.bal += interest;
+        totalInterest += interest;
+      }
+    }
+
+    if (strategy === 'none') {
+      for (const d of states) {
+        if (d.bal > 0.005) {
+          const pay = Math.min(d.min, d.bal);
+          d.bal -= pay;
+          outflow[m] += pay;
+        }
+      }
+    } else {
+      let budget = baseBudget;
+      // Pay minimums on every active debt.
+      for (const d of states) {
+        if (d.bal > 0.005 && budget > 0) {
+          const pay = Math.min(d.min, d.bal, budget);
+          d.bal -= pay;
+          budget -= pay;
+          outflow[m] += pay;
+        }
+      }
+      // Throw whatever's left at the target debt(s) in priority order.
+      const order = [...states].filter((d) => d.bal > 0.005).sort((a, b) =>
+        strategy === 'avalanche' ? b.rate - a.rate : a.bal - b.bal,
+      );
+      for (const d of order) {
+        if (budget <= 0) break;
+        const pay = Math.min(budget, d.bal);
+        d.bal -= pay;
+        budget -= pay;
+        outflow[m] += pay;
+      }
+    }
+
+    // Record payoffs and remaining balance.
+    for (const d of states) {
+      if (d.bal <= 0.005 && d.paidMonth === null) {
+        d.paidMonth = m;
+        payoffMonthByDebt.set(d.id, m);
+      }
+      remaining[m] += Math.max(0, d.bal);
+    }
+    outflow[m] = round2(outflow[m]);
+    remaining[m] = round2(remaining[m]);
+    if (debtFreeMonthIndex === null && states.every((d) => d.bal <= 0.005)) {
+      debtFreeMonthIndex = m;
+    }
+  }
+
+  return {
+    outflow,
+    remaining,
+    payoffMonthByDebt,
+    totalInterest: round2(totalInterest),
+    debtFreeMonthIndex,
+  };
+}

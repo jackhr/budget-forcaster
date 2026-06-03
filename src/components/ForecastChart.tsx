@@ -9,6 +9,8 @@ interface Props {
   data: ForecastPoint[];
   months: number;
   onMonthsChange: (m: number) => void;
+  compareData?: number[];
+  compareName?: string;
 }
 
 function CustomTooltip({ active, payload, label }: {
@@ -35,7 +37,8 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function ForecastChart({ data, months, onMonthsChange }: Props) {
+export default function ForecastChart({ data, months, onMonthsChange, compareData, compareName }: Props) {
+  const merged = compareData ? data.map((d, i) => ({ ...d, compare: compareData[i] })) : data;
   return (
     <div style={{
       background: 'var(--color-surface)',
@@ -75,7 +78,7 @@ export default function ForecastChart({ data, months, onMonthsChange }: Props) {
       </div>
 
       <ResponsiveContainer width="100%" height={320}>
-        <LineChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+        <LineChart data={merged} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis
             dataKey="label"
@@ -125,6 +128,9 @@ export default function ForecastChart({ data, months, onMonthsChange }: Props) {
             activeDot={{ r: 4 }}
             strokeDasharray=""
           />
+          {compareData && (
+            <Line type="monotone" dataKey="compare" name={`${compareName ?? 'Scenario'} (net)`} stroke="var(--color-text-muted)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>

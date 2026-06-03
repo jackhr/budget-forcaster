@@ -1,13 +1,12 @@
 import type {
-  Debt,
   Expense,
   ForecastPoint,
   Frequency,
   IncomeSource,
+  NetWorthPoint,
   SavingsPoint,
   ScheduledPayment,
 } from '../types';
-import { debtOutflowTotals } from './debt';
 
 export const FREQUENCIES: Frequency[] = [
   'weekly',
@@ -124,19 +123,26 @@ function cashflowAtMonth(
   };
 }
 
+// Compound an annual inflation rate (%) to a given month.
+function inflationFactor(annualPct: number, monthIndex: number): number {
+  if (!annualPct) return 1;
+  return Math.pow(1 + annualPct / 100, monthIndex / 12);
+}
+
 export function buildForecast(
   sources: IncomeSource[],
   expenses: Expense[],
   payments: ScheduledPayment[],
-  debts: Debt[],
+  debtOutflow: number[],
   months: number,
+  inflation = 0,
   now: Date = new Date(),
 ): ForecastPoint[] {
-  const ongoing = monthlyExpenseTotal(expenses);
-  const debtOut = debtOutflowTotals(debts, months);
+  const ongoingBase = monthlyExpenseTotal(expenses);
   return Array.from({ length: months }, (_, i) => {
+    const ongoing = ongoingBase * inflationFactor(inflation, i);
     const cf = cashflowAtMonth(sources, ongoing, payments, i, now);
-    const expensesTotal = cf.ongoing + cf.scheduledOut + debtOut[i];
+    const expensesTotal = cf.ongoing + cf.scheduledOut + (debtOutflow[i] ?? 0);
     return {
       month: i + 1,
       label: monthLabel(now, i),
@@ -151,17 +157,19 @@ export function buildSavings(
   sources: IncomeSource[],
   expenses: Expense[],
   payments: ScheduledPayment[],
-  debts: Debt[],
+  debtOutflow: number[],
   months: number,
   startingBalance: number,
+  inflation = 0,
   now: Date = new Date(),
 ): SavingsPoint[] {
-  const ongoing = monthlyExpenseTotal(expenses);
-  const debtOut = debtOutflowTotals(debts, months);
+  const ongoingBase = monthlyExpenseTotal(expenses);
   let balance = startingBalance;
   return Array.from({ length: months }, (_, i) => {
+    const ongoing = ongoingBase * inflationFactor(inflation, i);
     const cf = cashflowAtMonth(sources, ongoing, payments, i, now);
-    const net = cf.income - cf.ongoing - cf.scheduledOut - debtOut[i];
+    const debtOut = debtOutflow[i] ?? 0;
+    const net = cf.income - cf.ongoing - cf.scheduledOut - debtOut;
     balance += net;
     return {
       month: i + 1,
@@ -171,9 +179,22 @@ export function buildSavings(
       expenses: round2(cf.ongoing),
       scheduledOut: round2(cf.scheduledOut),
       scheduledLabel: cf.scheduledLabel,
-      debtOut: round2(debtOut[i]),
+      debtOut: round2(debtOut),
       net: round2(net),
       balance: round2(balance),
+    };
+  });
+}
+
+export function buildNetWorth(savings: SavingsPoint[], debtRemaining: number[]): NetWorthPoint[] {
+  return savings.map((s, i) => {
+    const debt = debtRemaining[i] ?? 0;
+    return {
+      month: s.month,
+      label: s.label,
+      cash: s.balance,
+      debt: round2(debt),
+      netWorth: round2(s.balance - debt),
     };
   });
 }

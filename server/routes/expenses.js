@@ -1,16 +1,26 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { reorder, ORDER_BY } = require('../lib/data');
+
+function isAmount(v) {
+  return typeof v === 'number' && isFinite(v);
+}
 
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM expenses ORDER BY created_at ASC').all();
+  const rows = db.prepare(`SELECT * FROM expenses ${ORDER_BY}`).all();
   res.json(rows);
+});
+
+router.post('/reorder', (req, res) => {
+  reorder(db, 'expenses', req.body.ids);
+  res.json({ ok: true });
 });
 
 router.post('/', (req, res) => {
   const { name, monthly_amount, group_id } = req.body;
-  if (!name || monthly_amount == null) {
-    return res.status(400).json({ error: 'name and monthly_amount are required' });
+  if (!name || !isAmount(monthly_amount) || monthly_amount < 0) {
+    return res.status(400).json({ error: 'name and a non-negative numeric monthly_amount are required' });
   }
   const stmt = db.prepare(
     'INSERT INTO expenses (name, monthly_amount, group_id) VALUES (?, ?, ?)'

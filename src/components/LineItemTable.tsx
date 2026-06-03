@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import type { GroupKind, ItemFormData, LineItem, LineItemGroup } from '../types';
 import { formatMoney } from '../lib/format';
+import { useDnd } from '../lib/useDnd';
 import LineItemRow from './LineItemRow';
 import AddItemForm from './AddItemForm';
 import ConfirmButton from './ConfirmButton';
+
+type DragProps = React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
 
 interface Props {
   title: string;
@@ -20,6 +23,8 @@ interface Props {
   onAddGroup: (name: string) => Promise<void>;
   onRenameGroup: (id: number, name: string) => Promise<void>;
   onDeleteGroup: (id: number) => Promise<void>;
+  onReorder: (ids: number[]) => void;
+  onReorderGroup: (ids: number[]) => void;
 }
 
 const GRID = '1fr 140px 96px';
@@ -56,9 +61,12 @@ interface GroupBlockProps {
   onAdd: (data: ItemFormData) => Promise<void>;
   onRenameGroup: (id: number, name: string) => Promise<void>;
   onDeleteGroup: (id: number) => Promise<void>;
+  dragFor: (item: LineItem) => DragProps;
+  draggingId: number | null;
+  groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup }: GroupBlockProps) {
+function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -79,18 +87,19 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
       marginBottom: 8,
       overflow: 'hidden',
     }}>
-      <div style={{
+      <div {...groupDrag} style={{
         display: 'flex',
         alignItems: 'center',
         gap: 8,
         padding: '8px 12px',
         background: 'var(--color-surface-2)',
         borderLeft: `3px solid ${accentColor}`,
+        cursor: groupDrag ? 'grab' : undefined,
       }}>
         <button
           onClick={() => setCollapsed((c) => !c)}
-          style={{ background: 'transparent', color: 'var(--color-text-muted)', padding: '2px 4px', fontSize: 11, width: 18 }}
-          aria-label={collapsed ? 'Expand' : 'Collapse'}
+          style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 18, lineHeight: 1, width: 26 }}
+          aria-label={collapsed ? 'Expand group' : 'Collapse group'}
         >
           {collapsed ? '▸' : '▾'}
         </button>
@@ -141,6 +150,8 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
               accentColor={accentColor}
               showFrequency={showFrequency}
               groups={groups}
+              drag={dragFor(item)}
+              dragging={draggingId === item.id}
             />
           ))}
           {items.length === 0 && (
@@ -206,11 +217,14 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, showFrequency, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup }: Props) {
+export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, showFrequency, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
   const amountLabel = showFrequency ? 'Per Payment' : 'Monthly';
+
+  const dnd = useDnd<LineItem>(items, onReorder, (a, b) => a.group_id === b.group_id);
+  const groupDnd = useDnd<LineItemGroup>(myGroups, onReorderGroup);
 
   return (
     <div style={{
@@ -254,6 +268,9 @@ export default function LineItemTable({ title, description, items, accentColor, 
           onAdd={onAdd}
           onRenameGroup={onRenameGroup}
           onDeleteGroup={onDeleteGroup}
+          dragFor={dnd.handlers}
+          draggingId={dnd.dragId}
+          groupDrag={groupDnd.handlers(group)}
         />
       ))}
 
@@ -268,6 +285,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
             accentColor={accentColor}
             showFrequency={showFrequency}
             groups={myGroups}
+            drag={dnd.handlers(item)}
+            dragging={dnd.dragId === item.id}
           />
         ))}
         {items.length === 0 && (

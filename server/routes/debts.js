@@ -1,34 +1,44 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { reorder, ORDER_BY } = require('../lib/data');
+
+function isAmount(v) {
+  return typeof v === 'number' && isFinite(v);
+}
 
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM debts ORDER BY created_at ASC').all();
+  const rows = db.prepare(`SELECT * FROM debts ${ORDER_BY}`).all();
   res.json(rows);
 });
 
+router.post('/reorder', (req, res) => {
+  reorder(db, 'debts', req.body.ids);
+  res.json({ ok: true });
+});
+
 router.post('/', (req, res) => {
-  const { name, balance, apr, credit_limit, monthly_payment } = req.body;
-  if (!name || balance == null || monthly_payment == null) {
-    return res.status(400).json({ error: 'name, balance and monthly_payment are required' });
+  const { name, balance, apr, credit_limit, monthly_payment, group_id } = req.body;
+  if (!name || !isAmount(balance) || balance < 0 || !isAmount(monthly_payment) || monthly_payment < 0) {
+    return res.status(400).json({ error: 'name, a non-negative balance and monthly_payment are required' });
   }
   const stmt = db.prepare(
-    'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, group_id) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  const result = stmt.run(name, balance, apr ?? 0, credit_limit ?? null, monthly_payment);
+  const result = stmt.run(name, balance, apr ?? 0, credit_limit ?? null, monthly_payment, group_id ?? null);
   const row = db.prepare('SELECT * FROM debts WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(row);
 });
 
 router.put('/:id', (req, res) => {
-  const { name, balance, apr, credit_limit, monthly_payment } = req.body;
+  const { name, balance, apr, credit_limit, monthly_payment, group_id } = req.body;
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   db.prepare(
     `UPDATE debts
-     SET name = ?, balance = ?, apr = ?, credit_limit = ?, monthly_payment = ?, updated_at = datetime('now')
+     SET name = ?, balance = ?, apr = ?, credit_limit = ?, monthly_payment = ?, group_id = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     name ?? existing.name,
@@ -36,6 +46,7 @@ router.put('/:id', (req, res) => {
     apr ?? existing.apr,
     credit_limit !== undefined ? (credit_limit ?? null) : existing.credit_limit,
     monthly_payment ?? existing.monthly_payment,
+    group_id !== undefined ? (group_id ?? null) : existing.group_id,
     id
   );
   const row = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
