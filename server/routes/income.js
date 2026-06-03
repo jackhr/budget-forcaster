@@ -61,6 +61,10 @@ router.delete('/:id', (req, res) => {
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  // Any future expense funded by this income falls back to cash.
+  db.prepare(
+    "UPDATE scheduled_payments SET funding_source_type = 'cash', funding_source_id = NULL WHERE funding_source_type = 'income' AND funding_source_id = ?"
+  ).run(id);
   db.prepare('DELETE FROM income_sources WHERE id = ?').run(id);
   res.status(204).end();
 });

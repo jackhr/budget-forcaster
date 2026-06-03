@@ -4,7 +4,7 @@ import {
   dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -48,7 +48,8 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const exp = snap.expenses ?? [];
   const pay = snap.scheduled_payments ?? [];
   const debts = snap.debts ?? [];
-  const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months);
+  const charges = buildDebtCharges(pay, months);
+  const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges);
   const fc = buildForecast(inc, exp, pay, plan.outflow, months, infl);
   const sv = buildSavings(inc, exp, pay, plan.outflow, months, start, infl);
   const nw = buildNetWorth(sv, plan.remaining);
@@ -119,8 +120,10 @@ export default function App() {
   }, [toast]);
 
   // --- Derived series ---
-  const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months);
-  const basePlan = simulateDebtPlan(debts, 0, 'none', months);
+  // Future expenses charged to a card add to that debt's balance over time.
+  const debtCharges = buildDebtCharges(payments, months);
+  const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
+  const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
   const forecast = buildForecast(incomeSources, expenses, payments, plan.outflow, months, inflation);
   const savings = buildSavings(incomeSources, expenses, payments, plan.outflow, months, startingBalance, inflation);
   const netWorth = buildNetWorth(savings, plan.remaining);
@@ -422,7 +425,12 @@ export default function App() {
             onReorder={reorderExpenses} onReorderGroup={reorderGroups}
           />
         </div>
-        <ScheduledPayments payments={payments} onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment} />
+        <ScheduledPayments
+          payments={payments}
+          incomes={incomeSources.map((i) => ({ id: i.id, name: i.name }))}
+          debts={debts.map((d) => ({ id: d.id, name: d.name }))}
+          onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}
+        />
         <Debts
           debts={debts} groups={groups}
           onAdd={addDebt} onUpdate={updateDebt} onDelete={deleteDebt}

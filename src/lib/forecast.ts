@@ -7,6 +7,7 @@ import type {
   SavingsPoint,
   ScheduledPayment,
 } from '../types';
+import type { DebtCharge } from './debt';
 
 export const FREQUENCIES: Frequency[] = [
   'weekly',
@@ -107,6 +108,8 @@ function cashflowAtMonth(
   let scheduledOut = 0;
   const names: string[] = [];
   for (const p of payments) {
+    // Debt-funded expenses are charged to a card, not paid from cash — they don't dip the balance.
+    if (p.funding_source_type === 'debt') continue;
     const c = paymentCashAtMonth(p, monthIndex, now);
     if (c > 0) {
       scheduledOut += c;
@@ -127,6 +130,23 @@ function cashflowAtMonth(
 function inflationFactor(annualPct: number, monthIndex: number): number {
   if (!annualPct) return 1;
   return Math.pow(1 + annualPct / 100, monthIndex / 12);
+}
+
+// Charges that debt-funded future expenses add to their card over the horizon.
+export function buildDebtCharges(
+  payments: ScheduledPayment[],
+  months: number,
+  now: Date = new Date(),
+): DebtCharge[] {
+  const charges: DebtCharge[] = [];
+  for (const p of payments) {
+    if (p.funding_source_type !== 'debt' || p.funding_source_id == null) continue;
+    for (let m = 0; m < months; m++) {
+      const c = paymentCashAtMonth(p, m, now);
+      if (c > 0) charges.push({ debtId: p.funding_source_id, monthIndex: m, amount: c });
+    }
+  }
+  return charges;
 }
 
 export function buildForecast(

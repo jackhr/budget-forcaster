@@ -112,6 +112,13 @@ if (!hasStartDate) {
   }
 }
 
+// --- Migration: funding source (what a future expense is paid from) ---
+const schedFundingCols = db.prepare('PRAGMA table_info(scheduled_payments)').all();
+if (!schedFundingCols.some((c) => c.name === 'funding_source_type')) {
+  db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_source_type TEXT NOT NULL DEFAULT 'cash'");
+  db.exec('ALTER TABLE scheduled_payments ADD COLUMN funding_source_id INTEGER');
+}
+
 // --- Seed example data on first run ---
 function relativeMonth(offset) {
   const d = new Date();

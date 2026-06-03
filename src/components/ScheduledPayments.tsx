@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import type { Frequency, ScheduledPayment } from '../types';
+import type { Frequency, FundingSourceType, ScheduledPayment } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS, monthOffset } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
+
+interface NamedSource { id: number; name: string }
 
 interface PaymentInput {
   name: string;
@@ -11,16 +13,40 @@ interface PaymentInput {
   frequency: Frequency;
   start_date: string;
   end_date: string | null;
+  funding_source_type: FundingSourceType;
+  funding_source_id: number | null;
 }
 
 interface Props {
   payments: ScheduledPayment[];
+  incomes: NamedSource[];
+  debts: NamedSource[];
   onAdd: (data: PaymentInput) => Promise<void>;
   onUpdate: (id: number, data: PaymentInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
 
 const ACCENT = 'var(--color-net-neg)';
+
+// Encodes/decodes the "Paid from" <select> value as "type:id".
+function encodeFunding(type: FundingSourceType, id: number | null): string {
+  return type === 'cash' ? 'cash' : `${type}:${id}`;
+}
+function decodeFunding(value: string): { type: FundingSourceType; id: number | null } {
+  if (value === 'cash') return { type: 'cash', id: null };
+  const [type, id] = value.split(':');
+  return { type: type as FundingSourceType, id: Number(id) };
+}
+
+function fundingLabel(p: ScheduledPayment, incomes: NamedSource[], debts: NamedSource[]): string {
+  if (p.funding_source_type === 'debt') {
+    return debts.find((d) => d.id === p.funding_source_id)?.name ?? 'card';
+  }
+  if (p.funding_source_type === 'income') {
+    return incomes.find((i) => i.id === p.funding_source_id)?.name ?? 'income';
+  }
+  return 'Cash';
+}
 
 function formatMonth(date: string) {
   const [y, m] = date.split('-').map(Number);
@@ -59,26 +85,31 @@ const monthInputStyle: React.CSSProperties = {
 interface EditorProps {
   title: string;
   initial: PaymentInput;
+  incomes: NamedSource[];
+  debts: NamedSource[];
   onCancel: () => void;
   onSubmit: (data: PaymentInput) => Promise<void>;
 }
 
-function PaymentEditor({ title, initial, onCancel, onSubmit }: EditorProps) {
+function PaymentEditor({ title, initial, incomes, debts, onCancel, onSubmit }: EditorProps) {
   const [name, setName] = useState(initial.name);
   const [amount, setAmount] = useState(String(initial.amount || ''));
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
   const [start, setStart] = useState(initial.start_date.slice(0, 7));
   const [end, setEnd] = useState(initial.end_date ? initial.end_date.slice(0, 7) : '');
+  const [funding, setFunding] = useState(encodeFunding(initial.funding_source_type, initial.funding_source_id));
   const [saving, setSaving] = useState(false);
 
   const recurring = frequency !== 'one-time';
   const amtNum = parseFloat(amount);
   const endBeforeStart = recurring && !!end && end < start;
   const valid = name.trim().length > 0 && amtNum > 0 && !!start && !endBeforeStart;
+  const fundingIsDebt = funding.startsWith('debt:');
 
   async function handle(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) return;
+    const f = decodeFunding(funding);
     setSaving(true);
     await onSubmit({
       name: name.trim(),
@@ -86,6 +117,8 @@ function PaymentEditor({ title, initial, onCancel, onSubmit }: EditorProps) {
       frequency,
       start_date: `${start}-01`,
       end_date: recurring && end ? `${end}-01` : null,
+      funding_source_type: f.type,
+      funding_source_id: f.id,
     });
     setSaving(false);
   }
@@ -133,6 +166,28 @@ function PaymentEditor({ title, initial, onCancel, onSubmit }: EditorProps) {
             </label>
           )}
         </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={labelStyle}>Paid from</span>
+          <select value={funding} onChange={(e) => setFunding(e.target.value)} style={monthInputStyle}>
+            <option value="cash">Cash / Savings</option>
+            {incomes.length > 0 && (
+              <optgroup label="Income">
+                {incomes.map((i) => <option key={`i${i.id}`} value={encodeFunding('income', i.id)}>{i.name}</option>)}
+              </optgroup>
+            )}
+            {debts.length > 0 && (
+              <optgroup label="Credit lines / cards">
+                {debts.map((d) => <option key={`d${d.id}`} value={encodeFunding('debt', d.id)}>{d.name}</option>)}
+              </optgroup>
+            )}
+          </select>
+        </label>
+        {fundingIsDebt && (
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -6 }}>
+            Charged to the card — adds to its balance instead of spending cash, then pays down via the debt’s payment.
+          </p>
+        )}
+
         {recurring && !end && (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -6 }}>
             No end date — this payment continues for the whole forecast.
@@ -158,7 +213,7 @@ function PaymentEditor({ title, initial, onCancel, onSubmit }: EditorProps) {
   );
 }
 
-export default function ScheduledPayments({ payments, onAdd, onUpdate, onDelete }: Props) {
+export default function ScheduledPayments({ payments, incomes, debts, onAdd, onUpdate, onDelete }: Props) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
@@ -211,9 +266,17 @@ export default function ScheduledPayments({ payments, onAdd, onUpdate, onDelete 
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <div style={{ width: 3, height: 24, borderRadius: 2, background: ACCENT, flexShrink: 0 }} />
               <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+              <span style={{
+                flexShrink: 0, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+                color: p.funding_source_type === 'debt' ? 'var(--color-net-neg)' : 'var(--color-text-muted)',
+                background: p.funding_source_type === 'debt' ? 'var(--color-net-neg)1f' : 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
+              }}>
+                {p.funding_source_type === 'debt' ? '💳 ' : '↳ '}{fundingLabel(p, incomes, debts)}
+              </span>
             </div>
             <span style={{ fontWeight: 600, color: ACCENT }}>
               −{formatMoney(p.amount, { whole: true })}
@@ -247,7 +310,9 @@ export default function ScheduledPayments({ payments, onAdd, onUpdate, onDelete 
       {adding && (
         <PaymentEditor
           title="Add Future Expense"
-          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null }}
+          incomes={incomes}
+          debts={debts}
+          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
         />
@@ -255,12 +320,16 @@ export default function ScheduledPayments({ payments, onAdd, onUpdate, onDelete 
       {editingPayment && (
         <PaymentEditor
           title={`Edit ${editingPayment.name}`}
+          incomes={incomes}
+          debts={debts}
           initial={{
             name: editingPayment.name,
             amount: editingPayment.amount,
             frequency: editingPayment.frequency,
             start_date: editingPayment.start_date,
             end_date: editingPayment.end_date,
+            funding_source_type: editingPayment.funding_source_type,
+            funding_source_id: editingPayment.funding_source_id,
           }}
           onCancel={() => setEditingId(null)}
           onSubmit={async (data) => { await onUpdate(editingPayment.id, data); setEditingId(null); }}

@@ -47,6 +47,8 @@ export interface Debt {
   updated_at: string;
 }
 
+export type FundingSourceType = 'cash' | 'income' | 'debt';
+
 export interface ScheduledPayment {
   id: number;
   name: string;
@@ -54,6 +56,8 @@ export interface ScheduledPayment {
   frequency: Frequency;
   start_date: string; // YYYY-MM-DD, first occurrence
   end_date: string | null; // YYYY-MM-DD, last occurrence (inclusive); null = open-ended
+  funding_source_type: FundingSourceType; // what pays for it
+  funding_source_id: number | null; // income/debt id when type !== 'cash'
   created_at: string;
   updated_at: string;
 }

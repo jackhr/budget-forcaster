@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, monthOffset } from './forecast';
-import type { Expense, IncomeSource, ScheduledPayment } from '../types';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, monthOffset } from './forecast';
+import { simulateDebtPlan } from './debt';
+import type { Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
 const NOW = new Date(2026, 0, 1); // Jan 2026, deterministic
 
@@ -46,11 +47,35 @@ describe('buildSavings', () => {
   });
 
   it('subtracts a one-off future expense in the right month', () => {
-    const pay: ScheduledPayment = { id: 1, name: 'Trip', amount: 1000, frequency: 'one-time', start_date: '2026-03-01', end_date: null, created_at: '', updated_at: '' };
+    const pay: ScheduledPayment = { id: 1, name: 'Trip', amount: 1000, frequency: 'one-time', start_date: '2026-03-01', end_date: null, funding_source_type: 'cash', funding_source_id: null, created_at: '', updated_at: '' };
     const sv = buildSavings([], [], [pay], [], 4, 1000, 0, NOW);
     expect(monthOffset('2026-03-01', NOW)).toBe(2);
     expect(sv[2].scheduledOut).toBe(1000);
     expect(sv[2].balance).toBe(0);
+  });
+});
+
+describe('debt-funded future expenses', () => {
+  const card: Debt = { id: 9, name: 'Card', balance: 0, apr: 24, credit_limit: null, monthly_payment: 500, group_id: null, created_at: '', updated_at: '' };
+  const charged: ScheduledPayment = {
+    id: 1, name: 'Laptop', amount: 2000, frequency: 'one-time', start_date: '2026-02-01', end_date: null,
+    funding_source_type: 'debt', funding_source_id: 9, created_at: '', updated_at: '',
+  };
+
+  it('does not dip cash for a charged expense', () => {
+    const sv = buildSavings([], [], [charged], [0, 0, 0, 0], 4, 5000, 0, NOW);
+    // scheduledOut stays 0 because it's billed to the card, not paid from cash
+    expect(sv[1].scheduledOut).toBe(0);
+  });
+
+  it('adds the charge to the card balance via simulateDebtPlan', () => {
+    const charges = buildDebtCharges([charged], 6, NOW);
+    expect(charges).toEqual([{ debtId: 9, monthIndex: 1, amount: 2000 }]);
+    const plan = simulateDebtPlan([card], 0, 'none', 6, charges);
+    // month 0: nothing owed yet; month 1: charged 2000, pays 500 -> ~1500ish remaining
+    expect(plan.remaining[0]).toBe(0);
+    expect(plan.remaining[1]).toBeGreaterThan(1400);
+    expect(plan.outflow[1]).toBeCloseTo(500, 5);
   });
 });
 

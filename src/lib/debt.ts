@@ -90,6 +90,13 @@ export interface DebtPlan {
   debtFreeMonthIndex: number | null; // when the last debt clears
 }
 
+// A future expense charged to a debt (credit card / line) at a given month.
+export interface DebtCharge {
+  debtId: number;
+  monthIndex: number;
+  amount: number;
+}
+
 interface DebtState {
   id: number;
   bal: number;
@@ -107,6 +114,7 @@ export function simulateDebtPlan(
   extra: number,
   strategy: DebtStrategy,
   months: number,
+  charges: DebtCharge[] = [],
 ): DebtPlan {
   const outflow = new Array(months).fill(0);
   const remaining = new Array(months).fill(0);
@@ -119,6 +127,14 @@ export function simulateDebtPlan(
     paidMonth: null,
   }));
   for (const d of debts) payoffMonthByDebt.set(d.id, null);
+  const stateById = new Map(states.map((s) => [s.id, s]));
+
+  // Bucket charges by month for quick lookup.
+  const chargesByMonth = new Map<number, DebtCharge[]>();
+  for (const c of charges) {
+    if (!chargesByMonth.has(c.monthIndex)) chargesByMonth.set(c.monthIndex, []);
+    chargesByMonth.get(c.monthIndex)!.push(c);
+  }
 
   const baseBudget = states.reduce((s, d) => s + d.min, 0) + (strategy === 'none' ? 0 : extra);
   let totalInterest = 0;
@@ -131,6 +147,18 @@ export function simulateDebtPlan(
         const interest = d.bal * d.rate;
         d.bal += interest;
         totalInterest += interest;
+      }
+    }
+
+    // Apply this month's charges (future expenses billed to a card).
+    for (const c of chargesByMonth.get(m) ?? []) {
+      const st = stateById.get(c.debtId);
+      if (st) {
+        st.bal += c.amount;
+        if (st.paidMonth !== null && st.bal > 0.005) {
+          st.paidMonth = null; // reactivated by a new charge
+          payoffMonthByDebt.set(st.id, null);
+        }
       }
     }
 
