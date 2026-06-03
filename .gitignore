@@ -1,0 +1,12 @@
+node_modules/
+server/node_modules/
+dist/
+server/db/budget.db
+server/db/budget.db-shm
+server/db/budget.db-wal
+.env
+.DS_Store
+*.local
+
+# Local Claude Code harness settings (personal, not shared)
+.claude/
