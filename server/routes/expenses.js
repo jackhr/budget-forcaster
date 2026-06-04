@@ -3,6 +3,12 @@ const router = express.Router();
 const db = require('../db/database');
 const { reorder, ORDER_BY } = require('../lib/data');
 
+const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
+
+function normalizeFrequency(freq, fallback = 'monthly') {
+  return VALID_FREQUENCIES.includes(freq) ? freq : fallback;
+}
+
 function isAmount(v) {
   return typeof v === 'number' && isFinite(v);
 }
@@ -40,33 +46,40 @@ router.post('/reorder', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, monthly_amount, group_id, funding_allocations } = req.body;
+  const { name, monthly_amount, group_id, funding_allocations, frequency, start_date, end_date } = req.body;
   if (!name || !isAmount(monthly_amount) || monthly_amount < 0) {
     return res.status(400).json({ error: 'name and a non-negative numeric monthly_amount are required' });
   }
   const stmt = db.prepare(
-    'INSERT INTO expenses (name, monthly_amount, group_id, funding_allocations) VALUES (?, ?, ?, ?)'
+    'INSERT INTO expenses (name, monthly_amount, group_id, funding_allocations, frequency, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
-  const result = stmt.run(name, monthly_amount, group_id ?? null, JSON.stringify(cleanAllocations(funding_allocations)));
+  const result = stmt.run(
+    name, monthly_amount, group_id ?? null,
+    JSON.stringify(cleanAllocations(funding_allocations)),
+    normalizeFrequency(frequency), start_date || null, end_date || null,
+  );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(serialize(row));
 });
 
 router.put('/:id', (req, res) => {
-  const { name, monthly_amount, group_id, funding_allocations } = req.body;
+  const { name, monthly_amount, group_id, funding_allocations, frequency, start_date, end_date } = req.body;
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   db.prepare(
     `UPDATE expenses
-     SET name = ?, monthly_amount = ?, group_id = ?, funding_allocations = ?, updated_at = datetime('now')
+     SET name = ?, monthly_amount = ?, group_id = ?, funding_allocations = ?, frequency = ?, start_date = ?, end_date = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     name ?? existing.name,
     monthly_amount ?? existing.monthly_amount,
     group_id !== undefined ? (group_id ?? null) : existing.group_id,
     funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations)) : existing.funding_allocations,
+    frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency,
+    start_date !== undefined ? (start_date || null) : existing.start_date,
+    end_date !== undefined ? (end_date || null) : existing.end_date,
     id
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);

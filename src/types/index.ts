@@ -51,7 +51,10 @@ export interface ExpenseAllocation {
 export interface Expense {
   id: number;
   name: string;
-  monthly_amount: number;
+  monthly_amount: number; // amount per occurrence at the given frequency
+  frequency: Frequency;
+  start_date: string | null; // YYYY-MM-DD; null = now / always
+  end_date: string | null; // YYYY-MM-DD; null = ongoing
   group_id: number | null;
   funding_allocations: ExpenseAllocation[]; // remainder draws from the primary account
   created_at: string;
@@ -122,6 +125,7 @@ export interface ItemFormData {
   frequency?: Frequency;
   group_id?: number | null;
   start_date?: string | null;
+  end_date?: string | null;
   account_id?: number | null;
   funding_allocations?: ExpenseAllocation[];
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ExpenseAllocation, Frequency, IncomeSource, ItemFormData, LineItem, LineItemGroup } from '../types';
+import type { ExpenseAllocation, Frequency, ItemFormData, LineItem, LineItemGroup } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
@@ -13,8 +13,10 @@ interface Props {
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   accentColor: string;
-  showFrequency?: boolean;
-  showFunding?: boolean; // expense split-funding editor
+  showFrequency?: boolean; // frequency + start date (income & expense)
+  showEndDate?: boolean;   // end date (expense range)
+  showAccount?: boolean;   // "lands in account" selector (income)
+  showFunding?: boolean;   // expense split-funding editor
   groups?: LineItemGroup[];
   accounts?: AccountOpt[];
   debts?: NamedSource[];
@@ -24,14 +26,16 @@ interface Props {
 
 function encodeSource(type: 'account' | 'debt', id: number): string { return `${type}:${id}`; }
 
-function hasFrequency(item: LineItem): item is IncomeSource {
-  return 'frequency' in item;
+function monthShort(ym: string | null): string | null {
+  if (!ym) return null;
+  return new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showFunding, groups, accounts, debts, drag, dragging }: Props) {
-  const itemFreq = hasFrequency(item) ? item.frequency : 'monthly';
-  const itemStart = hasFrequency(item) ? item.start_date : null;
-  const itemAccount = hasFrequency(item) ? item.account_id : null;
+export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showEndDate, showAccount, showFunding, groups, accounts, debts, drag, dragging }: Props) {
+  const itemFreq: Frequency = 'frequency' in item ? item.frequency : 'monthly';
+  const itemStart = 'start_date' in item ? item.start_date : null;
+  const itemEnd = 'end_date' in item ? item.end_date : null;
+  const itemAccount = 'account_id' in item ? item.account_id : null;
   const itemAllocations: ExpenseAllocation[] = 'funding_allocations' in item ? (item.funding_allocations ?? []) : [];
   const primaryId = accounts?.find((a) => a.is_primary)?.id ?? null;
   const [editing, setEditing] = useState(false);
@@ -40,6 +44,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const [frequency, setFrequency] = useState<Frequency>(itemFreq);
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
   const [start, setStart] = useState(itemStart ? itemStart.slice(0, 7) : '');
+  const [end, setEnd] = useState(itemEnd ? itemEnd.slice(0, 7) : '');
   const [account, setAccount] = useState<number | null>(itemAccount);
   const [allocations, setAllocations] = useState<ExpenseAllocation[]>(itemAllocations);
   const [saving, setSaving] = useState(false);
@@ -50,13 +55,15 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setFrequency(itemFreq);
     setGroupId(item.group_id);
     setStart(itemStart ? itemStart.slice(0, 7) : '');
+    setEnd(itemEnd ? itemEnd.slice(0, 7) : '');
     setAccount(itemAccount);
     setAllocations(itemAllocations);
     setEditing(true);
   }
 
   const amtNum = parseFloat(amount);
-  const valid = name.trim().length > 0 && amtNum > 0;
+  const endBeforeStart = !!end && !!start && end < start;
+  const valid = name.trim().length > 0 && amtNum > 0 && !endBeforeStart;
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -67,7 +74,9 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       name: name.trim(),
       monthly_amount: amt,
       group_id: groupId,
-      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null, account_id: account } : {}),
+      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
+      ...(showEndDate ? { end_date: end ? `${end}-01` : null } : {}),
+      ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: allocations.filter((a) => a.source_id != null && a.value > 0) } : {}),
     });
     setSaving(false);
@@ -79,9 +88,8 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const pctSum = allocations.filter((a) => a.alloc_type === 'percent').reduce((s, a) => s + (a.value || 0), 0);
   const remainderAmt = Math.max(0, (amtNum || 0) - fixedSum - (amtNum || 0) * pctSum / 100);
 
-  const startLabel = itemStart
-    ? new Date(Number(itemStart.slice(0, 4)), Number(itemStart.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-    : null;
+  const startLabel = monthShort(itemStart);
+  const endLabel = monthShort(itemEnd);
 
   return (
     <>
@@ -118,13 +126,13 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
               {FREQUENCY_LABELS[itemFreq]}
             </span>
           )}
-          {showFrequency && startLabel && (
+          {showFrequency && (startLabel || endLabel) && (
             <span style={{
               fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
               color: 'var(--color-text-muted)', background: 'var(--color-surface-2)',
               border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
             }}>
-              from {startLabel}
+              {startLabel ? `from ${startLabel}` : ''}{startLabel && endLabel ? ' ' : ''}{endLabel ? `until ${endLabel}` : ''}
             </span>
           )}
         </div>
@@ -209,21 +217,44 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
             )}
 
             {showFrequency && (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Starts <span style={{ textTransform: 'none', opacity: 0.7 }}>(optional — blank = now)</span>
-                </span>
-                <input
-                  type="month"
-                  value={start}
-                  onChange={(e) => setStart(e.target.value)}
-                  style={{
-                    background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
-                    padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
-                  }}
-                />
-              </label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Starts <span style={{ textTransform: 'none', opacity: 0.7 }}>(blank = now)</span>
+                  </span>
+                  <input
+                    type="month"
+                    value={start}
+                    onChange={(e) => setStart(e.target.value)}
+                    style={{
+                      background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
+                      padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
+                    }}
+                  />
+                </label>
+                {showEndDate && (
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Ends <span style={{ textTransform: 'none', opacity: 0.7 }}>(blank = ongoing)</span>
+                    </span>
+                    <input
+                      type="month"
+                      value={end}
+                      min={start}
+                      onChange={(e) => setEnd(e.target.value)}
+                      style={{
+                        background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
+                        padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+            {endBeforeStart && (
+              <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>End can’t be before the start.</p>
             )}
 
             {groups && (
@@ -252,7 +283,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
               </label>
             )}
 
-            {showFrequency && accounts && accounts.length > 0 && (
+            {showAccount && accounts && accounts.length > 0 && (
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Lands in account

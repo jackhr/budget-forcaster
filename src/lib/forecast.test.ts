@@ -9,7 +9,7 @@ function income(over: Partial<IncomeSource>): IncomeSource {
   return { id: 1, name: 'I', monthly_amount: 0, frequency: 'monthly', group_id: null, start_date: null, account_id: null, created_at: '', updated_at: '', ...over };
 }
 function expense(over: Partial<Expense>): Expense {
-  return { id: 1, name: 'E', monthly_amount: 0, group_id: null, funding_allocations: [], created_at: '', updated_at: '', ...over };
+  return { id: 1, name: 'E', monthly_amount: 0, frequency: 'monthly', start_date: null, end_date: null, group_id: null, funding_allocations: [], created_at: '', updated_at: '', ...over };
 }
 function acct(id: number, name: string, balance: number, primary = false): Account {
   return { id, name, balance, is_primary: primary ? 1 : 0, sort_order: null, created_at: '', updated_at: '' };
@@ -45,9 +45,22 @@ describe('buildForecast', () => {
 
 describe('buildExpensePlan', () => {
   it('applies inflation to ongoing expenses over time', () => {
-    const ep = buildExpensePlan([expense({ monthly_amount: 1000 })], [acct(1, 'Cash', 0, true)], [], 13, 12);
+    const ep = buildExpensePlan([expense({ monthly_amount: 1000 })], [acct(1, 'Cash', 0, true)], [], 13, 12, NOW);
     expect(ep.ongoingCashOut[0]).toBeCloseTo(1000, 5);
     expect(ep.ongoingCashOut[12]).toBeCloseTo(1120, 0); // +12% after a year
+  });
+
+  it('honors an expense frequency and date range', () => {
+    const cash = [acct(1, 'Cash', 0, true)];
+    // Quarterly $300 from Mar 2026 (offset 2) through Aug 2026 (offset 7): bills at offset 2 and 5 only.
+    const exp = [expense({ monthly_amount: 300, frequency: 'quarterly', start_date: '2026-03-01', end_date: '2026-08-01' })];
+    const ep = buildExpensePlan(exp, cash, [], 10, 0, NOW);
+    expect(ep.ongoingCashOut[0]).toBe(0);
+    expect(ep.ongoingCashOut[1]).toBe(0);
+    expect(ep.ongoingCashOut[2]).toBe(300); // Mar
+    expect(ep.ongoingCashOut[3]).toBe(0);
+    expect(ep.ongoingCashOut[5]).toBe(300); // Jun
+    expect(ep.ongoingCashOut[8]).toBe(0);   // past end
   });
 
   it('splits a bill across cash and a card; remainder to the primary account', () => {

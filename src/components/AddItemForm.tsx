@@ -9,11 +9,12 @@ interface Props {
   accentColor: string;
   placeholder: string;
   showFrequency?: boolean;
+  showAccount?: boolean;
   groupId?: number | null;
   accounts?: AccountOpt[];
 }
 
-export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, groupId, accounts }: Props) {
+export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, showAccount, groupId, accounts }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
@@ -32,7 +33,8 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     await onAdd({
       name: name.trim(),
       monthly_amount: amt,
-      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null, account_id: account } : {}),
+      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
+      ...(showAccount ? { account_id: account } : {}),
       ...(groupId != null ? { group_id: groupId } : {}),
     });
     setSaving(false);
@@ -133,7 +135,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
           }}
         />
       )}
-      {showFrequency && accounts && accounts.length > 0 && (
+      {showAccount && accounts && accounts.length > 0 && (
         <select
           value={account ?? primaryId ?? ''}
           onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)}

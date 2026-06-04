@@ -22,6 +22,8 @@ interface Props {
   debts?: NamedSource[];
   showFunding?: boolean;
   showFrequency?: boolean;
+  showAccount?: boolean;
+  showEndDate?: boolean;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onAdd: (data: ItemFormData) => Promise<void>;
@@ -69,12 +71,14 @@ interface GroupBlockProps {
   accounts?: AccountOpt[];
   debts?: NamedSource[];
   showFunding?: boolean;
+  showAccount?: boolean;
+  showEndDate?: boolean;
   dragFor: (item: LineItem) => DragProps;
   draggingId: number | null;
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, showEndDate, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -158,6 +162,8 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
               accentColor={accentColor}
               showFrequency={showFrequency}
               showFunding={showFunding}
+              showAccount={showAccount}
+              showEndDate={showEndDate}
               groups={groups}
               accounts={accounts}
               debts={debts}
@@ -171,7 +177,7 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
             </p>
           )}
           <div style={{ padding: '0 12px 6px' }}>
-            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder="item" showFrequency={showFrequency} groupId={group.id} accounts={accounts} />
+            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder="item" showFrequency={showFrequency} showAccount={showAccount} groupId={group.id} accounts={accounts} />
           </div>
         </div>
       )}
@@ -228,7 +234,7 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
+export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, showEndDate, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
@@ -282,6 +288,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
           accounts={accounts}
           debts={debts}
           showFunding={showFunding}
+          showAccount={showAccount}
+          showEndDate={showEndDate}
           dragFor={dnd.handlers}
           draggingId={dnd.dragId}
           groupDrag={groupDnd.handlers(group)}
@@ -299,6 +307,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
             accentColor={accentColor}
             showFrequency={showFrequency}
             showFunding={showFunding}
+            showAccount={showAccount}
+            showEndDate={showEndDate}
             groups={myGroups}
             accounts={accounts}
             debts={debts}
@@ -318,6 +328,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
         accentColor={accentColor}
         placeholder={title.replace(/s$/, '')}
         showFrequency={showFrequency}
+        showAccount={showAccount}
         accounts={accounts}
       />
 

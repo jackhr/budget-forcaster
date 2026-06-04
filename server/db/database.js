@@ -105,6 +105,16 @@ const expenseFundingCols = db.prepare('PRAGMA table_info(expenses)').all();
 if (!expenseFundingCols.some((c) => c.name === 'funding_allocations')) {
   db.exec("ALTER TABLE expenses ADD COLUMN funding_allocations TEXT NOT NULL DEFAULT '[]'");
 }
+// Expenses get a frequency + date range (like income / future expenses).
+if (!expenseFundingCols.some((c) => c.name === 'frequency')) {
+  db.exec("ALTER TABLE expenses ADD COLUMN frequency TEXT NOT NULL DEFAULT 'monthly'");
+}
+if (!expenseFundingCols.some((c) => c.name === 'start_date')) {
+  db.exec('ALTER TABLE expenses ADD COLUMN start_date TEXT'); // null = now / always
+}
+if (!expenseFundingCols.some((c) => c.name === 'end_date')) {
+  db.exec('ALTER TABLE expenses ADD COLUMN end_date TEXT'); // null = ongoing
+}
 
 // --- Migration: add frequency column to income_sources if it doesn't exist ---
 const incomeCols = db.prepare('PRAGMA table_info(income_sources)').all();

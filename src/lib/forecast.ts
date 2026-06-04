@@ -53,6 +53,26 @@ export function monthlyExpenseTotal(expenses: Expense[]): number {
   return expenses.reduce((sum, e) => sum + e.monthly_amount, 0);
 }
 
+// Pre-inflation amount an expense bills in a given month, honoring its frequency
+// and optional start/end range (frequency cycle anchored to the start).
+function expenseOccurrenceAtMonth(e: Expense, monthIndex: number, now: Date): number {
+  const startOff = e.start_date ? Math.max(0, monthOffset(e.start_date, now)) : 0;
+  if (monthIndex < startOff) return 0;
+  const endOff = e.end_date ? monthOffset(e.end_date, now) : Infinity;
+  if (monthIndex > endOff) return 0;
+  const since = monthIndex - startOff;
+  const a = e.monthly_amount;
+  switch (e.frequency ?? 'monthly') {
+    case 'weekly': return a * (52 / 12);
+    case 'biweekly': return a * (26 / 12);
+    case 'monthly': return a;
+    case 'quarterly': return since % 3 === 0 ? a : 0;
+    case 'annually': return since % 12 === 0 ? a : 0;
+    case 'one-time': return since === 0 ? a : 0;
+    default: return a;
+  }
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -170,6 +190,7 @@ export function buildExpensePlan(
   debts: Debt[],
   months: number,
   inflation = 0,
+  now: Date = new Date(),
 ): ExpensePlan {
   const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const accountIds = new Set(accounts.map((a) => a.id));
@@ -181,7 +202,7 @@ export function buildExpensePlan(
   for (let m = 0; m < months; m++) {
     const f = inflationFactor(inflation, m);
     for (const e of expenses) {
-      const amount = e.monthly_amount * f;
+      const amount = expenseOccurrenceAtMonth(e, m, now) * f;
       if (amount <= 0) continue;
       let remaining = amount;
 
@@ -290,7 +311,7 @@ export function buildIncomeBreakdown(sources: IncomeSource[], months: number, no
 export function buildExpenseBreakdown(expenses: Expense[], months: number, inflation = 0, now: Date = new Date()): Breakdown {
   const series = expenses.map((e) => ({
     id: e.id, name: e.name,
-    values: Array.from({ length: months }, (_, i) => round2(e.monthly_amount * inflationFactor(inflation, i))),
+    values: Array.from({ length: months }, (_, i) => round2(expenseOccurrenceAtMonth(e, i, now) * inflationFactor(inflation, i))),
   }));
   return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
 }
