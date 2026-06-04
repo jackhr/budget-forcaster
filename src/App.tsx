@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import type { Debt, Expense, GroupKind, IncomeSource, ItemFormData, LineItemGroup, ScheduledPayment } from './types';
+import type { Account, Debt, Expense, GroupKind, IncomeSource, ItemFormData, LineItemGroup, ScheduledPayment } from './types';
 import {
-  dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
+  accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildIncomeBreakdown, buildExpenseBreakdown, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -13,6 +13,7 @@ import LineItemTable from './components/LineItemTable';
 import SavingsSummary from './components/SavingsSummary';
 import ScheduledPayments from './components/ScheduledPayments';
 import Debts from './components/Debts';
+import Accounts from './components/Accounts';
 import HeaderControls from './components/HeaderControls';
 import Toolbar from './components/Toolbar';
 import type { PayoffMarker } from './components/NetWorthChart';
@@ -24,7 +25,7 @@ const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
 const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
 
 type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown';
-type BreakdownSection = 'income' | 'expense' | 'debt';
+type BreakdownSection = 'account' | 'income' | 'expense' | 'debt';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
   const pos = new Map(ids.map((id, i) => [id, i]));
@@ -36,13 +37,17 @@ interface Snapshot {
   expenses?: Expense[];
   scheduled_payments?: ScheduledPayment[];
   debts?: Debt[];
+  accounts?: Account[];
   app_settings?: { key: string; value: string }[];
 }
 
 function scenarioSeries(snap: Snapshot, months: number) {
   const s: Record<string, string> = {};
   for (const r of snap.app_settings ?? []) s[r.key] = r.value;
-  const start = parseFloat(s.starting_balance ?? '0') || 0;
+  // Prefer accounts sum; fall back to the legacy single starting_balance.
+  const start = (snap.accounts && snap.accounts.length)
+    ? snap.accounts.reduce((sum, a) => sum + a.balance, 0)
+    : (parseFloat(s.starting_balance ?? '0') || 0);
   const infl = parseFloat(s.inflation_rate ?? '0') || 0;
   const extra = parseFloat(s.debt_extra ?? '0') || 0;
   const strat = (s.debt_strategy as DebtStrategy) ?? 'none';
@@ -72,9 +77,9 @@ export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [payments, setPayments] = useState<ScheduledPayment[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [groups, setGroups] = useState<LineItemGroup[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [startingBalance, setStartingBalance] = useState(0);
   const [currency, setCurrencyState] = useState('USD');
   const [inflation, setInflation] = useState(0);
   const [debtExtra, setDebtExtra] = useState(0);
@@ -93,13 +98,12 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [inc, exp, sched, dbts, grps, scen, settings] = await Promise.all([
+      const [inc, exp, sched, dbts, accts, grps, scen, settings] = await Promise.all([
         incomeApi.getAll(), expensesApi.getAll(), scheduledApi.getAll(),
-        debtsApi.getAll(), groupsApi.getAll(), scenariosApi.getAll(), settingsApi.getAll(),
+        debtsApi.getAll(), accountsApi.getAll(), groupsApi.getAll(), scenariosApi.getAll(), settingsApi.getAll(),
       ]);
       setIncomeSources(inc); setExpenses(exp); setPayments(sched); setDebts(dbts);
-      setGroups(grps); setScenarios(scen);
-      setStartingBalance(parseFloat(settings.starting_balance ?? '0') || 0);
+      setAccounts(accts); setGroups(grps); setScenarios(scen);
       setInflation(parseFloat(settings.inflation_rate ?? '0') || 0);
       setDebtExtra(parseFloat(settings.debt_extra ?? '0') || 0);
       setDebtStrategy((settings.debt_strategy as DebtStrategy) || 'none');
@@ -124,12 +128,13 @@ export default function App() {
   }, [toast]);
 
   // --- Derived series ---
+  const totalCash = accounts.reduce((sum, a) => sum + a.balance, 0);
   // Future expenses charged to a card add to that debt's balance over time.
   const debtCharges = buildDebtCharges(payments, months);
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
   const forecast = buildForecast(incomeSources, expenses, payments, plan.outflow, months, inflation);
-  const savings = buildSavings(incomeSources, expenses, payments, plan.outflow, months, startingBalance, inflation);
+  const savings = buildSavings(incomeSources, expenses, payments, plan.outflow, months, totalCash, inflation);
   const netWorth = buildNetWorth(savings, plan.remaining);
 
   // Payoff markers (one debt name per month it clears).
@@ -148,7 +153,11 @@ export default function App() {
   let breakdown: Breakdown;
   let breakdownTitle: string;
   let breakdownSubtitle: string;
-  if (breakdownSection === 'income') {
+  if (breakdownSection === 'account') {
+    breakdown = buildAccountSeries(accounts, incomeSources, savings);
+    breakdownTitle = 'Accounts Over Time';
+    breakdownSubtitle = 'Balance of each account/savings pile over time, alongside total cash';
+  } else if (breakdownSection === 'income') {
     breakdown = buildIncomeBreakdown(incomeSources, months);
     breakdownTitle = 'Income Breakdown';
     breakdownSubtitle = 'Each income source per month, alongside the combined total';
@@ -184,7 +193,7 @@ export default function App() {
 
   // --- Mutations ---
   const addIncome = (data: ItemFormData) => guard(async () => {
-    const item = await incomeApi.create({ frequency: 'monthly', start_date: null, ...data, group_id: data.group_id ?? null });
+    const item = await incomeApi.create({ frequency: 'monthly', start_date: null, account_id: null, ...data, group_id: data.group_id ?? null });
     setIncomeSources((prev) => [...prev, item]);
   }, 'Could not add income');
   const updateIncome = (id: number, data: ItemFormData) => guard(async () => {
@@ -249,9 +258,30 @@ export default function App() {
     await debtsApi.reorder(ids);
   }, 'Could not reorder debts');
 
-  const changeStartingBalance = (value: number) => guard(async () => {
-    setStartingBalance(value); await settingsApi.set('starting_balance', value);
-  }, 'Could not save current cash');
+  // Account handlers
+  type AccountInput = { name: string; balance: number; is_primary?: 0 | 1 };
+  const addAccount = (data: AccountInput) => guard(async () => {
+    const acct = await accountsApi.create(data);
+    setAccounts((prev) => [...prev, acct]);
+  }, 'Could not add account');
+  const updateAccount = (id: number, data: AccountInput) => guard(async () => {
+    await accountsApi.update(id, data);
+    setAccounts(await accountsApi.getAll()); // refresh (primary flag may have moved)
+  }, 'Could not update account');
+  const deleteAccount = (id: number) => guard(async () => {
+    await accountsApi.delete(id);
+    const [accts, inc] = await Promise.all([accountsApi.getAll(), incomeApi.getAll()]);
+    setAccounts(accts); setIncomeSources(inc); // income may have been reassigned to primary
+  }, 'Could not delete account');
+  const makePrimary = (id: number) => guard(async () => {
+    await accountsApi.update(id, { is_primary: 1 });
+    setAccounts(await accountsApi.getAll());
+  }, 'Could not set primary account');
+  const reorderAccounts = (ids: number[]) => guard(async () => {
+    setAccounts((prev) => reorderBy(prev, ids));
+    await accountsApi.reorder(ids);
+  }, 'Could not reorder accounts');
+
   const changeCurrency = (code: string) => guard(async () => {
     setCurrency(code); setCurrencyState(code); await settingsApi.set('currency', code);
   }, 'Could not save currency');
@@ -360,8 +390,7 @@ export default function App() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <HeaderControls
-            startingBalance={startingBalance}
-            onStartingBalanceChange={changeStartingBalance}
+            totalCash={totalCash}
             currency={currency}
             onCurrencyChange={changeCurrency}
             inflation={inflation}
@@ -410,7 +439,7 @@ export default function App() {
         )}
         {tab === 'savings' && (
           <>
-            <SavingsSummary data={savings} startingBalance={startingBalance} />
+            <SavingsSummary data={savings} startingBalance={totalCash} />
             <Suspense fallback={<ChartFallback />}>
               <SavingsChart data={savings} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} compareData={compareSeries?.savings} compareName={compareScenario?.name} />
             </Suspense>
@@ -424,7 +453,7 @@ export default function App() {
         {tab === 'breakdown' && (
           <>
             <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
-              {([['income', 'Income'], ['expense', 'Expenses'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
+              {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
                 <button
                   key={id}
                   onClick={() => setBreakdownSection(id)}
@@ -457,11 +486,17 @@ export default function App() {
         )}
 
         {/* Shared data — drives all views, always editable */}
+        <Accounts
+          accounts={accounts}
+          onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount}
+          onMakePrimary={makePrimary} onReorder={reorderAccounts}
+        />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 20 }}>
           <LineItemTable
             title="Income Sources" description="Money coming in, by pay frequency"
             items={incomeSources} accentColor="var(--color-income)" totalLabel="Total Per Payment"
             kind="income" groups={groups} showFrequency
+            accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
             onAdd={addIncome} onUpdate={updateIncome} onDelete={deleteIncome}
             onAddGroup={(name) => addGroup(name, 'income')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
             onReorder={reorderIncome} onReorderGroup={reorderGroups}

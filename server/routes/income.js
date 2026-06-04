@@ -24,27 +24,27 @@ router.post('/reorder', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, monthly_amount, frequency, group_id, start_date } = req.body;
+  const { name, monthly_amount, frequency, group_id, start_date, account_id } = req.body;
   if (!name || !isAmount(monthly_amount) || monthly_amount < 0) {
     return res.status(400).json({ error: 'name and a non-negative numeric monthly_amount are required' });
   }
   const stmt = db.prepare(
-    'INSERT INTO income_sources (name, monthly_amount, frequency, group_id, start_date) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO income_sources (name, monthly_amount, frequency, group_id, start_date, account_id) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  const result = stmt.run(name, monthly_amount, normalizeFrequency(frequency), group_id ?? null, start_date || null);
+  const result = stmt.run(name, monthly_amount, normalizeFrequency(frequency), group_id ?? null, start_date || null, account_id ?? null);
   const row = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(row);
 });
 
 router.put('/:id', (req, res) => {
-  const { name, monthly_amount, frequency, group_id, start_date } = req.body;
+  const { name, monthly_amount, frequency, group_id, start_date, account_id } = req.body;
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   db.prepare(
     `UPDATE income_sources
-     SET name = ?, monthly_amount = ?, frequency = ?, group_id = ?, start_date = ?, updated_at = datetime('now')
+     SET name = ?, monthly_amount = ?, frequency = ?, group_id = ?, start_date = ?, account_id = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     name ?? existing.name,
@@ -52,6 +52,7 @@ router.put('/:id', (req, res) => {
     frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency,
     group_id !== undefined ? (group_id ?? null) : existing.group_id,
     start_date !== undefined ? (start_date || null) : existing.start_date,
+    account_id !== undefined ? (account_id ?? null) : existing.account_id,
     id
   );
   const row = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);

@@ -67,6 +67,16 @@ db.exec(`
     snapshot TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    balance REAL NOT NULL DEFAULT 0,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 // --- Migration: add sort_order to reorderable tables ---
@@ -98,6 +108,9 @@ if (!incomeCols.some((c) => c.name === 'frequency')) {
 }
 if (!incomeCols.some((c) => c.name === 'start_date')) {
   db.exec('ALTER TABLE income_sources ADD COLUMN start_date TEXT'); // null = starts now / always
+}
+if (!incomeCols.some((c) => c.name === 'account_id')) {
+  db.exec('ALTER TABLE income_sources ADD COLUMN account_id INTEGER'); // null = primary account
 }
 
 // --- Migration: scheduled_payments from one-off (due_date) to recurring (frequency/start_date/end_date) ---
@@ -182,6 +195,14 @@ if (scheduledCount.count === 0) {
 const startingBalance = db.prepare("SELECT value FROM app_settings WHERE key = 'starting_balance'").get();
 if (!startingBalance) {
   db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('starting_balance', '10000');
+}
+
+// Seed accounts on first run, migrating the legacy single starting_balance into a primary "Cash" account.
+const accountCount = db.prepare('SELECT COUNT(*) as count FROM accounts').get();
+if (accountCount.count === 0) {
+  const sb = db.prepare("SELECT value FROM app_settings WHERE key = 'starting_balance'").get();
+  const bal = sb ? (parseFloat(sb.value) || 0) : 0;
+  db.prepare('INSERT INTO accounts (name, balance, is_primary, sort_order) VALUES (?, ?, 1, 0)').run('Cash', bal);
 }
 
 const debtCount = db.prepare('SELECT COUNT(*) as count FROM debts').get();

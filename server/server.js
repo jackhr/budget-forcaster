@@ -13,6 +13,7 @@ app.use('/api/scheduled', require('./routes/scheduled'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/debts', require('./routes/debts'));
+app.use('/api/accounts', require('./routes/accounts'));
 app.use('/api/scenarios', require('./routes/scenarios'));
 app.use('/api', require('./routes/data'));
 

@@ -7,6 +7,7 @@ import AddItemForm from './AddItemForm';
 import ConfirmButton from './ConfirmButton';
 
 type DragProps = React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 
 interface Props {
   title: string;
@@ -16,6 +17,7 @@ interface Props {
   totalLabel: string;
   kind: GroupKind;
   groups: LineItemGroup[];
+  accounts?: AccountOpt[];
   showFrequency?: boolean;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -61,12 +63,13 @@ interface GroupBlockProps {
   onAdd: (data: ItemFormData) => Promise<void>;
   onRenameGroup: (id: number, name: string) => Promise<void>;
   onDeleteGroup: (id: number) => Promise<void>;
+  accounts?: AccountOpt[];
   dragFor: (item: LineItem) => DragProps;
   draggingId: number | null;
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -150,6 +153,7 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
               accentColor={accentColor}
               showFrequency={showFrequency}
               groups={groups}
+              accounts={accounts}
               drag={dragFor(item)}
               dragging={draggingId === item.id}
             />
@@ -160,7 +164,7 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
             </p>
           )}
           <div style={{ padding: '0 12px 6px' }}>
-            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder="item" showFrequency={showFrequency} groupId={group.id} />
+            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder="item" showFrequency={showFrequency} groupId={group.id} accounts={accounts} />
           </div>
         </div>
       )}
@@ -217,7 +221,7 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, showFrequency, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
+export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, showFrequency, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
@@ -268,6 +272,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
           onAdd={onAdd}
           onRenameGroup={onRenameGroup}
           onDeleteGroup={onDeleteGroup}
+          accounts={accounts}
           dragFor={dnd.handlers}
           draggingId={dnd.dragId}
           groupDrag={groupDnd.handlers(group)}
@@ -285,6 +290,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
             accentColor={accentColor}
             showFrequency={showFrequency}
             groups={myGroups}
+            accounts={accounts}
             drag={dnd.handlers(item)}
             dragging={dnd.dragId === item.id}
           />
@@ -301,6 +307,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
         accentColor={accentColor}
         placeholder={title.replace(/s$/, '')}
         showFrequency={showFrequency}
+        accounts={accounts}
       />
 
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

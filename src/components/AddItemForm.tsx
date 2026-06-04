@@ -2,21 +2,27 @@ import { useState } from 'react';
 import type { Frequency, ItemFormData } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 
+interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
+
 interface Props {
   onAdd: (data: ItemFormData) => Promise<void>;
   accentColor: string;
   placeholder: string;
   showFrequency?: boolean;
   groupId?: number | null;
+  accounts?: AccountOpt[];
 }
 
-export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, groupId }: Props) {
+export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, groupId, accounts }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('monthly');
   const [start, setStart] = useState('');
+  const [account, setAccount] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const primaryId = accounts?.find((a) => a.is_primary)?.id ?? null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,7 +32,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     await onAdd({
       name: name.trim(),
       monthly_amount: amt,
-      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
+      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null, account_id: account } : {}),
       ...(groupId != null ? { group_id: groupId } : {}),
     });
     setSaving(false);
@@ -34,6 +40,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     setAmount('');
     setFrequency('monthly');
     setStart('');
+    setAccount(null);
     setOpen(false);
   }
 
@@ -125,6 +132,21 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
             padding: '6px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
           }}
         />
+      )}
+      {showFrequency && accounts && accounts.length > 0 && (
+        <select
+          value={account ?? primaryId ?? ''}
+          onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)}
+          title="Which account this income lands in"
+          style={{
+            flex: '0 1 130px',
+            background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
+            padding: '6px 10px', fontSize: 13, fontFamily: 'inherit',
+          }}
+        >
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+        </select>
       )}
       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
         <button

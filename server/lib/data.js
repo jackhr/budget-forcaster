@@ -2,6 +2,7 @@
 
 // Groups first so group_id references resolve naturally on import.
 const TABLES = [
+  'accounts',
   'line_item_groups',
   'income_sources',
   'expenses',

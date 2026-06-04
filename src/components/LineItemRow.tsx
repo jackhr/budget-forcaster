@@ -5,6 +5,8 @@ import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 
+interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
+
 interface Props {
   item: LineItem;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
@@ -12,6 +14,7 @@ interface Props {
   accentColor: string;
   showFrequency?: boolean;
   groups?: LineItemGroup[];
+  accounts?: AccountOpt[];
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
   dragging?: boolean;
 }
@@ -20,15 +23,18 @@ function hasFrequency(item: LineItem): item is IncomeSource {
   return 'frequency' in item;
 }
 
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, groups, drag, dragging }: Props) {
+export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, groups, accounts, drag, dragging }: Props) {
   const itemFreq = hasFrequency(item) ? item.frequency : 'monthly';
   const itemStart = hasFrequency(item) ? item.start_date : null;
+  const itemAccount = hasFrequency(item) ? item.account_id : null;
+  const primaryId = accounts?.find((a) => a.is_primary)?.id ?? null;
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
   const [amount, setAmount] = useState(String(item.monthly_amount));
   const [frequency, setFrequency] = useState<Frequency>(itemFreq);
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
   const [start, setStart] = useState(itemStart ? itemStart.slice(0, 7) : '');
+  const [account, setAccount] = useState<number | null>(itemAccount);
   const [saving, setSaving] = useState(false);
 
   function openEditor() {
@@ -37,6 +43,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setFrequency(itemFreq);
     setGroupId(item.group_id);
     setStart(itemStart ? itemStart.slice(0, 7) : '');
+    setAccount(itemAccount);
     setEditing(true);
   }
 
@@ -52,7 +59,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       name: name.trim(),
       monthly_amount: amt,
       group_id: groupId,
-      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
+      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null, account_id: account } : {}),
     });
     setSaving(false);
     setEditing(false);
@@ -227,6 +234,25 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
+                </select>
+              </label>
+            )}
+
+            {showFrequency && accounts && accounts.length > 0 && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Lands in account
+                </span>
+                <select
+                  value={account ?? primaryId ?? ''}
+                  onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)}
+                  style={{
+                    background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
+                    padding: '8px 10px', fontSize: 13, fontFamily: 'inherit',
+                  }}
+                >
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
                 </select>
               </label>
             )}

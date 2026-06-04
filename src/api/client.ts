@@ -1,4 +1,4 @@
-import type { Debt, Expense, GroupKind, IncomeSource, LineItemGroup, ScheduledPayment } from '../types';
+import type { Account, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, ScheduledPayment } from '../types';
 
 const BASE = '/api';
 
@@ -84,6 +84,18 @@ export const dataApi = {
 };
 
 type DebtInput = Omit<Debt, 'id' | 'created_at' | 'updated_at'>;
+
+type AccountInput = Omit<Account, 'id' | 'created_at' | 'updated_at'>;
+
+export const accountsApi = {
+  getAll: () => req<Account[]>('/accounts'),
+  create: (data: { name: string; balance: number; is_primary?: 0 | 1 }) =>
+    req<Account>('/accounts', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: Partial<AccountInput>) =>
+    req<Account>(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => req<void>(`/accounts/${id}`, { method: 'DELETE' }),
+  reorder: (ids: number[]) => reorder('accounts', ids),
+};
 
 export const debtsApi = {
   getAll: () => req<Debt[]>('/debts'),

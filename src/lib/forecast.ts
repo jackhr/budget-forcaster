@@ -1,4 +1,5 @@
 import type {
+  Account,
   Expense,
   ForecastPoint,
   Frequency,
@@ -237,6 +238,36 @@ export function buildExpenseBreakdown(expenses: Expense[], months: number, infla
     values: Array.from({ length: months }, (_, i) => round2(e.monthly_amount * inflationFactor(inflation, i))),
   }));
   return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
+}
+
+// Per-account balance over time. Income lands in its assigned account (or the primary
+// account when unassigned); the primary account bears all general outflows.
+// The series sum equals the savings balance, so `total` mirrors the Savings chart.
+export function buildAccountSeries(
+  accounts: Account[],
+  sources: IncomeSource[],
+  savings: SavingsPoint[],
+  now: Date = new Date(),
+): Breakdown {
+  const months = savings.length;
+  const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
+
+  const series = accounts.map((acct) => {
+    const mine = sources.filter((s) =>
+      s.account_id === acct.id || (s.account_id == null && acct.id === primaryId));
+    let bal = acct.balance;
+    const values = Array.from({ length: months }, (_, i) => {
+      const inflow = mine.reduce((sum, s) => sum + incomeCashAtMonth(s, i, now), 0);
+      const outflow = acct.id === primaryId
+        ? (savings[i].expenses + savings[i].scheduledOut + savings[i].debtOut)
+        : 0;
+      bal += inflow - outflow;
+      return round2(bal);
+    });
+    return { id: acct.id, name: acct.name, values };
+  });
+
+  return { labels: savings.map((s) => s.label), total: savings.map((s) => s.balance), series };
 }
 
 export function buildNetWorth(savings: SavingsPoint[], debtRemaining: number[]): NetWorthPoint[] {

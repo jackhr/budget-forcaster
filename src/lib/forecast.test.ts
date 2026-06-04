@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, monthOffset } from './forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildAccountSeries, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
-import type { Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
+import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
 const NOW = new Date(2026, 0, 1); // Jan 2026, deterministic
 
 function income(over: Partial<IncomeSource>): IncomeSource {
-  return { id: 1, name: 'I', monthly_amount: 0, frequency: 'monthly', group_id: null, start_date: null, created_at: '', updated_at: '', ...over };
+  return { id: 1, name: 'I', monthly_amount: 0, frequency: 'monthly', group_id: null, start_date: null, account_id: null, created_at: '', updated_at: '', ...over };
 }
 function expense(over: Partial<Expense>): Expense {
   return { id: 1, name: 'E', monthly_amount: 0, group_id: null, created_at: '', updated_at: '', ...over };
@@ -85,6 +85,48 @@ describe('debt-funded future expenses', () => {
     expect(plan.remaining[0]).toBe(0);
     expect(plan.remaining[1]).toBeGreaterThan(1400);
     expect(plan.outflow[1]).toBeCloseTo(500, 5);
+  });
+});
+
+describe('buildAccountSeries', () => {
+  const acct = (id: number, name: string, balance: number, primary = false): Account => ({
+    id, name, balance, is_primary: primary ? 1 : 0, sort_order: null, created_at: '', updated_at: '',
+  });
+
+  it('routes income to its account; primary bears outflows; sum equals savings balance', () => {
+    const accounts = [acct(1, 'Checking', 1000, true), acct(2, 'Savings', 500)];
+    const sources = [
+      income({ id: 10, monthly_amount: 2000, account_id: 1 }), // into Checking
+      income({ id: 11, monthly_amount: 300, account_id: 2 }),  // into Savings
+    ];
+    const expenses = [expense({ monthly_amount: 800 })];
+    const sv = buildSavings(sources, expenses, [], [], 3, 1500, 0, NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, NOW);
+
+    // Savings only grows from its assigned income (no outflows there).
+    const savingsSeries = bd.series.find((s) => s.id === 2)!;
+    expect(savingsSeries.values[0]).toBe(800);  // 500 + 300
+    expect(savingsSeries.values[1]).toBe(1100);
+
+    // Checking gets its income minus all expenses.
+    const checking = bd.series.find((s) => s.id === 1)!;
+    expect(checking.values[0]).toBe(1000 + 2000 - 800);
+
+    // The per-account total mirrors the savings balance each month.
+    bd.total.forEach((t, i) => {
+      const sum = bd.series.reduce((acc, s) => acc + s.values[i], 0);
+      expect(Math.round(sum)).toBe(Math.round(t));
+      expect(t).toBe(sv[i].balance);
+    });
+  });
+
+  it('sends unassigned income to the primary account', () => {
+    const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Other', 0)];
+    const sources = [income({ id: 9, monthly_amount: 100, account_id: null })];
+    const sv = buildSavings(sources, [], [], [], 2, 0, 0, NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, NOW);
+    expect(bd.series.find((s) => s.id === 1)!.values[0]).toBe(100);
+    expect(bd.series.find((s) => s.id === 2)!.values[0]).toBe(0);
   });
 });
 

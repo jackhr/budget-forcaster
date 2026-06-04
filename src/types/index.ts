@@ -6,6 +6,16 @@ export type Frequency =
   | 'annually'
   | 'one-time';
 
+export interface Account {
+  id: number;
+  name: string;
+  balance: number;
+  is_primary: 0 | 1;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type GroupKind = 'income' | 'expense' | 'debt';
 
 export interface LineItemGroup {
@@ -23,6 +33,7 @@ export interface IncomeSource {
   frequency: Frequency;
   group_id: number | null;
   start_date: string | null; // YYYY-MM-DD; null = starts now / always
+  account_id: number | null; // which cash account it lands in; null = primary
   created_at: string;
   updated_at: string;
 }
@@ -100,4 +111,5 @@ export interface ItemFormData {
   frequency?: Frequency;
   group_id?: number | null;
   start_date?: string | null;
+  account_id?: number | null;
 }
