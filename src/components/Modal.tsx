@@ -10,11 +10,16 @@ export default function Modal({ title, onClose, children }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
+  // Keep the latest onClose without making the focus effect depend on its identity
+  // (an inline onClose would otherwise re-run the effect every render and steal focus).
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+
   useEffect(() => {
     previouslyFocused.current = document.activeElement as HTMLElement | null;
 
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key === 'Escape') { onCloseRef.current(); return; }
       if (e.key === 'Tab') {
         // Trap focus within the dialog.
         const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
@@ -45,7 +50,9 @@ export default function Modal({ title, onClose, children }: Props) {
       document.body.style.overflow = '';
       previouslyFocused.current?.focus?.();
     };
-  }, [onClose]);
+    // Mount/unmount only — must not re-run on each render or it steals input focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
