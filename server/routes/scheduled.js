@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../db/database');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
-const VALID_FUNDING = ['cash', 'income', 'debt'];
+const VALID_FUNDING = ['cash', 'income', 'debt', 'account'];
 
 function normalizeFrequency(freq, fallback = 'one-time') {
   return VALID_FREQUENCIES.includes(freq) ? freq : fallback;

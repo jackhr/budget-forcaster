@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildAccountSeries, monthOffset } from './forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildAccountSeries, buildScheduledOutByAccount, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
 import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
@@ -140,7 +140,7 @@ describe('buildAccountSeries', () => {
     ];
     const ep = buildExpensePlan([expense({ monthly_amount: 800 })], accounts, [], 3, 0);
     const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 3, 1500, NOW);
-    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), NOW);
 
     const savingsSeries = bd.series.find((s) => s.id === 2)!;
     expect(savingsSeries.values[0]).toBe(800);  // 500 + 300
@@ -161,9 +161,34 @@ describe('buildAccountSeries', () => {
     const sources = [income({ id: 9, monthly_amount: 100, account_id: null })];
     const ep = buildExpensePlan([], accounts, [], 2, 0);
     const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 2, 0, NOW);
-    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), NOW);
     expect(bd.series.find((s) => s.id === 1)!.values[0]).toBe(100);
     expect(bd.series.find((s) => s.id === 2)!.values[0]).toBe(0);
+  });
+});
+
+describe('future-expense funding source (account vs card)', () => {
+  const pay = (over: Partial<ScheduledPayment>): ScheduledPayment => ({
+    id: 1, name: 'P', amount: 100, frequency: 'monthly', start_date: '2026-01-01', end_date: null,
+    funding_source_type: 'account', funding_source_id: null, created_at: '', updated_at: '', ...over,
+  });
+
+  it('attributes an account-funded payment to that account, not primary', () => {
+    const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Vacation', 0)];
+    const payments = [pay({ amount: 100, funding_source_type: 'account', funding_source_id: 2 })];
+    const map = buildScheduledOutByAccount(payments, accounts, 2, NOW);
+    expect(map.get(2)![0]).toBe(100);
+    expect(map.get(1)![0]).toBe(0);
+  });
+
+  it('routes legacy cash funding to the primary account; skips card-funded', () => {
+    const accounts = [acct(1, 'Primary', 0, true)];
+    const payments = [
+      pay({ id: 1, amount: 50, funding_source_type: 'cash', funding_source_id: null }),
+      pay({ id: 2, amount: 999, funding_source_type: 'debt', funding_source_id: 7 }),
+    ];
+    const map = buildScheduledOutByAccount(payments, accounts, 1, NOW);
+    expect(map.get(1)![0]).toBe(50); // cash -> primary; debt excluded
   });
 });
 

@@ -73,7 +73,7 @@ export interface Debt {
   updated_at: string;
 }
 
-export type FundingSourceType = 'cash' | 'income' | 'debt';
+export type FundingSourceType = 'cash' | 'income' | 'debt' | 'account';
 
 export interface ScheduledPayment {
   id: number;

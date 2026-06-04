@@ -4,7 +4,7 @@ import {
   accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -158,7 +158,8 @@ export default function App() {
   let breakdownTitle: string;
   let breakdownSubtitle: string;
   if (breakdownSection === 'account') {
-    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount);
+    const scheduledByAccount = buildScheduledOutByAccount(payments, accounts, months);
+    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, scheduledByAccount);
     breakdownTitle = 'Accounts Over Time';
     breakdownSubtitle = 'Balance of each account/savings pile over time, alongside total cash';
   } else if (breakdownSection === 'income') {
@@ -522,7 +523,7 @@ export default function App() {
         </div>
         <ScheduledPayments
           payments={payments}
-          incomes={incomeSources.map((i) => ({ id: i.id, name: i.name, group_id: i.group_id }))}
+          accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
           debts={debts.map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))}
           groups={groups}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}

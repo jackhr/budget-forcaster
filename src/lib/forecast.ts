@@ -319,11 +319,39 @@ export function buildExpenseBreakdown(expenses: Expense[], months: number, infla
 // Per-account balance over time. Income lands in its assigned account (or the primary
 // account when unassigned); the primary account bears all general outflows.
 // The series sum equals the savings balance, so `total` mirrors the Savings chart.
+// Per-account cash outflow from future expenses (account-funded -> that account;
+// debt-funded skipped; legacy cash/income -> primary account).
+export function buildScheduledOutByAccount(
+  payments: ScheduledPayment[],
+  accounts: Account[],
+  months: number,
+  now: Date = new Date(),
+): Map<number, number[]> {
+  const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
+  const accountIds = new Set(accounts.map((a) => a.id));
+  const map = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
+  for (const p of payments) {
+    if (p.funding_source_type === 'debt') continue; // charged to a card, not cash
+    const acctId = (p.funding_source_type === 'account' && p.funding_source_id != null && accountIds.has(p.funding_source_id))
+      ? p.funding_source_id
+      : primaryId;
+    if (acctId == null) continue;
+    const arr = map.get(acctId)!;
+    for (let m = 0; m < months; m++) {
+      const c = paymentCashAtMonth(p, m, now);
+      if (c > 0) arr[m] += c;
+    }
+  }
+  for (const arr of map.values()) for (let m = 0; m < months; m++) arr[m] = round2(arr[m]);
+  return map;
+}
+
 export function buildAccountSeries(
   accounts: Account[],
   sources: IncomeSource[],
   savings: SavingsPoint[],
   expenseOutByAccount: Map<number, number[]>,
+  scheduledOutByAccount: Map<number, number[]>,
   now: Date = new Date(),
 ): Breakdown {
   const months = savings.length;
@@ -333,13 +361,14 @@ export function buildAccountSeries(
     const mine = sources.filter((s) =>
       s.account_id === acct.id || (s.account_id == null && acct.id === primaryId));
     const expenseOut = expenseOutByAccount.get(acct.id);
+    const scheduledOut = scheduledOutByAccount.get(acct.id);
     let bal = acct.balance;
     const values = Array.from({ length: months }, (_, i) => {
       const inflow = mine.reduce((sum, s) => sum + incomeCashAtMonth(s, i, now), 0);
-      // Each account bears its allocated expense cash; the primary also bears
-      // future-expense and debt-payment outflows.
-      const outflow = (expenseOut?.[i] ?? 0)
-        + (acct.id === primaryId ? savings[i].scheduledOut + savings[i].debtOut : 0);
+      // Each account bears its allocated expense + future-expense cash;
+      // the primary also bears debt payments.
+      const outflow = (expenseOut?.[i] ?? 0) + (scheduledOut?.[i] ?? 0)
+        + (acct.id === primaryId ? savings[i].debtOut : 0);
       bal += inflow - outflow;
       return round2(bal);
     });

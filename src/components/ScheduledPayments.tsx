@@ -6,6 +6,7 @@ import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 
 interface NamedSource { id: number; name: string; group_id: number | null }
+interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 
 interface PaymentInput {
   name: string;
@@ -19,7 +20,7 @@ interface PaymentInput {
 
 interface Props {
   payments: ScheduledPayment[];
-  incomes: NamedSource[];
+  accounts: AccountOpt[];
   debts: NamedSource[];
   groups: LineItemGroup[];
   onAdd: (data: PaymentInput) => Promise<void>;
@@ -27,44 +28,41 @@ interface Props {
   onDelete: (id: number) => Promise<void>;
 }
 
-// Build <optgroup>s for a funding section, one per item-group (optgroups can't nest in HTML).
-function fundingOptionGroups(
-  sources: NamedSource[],
-  groups: LineItemGroup[],
-  type: 'income' | 'debt',
-  sectionLabel: string,
-) {
-  const out: React.ReactNode[] = [];
-  const opt = (s: NamedSource) => <option key={`${type}${s.id}`} value={encodeFunding(type, s.id)}>{s.name}</option>;
-  for (const g of groups) {
-    const members = sources.filter((s) => s.group_id === g.id);
-    if (members.length) out.push(<optgroup key={`${type}-g${g.id}`} label={`${sectionLabel} · ${g.name}`}>{members.map(opt)}</optgroup>);
-  }
-  const ungrouped = sources.filter((s) => s.group_id == null);
-  if (ungrouped.length) out.push(<optgroup key={`${type}-none`} label={sectionLabel}>{ungrouped.map(opt)}</optgroup>);
-  return out;
-}
-
 const ACCENT = 'var(--color-net-neg)';
 
 // Encodes/decodes the "Paid from" <select> value as "type:id".
-function encodeFunding(type: FundingSourceType, id: number | null): string {
-  return type === 'cash' ? 'cash' : `${type}:${id}`;
+function encodeFunding(type: 'account' | 'debt', id: number): string {
+  return `${type}:${id}`;
 }
 function decodeFunding(value: string): { type: FundingSourceType; id: number | null } {
-  if (value === 'cash') return { type: 'cash', id: null };
   const [type, id] = value.split(':');
   return { type: type as FundingSourceType, id: Number(id) };
 }
 
-function fundingLabel(p: ScheduledPayment, incomes: NamedSource[], debts: NamedSource[]): string {
-  if (p.funding_source_type === 'debt') {
-    return debts.find((d) => d.id === p.funding_source_id)?.name ?? 'card';
+// <optgroup>s for credit lines, one per debt group (optgroups can't nest in HTML).
+function debtOptionGroups(debts: NamedSource[], groups: LineItemGroup[]) {
+  const out: React.ReactNode[] = [];
+  const opt = (s: NamedSource) => <option key={`debt${s.id}`} value={encodeFunding('debt', s.id)}>{s.name}</option>;
+  for (const g of groups) {
+    const members = debts.filter((s) => s.group_id === g.id);
+    if (members.length) out.push(<optgroup key={`debt-g${g.id}`} label={`💳 Card · ${g.name}`}>{members.map(opt)}</optgroup>);
   }
-  if (p.funding_source_type === 'income') {
-    return incomes.find((i) => i.id === p.funding_source_id)?.name ?? 'income';
-  }
-  return 'Cash';
+  const ungrouped = debts.filter((s) => s.group_id == null);
+  if (ungrouped.length) out.push(<optgroup key="debt-none" label="💳 Credit lines / cards">{ungrouped.map(opt)}</optgroup>);
+  return out;
+}
+
+// The select value for a payment, mapping legacy cash/income funding to the primary account.
+function fundingValue(p: { funding_source_type: FundingSourceType; funding_source_id: number | null }, primaryId: number | null): string {
+  if (p.funding_source_type === 'debt' && p.funding_source_id != null) return encodeFunding('debt', p.funding_source_id);
+  if (p.funding_source_type === 'account' && p.funding_source_id != null) return encodeFunding('account', p.funding_source_id);
+  return primaryId != null ? encodeFunding('account', primaryId) : '';
+}
+
+function fundingLabel(p: ScheduledPayment, accounts: AccountOpt[], debts: NamedSource[]): string {
+  if (p.funding_source_type === 'debt') return debts.find((d) => d.id === p.funding_source_id)?.name ?? 'card';
+  if (p.funding_source_type === 'account') return accounts.find((a) => a.id === p.funding_source_id)?.name ?? 'account';
+  return accounts.find((a) => a.is_primary)?.name ?? 'Cash'; // legacy cash/income -> primary
 }
 
 function formatMonth(date: string) {
@@ -104,20 +102,21 @@ const monthInputStyle: React.CSSProperties = {
 interface EditorProps {
   title: string;
   initial: PaymentInput;
-  incomes: NamedSource[];
+  accounts: AccountOpt[];
   debts: NamedSource[];
   groups: LineItemGroup[];
   onCancel: () => void;
   onSubmit: (data: PaymentInput) => Promise<void>;
 }
 
-function PaymentEditor({ title, initial, incomes, debts, groups, onCancel, onSubmit }: EditorProps) {
+function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSubmit }: EditorProps) {
+  const primaryId = accounts.find((a) => a.is_primary)?.id ?? accounts[0]?.id ?? null;
   const [name, setName] = useState(initial.name);
   const [amount, setAmount] = useState(String(initial.amount || ''));
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
   const [start, setStart] = useState(initial.start_date.slice(0, 7));
   const [end, setEnd] = useState(initial.end_date ? initial.end_date.slice(0, 7) : '');
-  const [funding, setFunding] = useState(encodeFunding(initial.funding_source_type, initial.funding_source_id));
+  const [funding, setFunding] = useState(fundingValue(initial, primaryId));
   const [saving, setSaving] = useState(false);
 
   const recurring = frequency !== 'one-time';
@@ -189,9 +188,12 @@ function PaymentEditor({ title, initial, incomes, debts, groups, onCancel, onSub
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={labelStyle}>Paid from</span>
           <select value={funding} onChange={(e) => setFunding(e.target.value)} style={monthInputStyle}>
-            <option value="cash">Cash / Savings</option>
-            {fundingOptionGroups(incomes, groups.filter((g) => g.kind === 'income'), 'income', '💵 Income')}
-            {fundingOptionGroups(debts, groups.filter((g) => g.kind === 'debt'), 'debt', '💳 Card')}
+            {accounts.length > 0 && (
+              <optgroup label="💵 Accounts (cash)">
+                {accounts.map((a) => <option key={`a${a.id}`} value={encodeFunding('account', a.id)}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+              </optgroup>
+            )}
+            {debtOptionGroups(debts, groups.filter((g) => g.kind === 'debt'))}
           </select>
         </label>
         {fundingIsDebt && (
@@ -225,7 +227,7 @@ function PaymentEditor({ title, initial, incomes, debts, groups, onCancel, onSub
   );
 }
 
-export default function ScheduledPayments({ payments, incomes, debts, groups, onAdd, onUpdate, onDelete }: Props) {
+export default function ScheduledPayments({ payments, accounts, debts, groups, onAdd, onUpdate, onDelete }: Props) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
@@ -287,7 +289,7 @@ export default function ScheduledPayments({ payments, incomes, debts, groups, on
                 background: p.funding_source_type === 'debt' ? 'var(--color-net-neg)1f' : 'var(--color-surface-2)',
                 border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
               }}>
-                {p.funding_source_type === 'debt' ? '💳 ' : '↳ '}{fundingLabel(p, incomes, debts)}
+                {p.funding_source_type === 'debt' ? '💳 ' : '↳ '}{fundingLabel(p, accounts, debts)}
               </span>
             </div>
             <span style={{ fontWeight: 600, color: ACCENT }}>
@@ -322,7 +324,7 @@ export default function ScheduledPayments({ payments, incomes, debts, groups, on
       {adding && (
         <PaymentEditor
           title="Add Future Expense"
-          incomes={incomes}
+          accounts={accounts}
           debts={debts}
           groups={groups}
           initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null }}
@@ -333,7 +335,7 @@ export default function ScheduledPayments({ payments, incomes, debts, groups, on
       {editingPayment && (
         <PaymentEditor
           title={`Edit ${editingPayment.name}`}
-          incomes={incomes}
+          accounts={accounts}
           debts={debts}
           groups={groups}
           initial={{
