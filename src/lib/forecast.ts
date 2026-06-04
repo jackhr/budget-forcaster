@@ -316,6 +316,15 @@ export function buildExpenseBreakdown(expenses: Expense[], months: number, infla
   return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
 }
 
+// Per-future-expense amount over the horizon, honoring frequency + window (+ total).
+export function buildFutureExpenseBreakdown(payments: ScheduledPayment[], months: number, now: Date = new Date()): Breakdown {
+  const series = payments.map((p) => ({
+    id: p.id, name: p.name,
+    values: Array.from({ length: months }, (_, i) => round2(paymentCashAtMonth(p, i, now))),
+  }));
+  return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
+}
+
 // Per-account balance over time. Income lands in its assigned account (or the primary
 // account when unassigned); the primary account bears all general outflows.
 // The series sum equals the savings balance, so `total` mirrors the Savings chart.

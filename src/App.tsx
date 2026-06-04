@@ -4,7 +4,7 @@ import {
   accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -25,7 +25,7 @@ const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
 const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
 
 type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown';
-type BreakdownSection = 'account' | 'income' | 'expense' | 'debt';
+type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
   const pos = new Map(ids.map((id, i) => [id, i]));
@@ -171,6 +171,10 @@ export default function App() {
     breakdown = buildExpenseBreakdown(expenses, months, inflation);
     breakdownTitle = 'Expense Breakdown';
     breakdownSubtitle = 'Each expense per month (inflation-adjusted), alongside the combined total';
+  } else if (breakdownSection === 'future') {
+    breakdown = buildFutureExpenseBreakdown(payments, months);
+    breakdownTitle = 'Future Expense Breakdown';
+    breakdownSubtitle = 'Each future expense per month, alongside the combined total';
   } else {
     breakdown = {
       labels: savings.map((s) => s.label),
@@ -463,7 +467,7 @@ export default function App() {
         {tab === 'breakdown' && (
           <>
             <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
-              {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
+              {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['future', 'Future'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
                 <button
                   key={id}
                   onClick={() => setBreakdownSection(id)}
