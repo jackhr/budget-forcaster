@@ -38,11 +38,22 @@ export interface IncomeSource {
   updated_at: string;
 }
 
+export type AllocationSourceType = 'account' | 'debt';
+export type AllocationType = 'percent' | 'fixed';
+
+export interface ExpenseAllocation {
+  source_type: AllocationSourceType; // pay from a cash account or a debt/credit line
+  source_id: number | null;
+  alloc_type: AllocationType; // a percentage of the bill, or a fixed dollar amount
+  value: number;
+}
+
 export interface Expense {
   id: number;
   name: string;
   monthly_amount: number;
   group_id: number | null;
+  funding_allocations: ExpenseAllocation[]; // remainder draws from the primary account
   created_at: string;
   updated_at: string;
 }
@@ -112,4 +123,5 @@ export interface ItemFormData {
   group_id?: number | null;
   start_date?: string | null;
   account_id?: number | null;
+  funding_allocations?: ExpenseAllocation[];
 }

@@ -8,6 +8,7 @@ import ConfirmButton from './ConfirmButton';
 
 type DragProps = React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
+interface NamedSource { id: number; name: string }
 
 interface Props {
   title: string;
@@ -18,6 +19,8 @@ interface Props {
   kind: GroupKind;
   groups: LineItemGroup[];
   accounts?: AccountOpt[];
+  debts?: NamedSource[];
+  showFunding?: boolean;
   showFrequency?: boolean;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -64,12 +67,14 @@ interface GroupBlockProps {
   onRenameGroup: (id: number, name: string) => Promise<void>;
   onDeleteGroup: (id: number) => Promise<void>;
   accounts?: AccountOpt[];
+  debts?: NamedSource[];
+  showFunding?: boolean;
   dragFor: (item: LineItem) => DragProps;
   draggingId: number | null;
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -152,8 +157,10 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
               onDelete={onDelete}
               accentColor={accentColor}
               showFrequency={showFrequency}
+              showFunding={showFunding}
               groups={groups}
               accounts={accounts}
+              debts={debts}
               drag={dragFor(item)}
               dragging={draggingId === item.id}
             />
@@ -221,7 +228,7 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, showFrequency, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
+export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
@@ -273,6 +280,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
           onRenameGroup={onRenameGroup}
           onDeleteGroup={onDeleteGroup}
           accounts={accounts}
+          debts={debts}
+          showFunding={showFunding}
           dragFor={dnd.handlers}
           draggingId={dnd.dragId}
           groupDrag={groupDnd.handlers(group)}
@@ -289,8 +298,10 @@ export default function LineItemTable({ title, description, items, accentColor, 
             onDelete={onDelete}
             accentColor={accentColor}
             showFrequency={showFrequency}
+            showFunding={showFunding}
             groups={myGroups}
             accounts={accounts}
+            debts={debts}
             drag={dnd.handlers(item)}
             dragging={dnd.dragId === item.id}
           />

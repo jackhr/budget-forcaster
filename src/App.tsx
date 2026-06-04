@@ -4,7 +4,7 @@ import {
   accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -55,10 +55,12 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const exp = snap.expenses ?? [];
   const pay = snap.scheduled_payments ?? [];
   const debts = snap.debts ?? [];
-  const charges = buildDebtCharges(pay, months);
+  const accts = snap.accounts ?? [];
+  const ep = buildExpensePlan(exp, accts, debts, months, infl);
+  const charges = [...buildDebtCharges(pay, months), ...ep.charges];
   const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges);
-  const fc = buildForecast(inc, exp, pay, plan.outflow, months, infl);
-  const sv = buildSavings(inc, exp, pay, plan.outflow, months, start, infl);
+  const fc = buildForecast(inc, ep.ongoingCashOut, pay, plan.outflow, months);
+  const sv = buildSavings(inc, ep.ongoingCashOut, pay, plan.outflow, months, start);
   const nw = buildNetWorth(sv, plan.remaining);
   return { forecast: fc.map((p) => p.net), savings: sv.map((p) => p.balance), networth: nw.map((p) => p.netWorth) };
 }
@@ -129,12 +131,14 @@ export default function App() {
 
   // --- Derived series ---
   const totalCash = accounts.reduce((sum, a) => sum + a.balance, 0);
-  // Future expenses charged to a card add to that debt's balance over time.
-  const debtCharges = buildDebtCharges(payments, months);
+  // Split-funded expenses: cash portions reduce accounts; credit-line portions charge cards.
+  const expensePlan = buildExpensePlan(expenses, accounts, debts, months, inflation);
+  // Future expenses charged to a card + expense card-portions both bill the debt over time.
+  const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
-  const forecast = buildForecast(incomeSources, expenses, payments, plan.outflow, months, inflation);
-  const savings = buildSavings(incomeSources, expenses, payments, plan.outflow, months, totalCash, inflation);
+  const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, plan.outflow, months);
+  const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, plan.outflow, months, totalCash);
   const netWorth = buildNetWorth(savings, plan.remaining);
 
   // Payoff markers (one debt name per month it clears).
@@ -154,7 +158,7 @@ export default function App() {
   let breakdownTitle: string;
   let breakdownSubtitle: string;
   if (breakdownSection === 'account') {
-    breakdown = buildAccountSeries(accounts, incomeSources, savings);
+    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount);
     breakdownTitle = 'Accounts Over Time';
     breakdownSubtitle = 'Balance of each account/savings pile over time, alongside total cash';
   } else if (breakdownSection === 'income') {
@@ -210,7 +214,10 @@ export default function App() {
   }, 'Could not reorder income');
 
   const addExpense = (data: ItemFormData) => guard(async () => {
-    const item = await expensesApi.create({ name: data.name, monthly_amount: data.monthly_amount, group_id: data.group_id ?? null });
+    const item = await expensesApi.create({
+      name: data.name, monthly_amount: data.monthly_amount,
+      group_id: data.group_id ?? null, funding_allocations: data.funding_allocations ?? [],
+    });
     setExpenses((prev) => [...prev, item]);
   }, 'Could not add expense');
   const updateExpense = (id: number, data: ItemFormData) => guard(async () => {
@@ -502,9 +509,12 @@ export default function App() {
             onReorder={reorderIncome} onReorderGroup={reorderGroups}
           />
           <LineItemTable
-            title="Expenses" description="Recurring costs happening now, every month"
+            title="Expenses" description="Recurring costs — split across cash & credit via Edit"
             items={expenses} accentColor="var(--color-expense)" totalLabel="Total Monthly Expenses"
             kind="expense" groups={groups}
+            accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
+            debts={debts.map((d) => ({ id: d.id, name: d.name }))}
+            showFunding
             onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}
             onAddGroup={(name) => addGroup(name, 'expense')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
             onReorder={reorderExpenses} onReorderGroup={reorderGroups}

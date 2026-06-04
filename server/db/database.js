@@ -100,6 +100,11 @@ const debtColsForGroup = db.prepare('PRAGMA table_info(debts)').all();
 if (!debtColsForGroup.some((c) => c.name === 'group_id')) {
   db.exec('ALTER TABLE debts ADD COLUMN group_id INTEGER');
 }
+// Split funding for expenses (JSON array of allocations).
+const expenseFundingCols = db.prepare('PRAGMA table_info(expenses)').all();
+if (!expenseFundingCols.some((c) => c.name === 'funding_allocations')) {
+  db.exec("ALTER TABLE expenses ADD COLUMN funding_allocations TEXT NOT NULL DEFAULT '[]'");
+}
 
 // --- Migration: add frequency column to income_sources if it doesn't exist ---
 const incomeCols = db.prepare('PRAGMA table_info(income_sources)').all();

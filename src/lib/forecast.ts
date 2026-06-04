@@ -1,5 +1,6 @@
 import type {
   Account,
+  Debt,
   Expense,
   ForecastPoint,
   Frequency,
@@ -154,19 +155,76 @@ export function buildDebtCharges(
   return charges;
 }
 
+export interface ExpensePlan {
+  ongoingCashOut: number[];               // total expense cash outflow each month
+  charges: DebtCharge[];                  // expense portions billed to a card
+  outByAccount: Map<number, number[]>;    // expense cash outflow per account per month
+}
+
+// Resolve each expense's split funding across accounts (cash) and debts (credit lines).
+// Fixed allocations apply first, then percentages (of the full bill); the remainder
+// falls to the primary account.
+export function buildExpensePlan(
+  expenses: Expense[],
+  accounts: Account[],
+  debts: Debt[],
+  months: number,
+  inflation = 0,
+): ExpensePlan {
+  const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
+  const accountIds = new Set(accounts.map((a) => a.id));
+  const debtIds = new Set(debts.map((d) => d.id));
+  const ongoingCashOut = new Array(months).fill(0);
+  const outByAccount = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
+  const charges: DebtCharge[] = [];
+
+  for (let m = 0; m < months; m++) {
+    const f = inflationFactor(inflation, m);
+    for (const e of expenses) {
+      const amount = e.monthly_amount * f;
+      if (amount <= 0) continue;
+      let remaining = amount;
+
+      const apply = (alloc: { source_type: string; source_id: number | null; alloc_type: string; value: number }) => {
+        let take = alloc.alloc_type === 'fixed' ? alloc.value : amount * (alloc.value / 100);
+        take = Math.min(take, remaining);
+        if (take <= 0) return;
+        if (alloc.source_type === 'debt' && alloc.source_id != null && debtIds.has(alloc.source_id)) {
+          charges.push({ debtId: alloc.source_id, monthIndex: m, amount: round2(take) });
+          remaining -= take;
+        } else if (alloc.source_type === 'account' && alloc.source_id != null && accountIds.has(alloc.source_id)) {
+          outByAccount.get(alloc.source_id)![m] += take;
+          ongoingCashOut[m] += take;
+          remaining -= take;
+        }
+        // unknown/deleted source: skip — its share falls into the remainder.
+      };
+
+      const allocs = e.funding_allocations ?? [];
+      for (const a of allocs) if (a.alloc_type === 'fixed') apply(a);
+      for (const a of allocs) if (a.alloc_type === 'percent') apply(a);
+
+      if (remaining > 0.005 && primaryId != null) {
+        outByAccount.get(primaryId)![m] += remaining;
+        ongoingCashOut[m] += remaining;
+      }
+    }
+    ongoingCashOut[m] = round2(ongoingCashOut[m]);
+  }
+  for (const arr of outByAccount.values()) for (let m = 0; m < months; m++) arr[m] = round2(arr[m]);
+  return { ongoingCashOut, charges, outByAccount };
+}
+
 export function buildForecast(
   sources: IncomeSource[],
-  expenses: Expense[],
+  ongoingCashOut: number[],
   payments: ScheduledPayment[],
   debtOutflow: number[],
   months: number,
-  inflation = 0,
   now: Date = new Date(),
 ): ForecastPoint[] {
-  const ongoingBase = monthlyExpenseTotal(expenses);
   return Array.from({ length: months }, (_, i) => {
-    const ongoing = ongoingBase * inflationFactor(inflation, i);
-    const cf = cashflowAtMonth(sources, ongoing, payments, i, now);
+    const cf = cashflowAtMonth(sources, ongoingCashOut[i] ?? 0, payments, i, now);
     const expensesTotal = cf.ongoing + cf.scheduledOut + (debtOutflow[i] ?? 0);
     return {
       month: i + 1,
@@ -180,19 +238,16 @@ export function buildForecast(
 
 export function buildSavings(
   sources: IncomeSource[],
-  expenses: Expense[],
+  ongoingCashOut: number[],
   payments: ScheduledPayment[],
   debtOutflow: number[],
   months: number,
   startingBalance: number,
-  inflation = 0,
   now: Date = new Date(),
 ): SavingsPoint[] {
-  const ongoingBase = monthlyExpenseTotal(expenses);
   let balance = startingBalance;
   return Array.from({ length: months }, (_, i) => {
-    const ongoing = ongoingBase * inflationFactor(inflation, i);
-    const cf = cashflowAtMonth(sources, ongoing, payments, i, now);
+    const cf = cashflowAtMonth(sources, ongoingCashOut[i] ?? 0, payments, i, now);
     const debtOut = debtOutflow[i] ?? 0;
     const net = cf.income - cf.ongoing - cf.scheduledOut - debtOut;
     balance += net;
@@ -247,6 +302,7 @@ export function buildAccountSeries(
   accounts: Account[],
   sources: IncomeSource[],
   savings: SavingsPoint[],
+  expenseOutByAccount: Map<number, number[]>,
   now: Date = new Date(),
 ): Breakdown {
   const months = savings.length;
@@ -255,12 +311,14 @@ export function buildAccountSeries(
   const series = accounts.map((acct) => {
     const mine = sources.filter((s) =>
       s.account_id === acct.id || (s.account_id == null && acct.id === primaryId));
+    const expenseOut = expenseOutByAccount.get(acct.id);
     let bal = acct.balance;
     const values = Array.from({ length: months }, (_, i) => {
       const inflow = mine.reduce((sum, s) => sum + incomeCashAtMonth(s, i, now), 0);
-      const outflow = acct.id === primaryId
-        ? (savings[i].expenses + savings[i].scheduledOut + savings[i].debtOut)
-        : 0;
+      // Each account bears its allocated expense cash; the primary also bears
+      // future-expense and debt-payment outflows.
+      const outflow = (expenseOut?.[i] ?? 0)
+        + (acct.id === primaryId ? savings[i].scheduledOut + savings[i].debtOut : 0);
       bal += inflow - outflow;
       return round2(bal);
     });

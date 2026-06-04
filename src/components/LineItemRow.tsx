@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import type { Frequency, IncomeSource, ItemFormData, LineItem, LineItemGroup } from '../types';
+import type { ExpenseAllocation, Frequency, IncomeSource, ItemFormData, LineItem, LineItemGroup } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
+interface NamedSource { id: number; name: string }
 
 interface Props {
   item: LineItem;
@@ -13,20 +14,25 @@ interface Props {
   onDelete: (id: number) => Promise<void>;
   accentColor: string;
   showFrequency?: boolean;
+  showFunding?: boolean; // expense split-funding editor
   groups?: LineItemGroup[];
   accounts?: AccountOpt[];
+  debts?: NamedSource[];
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
   dragging?: boolean;
 }
+
+function encodeSource(type: 'account' | 'debt', id: number): string { return `${type}:${id}`; }
 
 function hasFrequency(item: LineItem): item is IncomeSource {
   return 'frequency' in item;
 }
 
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, groups, accounts, drag, dragging }: Props) {
+export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showFunding, groups, accounts, debts, drag, dragging }: Props) {
   const itemFreq = hasFrequency(item) ? item.frequency : 'monthly';
   const itemStart = hasFrequency(item) ? item.start_date : null;
   const itemAccount = hasFrequency(item) ? item.account_id : null;
+  const itemAllocations: ExpenseAllocation[] = 'funding_allocations' in item ? (item.funding_allocations ?? []) : [];
   const primaryId = accounts?.find((a) => a.is_primary)?.id ?? null;
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
@@ -35,6 +41,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
   const [start, setStart] = useState(itemStart ? itemStart.slice(0, 7) : '');
   const [account, setAccount] = useState<number | null>(itemAccount);
+  const [allocations, setAllocations] = useState<ExpenseAllocation[]>(itemAllocations);
   const [saving, setSaving] = useState(false);
 
   function openEditor() {
@@ -44,6 +51,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setGroupId(item.group_id);
     setStart(itemStart ? itemStart.slice(0, 7) : '');
     setAccount(itemAccount);
+    setAllocations(itemAllocations);
     setEditing(true);
   }
 
@@ -60,10 +68,16 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       monthly_amount: amt,
       group_id: groupId,
       ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null, account_id: account } : {}),
+      ...(showFunding ? { funding_allocations: allocations.filter((a) => a.source_id != null && a.value > 0) } : {}),
     });
     setSaving(false);
     setEditing(false);
   }
+
+  // For the split-funding remainder hint.
+  const fixedSum = allocations.filter((a) => a.alloc_type === 'fixed').reduce((s, a) => s + (a.value || 0), 0);
+  const pctSum = allocations.filter((a) => a.alloc_type === 'percent').reduce((s, a) => s + (a.value || 0), 0);
+  const remainderAmt = Math.max(0, (amtNum || 0) - fixedSum - (amtNum || 0) * pctSum / 100);
 
   const startLabel = itemStart
     ? new Date(Number(itemStart.slice(0, 4)), Number(itemStart.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
@@ -255,6 +269,64 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                   {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
                 </select>
               </label>
+            )}
+
+            {showFunding && (accounts?.length || debts?.length) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Paid from
+                </span>
+                {allocations.map((a, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <select
+                      value={a.source_id == null ? '' : `${a.source_type}:${a.source_id}`}
+                      onChange={(e) => {
+                        const [type, sid] = e.target.value.split(':');
+                        setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, source_type: type as 'account' | 'debt', source_id: Number(sid) } : x));
+                      }}
+                      style={{ flex: 1, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 8px', fontSize: 13 }}
+                    >
+                      <option value="" disabled>Choose source…</option>
+                      {accounts && accounts.length > 0 && (
+                        <optgroup label="Accounts (cash)">
+                          {accounts.map((ac) => <option key={`a${ac.id}`} value={encodeSource('account', ac.id)}>{ac.name}{ac.is_primary ? ' ★' : ''}</option>)}
+                        </optgroup>
+                      )}
+                      {debts && debts.length > 0 && (
+                        <optgroup label="Credit lines / cards">
+                          {debts.map((d) => <option key={`d${d.id}`} value={encodeSource('debt', d.id)}>{d.name}</option>)}
+                        </optgroup>
+                      )}
+                    </select>
+                    <select
+                      value={a.alloc_type}
+                      onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, alloc_type: e.target.value as 'percent' | 'fixed' } : x))}
+                      style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 8px', fontSize: 13 }}
+                    >
+                      <option value="percent">%</option>
+                      <option value="fixed">$</option>
+                    </select>
+                    <input
+                      type="number" min={0} step="any" value={a.value || ''}
+                      onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, value: parseFloat(e.target.value) || 0 } : x))}
+                      style={{ width: 80 }}
+                    />
+                    <button type="button" onClick={() => setAllocations((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px' }}>✕</button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setAllocations((prev) => [...prev, { source_type: 'account', source_id: primaryId, alloc_type: 'percent', value: 0 }])}
+                  style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
+                >
+                  + Add split
+                </button>
+                <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                  {allocations.length === 0
+                    ? 'Whole amount is paid from the primary account.'
+                    : `Remainder (${formatMoney(remainderAmt, { whole: true })}) is paid from the primary account.`}
+                </p>
+              </div>
             )}
 
             {!valid && (
