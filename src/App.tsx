@@ -4,7 +4,7 @@ import {
   dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildIncomeBreakdown, buildExpenseBreakdown, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -21,8 +21,10 @@ import type { PayoffMarker } from './components/NetWorthChart';
 const ForecastChart = lazy(() => import('./components/ForecastChart'));
 const SavingsChart = lazy(() => import('./components/SavingsChart'));
 const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
+const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
 
-type Tab = 'forecast' | 'savings' | 'networth';
+type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown';
+type BreakdownSection = 'income' | 'expense' | 'debt';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
   const pos = new Map(ids.map((id, i) => [id, i]));
@@ -80,12 +82,14 @@ export default function App() {
   const [months, setMonths] = useState(() => Number(localStorage.getItem('bf.months')) || 12);
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'forecast');
   const [compareId, setCompareId] = useState<number | null>(null);
+  const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { localStorage.setItem('bf.months', String(months)); }, [months]);
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
+  useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
 
   const load = useCallback(async () => {
     try {
@@ -140,6 +144,28 @@ export default function App() {
   }
   for (const [mi, names] of byMonth) payoffMarkers.push({ label: savings[mi].label, name: names.join(', ') });
 
+  // Per-item breakdown for the selected section.
+  let breakdown: Breakdown;
+  let breakdownTitle: string;
+  let breakdownSubtitle: string;
+  if (breakdownSection === 'income') {
+    breakdown = buildIncomeBreakdown(incomeSources, months);
+    breakdownTitle = 'Income Breakdown';
+    breakdownSubtitle = 'Each income source per month, alongside the combined total';
+  } else if (breakdownSection === 'expense') {
+    breakdown = buildExpenseBreakdown(expenses, months, inflation);
+    breakdownTitle = 'Expense Breakdown';
+    breakdownSubtitle = 'Each expense per month (inflation-adjusted), alongside the combined total';
+  } else {
+    breakdown = {
+      labels: savings.map((s) => s.label),
+      total: plan.remaining,
+      series: debts.map((d) => ({ id: d.id, name: d.name, values: plan.remainingByDebt.get(d.id) ?? [] })),
+    };
+    breakdownTitle = 'Debt Breakdown';
+    breakdownSubtitle = 'Remaining balance of each debt over time, alongside total debt';
+  }
+
   // Compare overlay from a saved scenario.
   const compareScenario = scenarios.find((s) => s.id === compareId) ?? null;
   const compareSeries = compareScenario ? scenarioSeries(compareScenario.snapshot as Snapshot, months) : null;
@@ -158,7 +184,7 @@ export default function App() {
 
   // --- Mutations ---
   const addIncome = (data: ItemFormData) => guard(async () => {
-    const item = await incomeApi.create({ frequency: 'monthly', ...data, group_id: data.group_id ?? null });
+    const item = await incomeApi.create({ frequency: 'monthly', start_date: null, ...data, group_id: data.group_id ?? null });
     setIncomeSources((prev) => [...prev, item]);
   }, 'Could not add income');
   const updateIncome = (id: number, data: ItemFormData) => guard(async () => {
@@ -345,6 +371,7 @@ export default function App() {
             {tabBtn('forecast', 'Forecast')}
             {tabBtn('savings', 'Savings')}
             {tabBtn('networth', 'Net Worth')}
+            {tabBtn('breakdown', 'Breakdown')}
           </div>
         </div>
 
@@ -394,6 +421,29 @@ export default function App() {
             <NetWorthChart data={netWorth} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} compareData={compareSeries?.networth} compareName={compareScenario?.name} />
           </Suspense>
         )}
+        {tab === 'breakdown' && (
+          <>
+            <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
+              {([['income', 'Income'], ['expense', 'Expenses'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setBreakdownSection(id)}
+                  style={{
+                    background: breakdownSection === id ? 'var(--color-surface-2)' : 'transparent',
+                    color: breakdownSection === id ? 'var(--color-text)' : 'var(--color-text-muted)',
+                    border: `1px solid ${breakdownSection === id ? 'var(--color-border)' : 'transparent'}`,
+                    padding: '6px 16px', fontWeight: 600, fontSize: 13,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Suspense fallback={<ChartFallback />}>
+              <BreakdownChart title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths} />
+            </Suspense>
+          </>
+        )}
 
         {/* This month's money out */}
         {m0 && (
@@ -427,8 +477,9 @@ export default function App() {
         </div>
         <ScheduledPayments
           payments={payments}
-          incomes={incomeSources.map((i) => ({ id: i.id, name: i.name }))}
-          debts={debts.map((d) => ({ id: d.id, name: d.name }))}
+          incomes={incomeSources.map((i) => ({ id: i.id, name: i.name, group_id: i.group_id }))}
+          debts={debts.map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))}
+          groups={groups}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}
         />
         <Debts

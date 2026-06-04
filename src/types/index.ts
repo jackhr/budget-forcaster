@@ -22,6 +22,7 @@ export interface IncomeSource {
   monthly_amount: number;
   frequency: Frequency;
   group_id: number | null;
+  start_date: string | null; // YYYY-MM-DD; null = starts now / always
   created_at: string;
   updated_at: string;
 }
@@ -98,4 +99,5 @@ export interface ItemFormData {
   monthly_amount: number;
   frequency?: Frequency;
   group_id?: number | null;
+  start_date?: string | null;
 }

@@ -6,7 +6,7 @@ import type { Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 const NOW = new Date(2026, 0, 1); // Jan 2026, deterministic
 
 function income(over: Partial<IncomeSource>): IncomeSource {
-  return { id: 1, name: 'I', monthly_amount: 0, frequency: 'monthly', group_id: null, created_at: '', updated_at: '', ...over };
+  return { id: 1, name: 'I', monthly_amount: 0, frequency: 'monthly', group_id: null, start_date: null, created_at: '', updated_at: '', ...over };
 }
 function expense(over: Partial<Expense>): Expense {
   return { id: 1, name: 'E', monthly_amount: 0, group_id: null, created_at: '', updated_at: '', ...over };
@@ -33,6 +33,15 @@ describe('buildForecast', () => {
     const fc = buildForecast([], [], [], [300, 300, 0], 3, 0, NOW);
     expect(fc[0].expenses).toBe(300);
     expect(fc[2].expenses).toBe(0);
+  });
+
+  it('honors an income start date (no income before it)', () => {
+    const inc = [income({ monthly_amount: 1000, start_date: '2026-03-01' })]; // offset 2 from Jan 2026
+    const fc = buildForecast(inc, [], [], [], 4, 0, NOW);
+    expect(fc[0].income).toBe(0);
+    expect(fc[1].income).toBe(0);
+    expect(fc[2].income).toBe(1000);
+    expect(fc[3].income).toBe(1000);
   });
 });
 

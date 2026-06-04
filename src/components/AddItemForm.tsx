@@ -15,6 +15,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('monthly');
+  const [start, setStart] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -25,13 +26,14 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     await onAdd({
       name: name.trim(),
       monthly_amount: amt,
-      ...(showFrequency ? { frequency } : {}),
+      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
       ...(groupId != null ? { group_id: groupId } : {}),
     });
     setSaving(false);
     setName('');
     setAmount('');
     setFrequency('monthly');
+    setStart('');
     setOpen(false);
   }
 
@@ -109,6 +111,20 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
             <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
           ))}
         </select>
+      )}
+      {showFrequency && (
+        <input
+          type="month"
+          value={start}
+          onChange={(e) => setStart(e.target.value)}
+          title="Optional — month this income starts (blank = now)"
+          style={{
+            flex: '0 1 130px',
+            background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
+            padding: '6px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
+          }}
+        />
       )}
       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
         <button

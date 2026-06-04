@@ -85,6 +85,7 @@ export type DebtStrategy = 'none' | 'avalanche' | 'snowball';
 export interface DebtPlan {
   outflow: number[];   // total debt payment each month
   remaining: number[]; // total remaining balance at each month-end (for net worth)
+  remainingByDebt: Map<number, number[]>; // per-debt remaining balance each month (for breakdown)
   payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
   totalInterest: number;
   debtFreeMonthIndex: number | null; // when the last debt clears
@@ -128,6 +129,7 @@ export function simulateDebtPlan(
   }));
   for (const d of debts) payoffMonthByDebt.set(d.id, null);
   const stateById = new Map(states.map((s) => [s.id, s]));
+  const remainingByDebt = new Map<number, number[]>(states.map((s) => [s.id, new Array(months).fill(0)]));
 
   // Bucket charges by month for quick lookup.
   const chargesByMonth = new Map<number, DebtCharge[]>();
@@ -200,7 +202,9 @@ export function simulateDebtPlan(
         d.paidMonth = m;
         payoffMonthByDebt.set(d.id, m);
       }
-      remaining[m] += Math.max(0, d.bal);
+      const bal = Math.max(0, d.bal);
+      remaining[m] += bal;
+      remainingByDebt.get(d.id)![m] = round2(bal);
     }
     outflow[m] = round2(outflow[m]);
     remaining[m] = round2(remaining[m]);
@@ -212,6 +216,7 @@ export function simulateDebtPlan(
   return {
     outflow,
     remaining,
+    remainingByDebt,
     payoffMonthByDebt,
     totalInterest: round2(totalInterest),
     debtFreeMonthIndex,

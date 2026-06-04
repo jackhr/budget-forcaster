@@ -31,15 +31,19 @@ export const FREQUENCY_LABELS: Record<Frequency, string> = {
 const LUMP_FREQUENCIES: Frequency[] = ['quarterly', 'annually', 'one-time'];
 
 // Actual cash an income source delivers in a given month (lumps for quarterly/annual/one-time).
-function incomeCashAtMonth(src: IncomeSource, monthIndex: number): number {
+// Honors an optional start_date; the frequency cycle is anchored to that start.
+function incomeCashAtMonth(src: IncomeSource, monthIndex: number, now: Date): number {
+  const startOff = src.start_date ? Math.max(0, monthOffset(src.start_date, now)) : 0;
+  if (monthIndex < startOff) return 0;
+  const since = monthIndex - startOff;
   const a = src.monthly_amount;
   switch (src.frequency) {
     case 'weekly': return a * (52 / 12);
     case 'biweekly': return a * (26 / 12);
     case 'monthly': return a;
-    case 'quarterly': return monthIndex % 3 === 0 ? a : 0;
-    case 'annually': return monthIndex % 12 === 0 ? a : 0;
-    case 'one-time': return monthIndex === 0 ? a : 0;
+    case 'quarterly': return since % 3 === 0 ? a : 0;
+    case 'annually': return since % 12 === 0 ? a : 0;
+    case 'one-time': return since === 0 ? a : 0;
   }
 }
 
@@ -100,7 +104,7 @@ function cashflowAtMonth(
   let income = 0;
   let incomeLump = 0;
   for (const s of sources) {
-    const c = incomeCashAtMonth(s, monthIndex);
+    const c = incomeCashAtMonth(s, monthIndex, now);
     income += c;
     if (c > 0 && LUMP_FREQUENCIES.includes(s.frequency)) incomeLump += c;
   }
@@ -204,6 +208,35 @@ export function buildSavings(
       balance: round2(balance),
     };
   });
+}
+
+export interface BreakdownSeries { id: number; name: string; values: number[] }
+export interface Breakdown { labels: string[]; total: number[]; series: BreakdownSeries[] }
+
+function labelsFor(months: number, now: Date): string[] {
+  return Array.from({ length: months }, (_, i) => monthLabel(now, i));
+}
+
+function totalsOf(series: BreakdownSeries[], months: number): number[] {
+  return Array.from({ length: months }, (_, i) => round2(series.reduce((sum, s) => sum + (s.values[i] ?? 0), 0)));
+}
+
+// Per-income-source monthly cash over the horizon (+ total).
+export function buildIncomeBreakdown(sources: IncomeSource[], months: number, now: Date = new Date()): Breakdown {
+  const series = sources.map((s) => ({
+    id: s.id, name: s.name,
+    values: Array.from({ length: months }, (_, i) => round2(incomeCashAtMonth(s, i, now))),
+  }));
+  return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
+}
+
+// Per-expense monthly cost over the horizon, inflation-adjusted (+ total).
+export function buildExpenseBreakdown(expenses: Expense[], months: number, inflation = 0, now: Date = new Date()): Breakdown {
+  const series = expenses.map((e) => ({
+    id: e.id, name: e.name,
+    values: Array.from({ length: months }, (_, i) => round2(e.monthly_amount * inflationFactor(inflation, i))),
+  }));
+  return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
 }
 
 export function buildNetWorth(savings: SavingsPoint[], debtRemaining: number[]): NetWorthPoint[] {

@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import type { Frequency, FundingSourceType, ScheduledPayment } from '../types';
+import type { Frequency, FundingSourceType, LineItemGroup, ScheduledPayment } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS, monthOffset } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 
-interface NamedSource { id: number; name: string }
+interface NamedSource { id: number; name: string; group_id: number | null }
 
 interface PaymentInput {
   name: string;
@@ -21,9 +21,28 @@ interface Props {
   payments: ScheduledPayment[];
   incomes: NamedSource[];
   debts: NamedSource[];
+  groups: LineItemGroup[];
   onAdd: (data: PaymentInput) => Promise<void>;
   onUpdate: (id: number, data: PaymentInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+}
+
+// Build <optgroup>s for a funding section, one per item-group (optgroups can't nest in HTML).
+function fundingOptionGroups(
+  sources: NamedSource[],
+  groups: LineItemGroup[],
+  type: 'income' | 'debt',
+  sectionLabel: string,
+) {
+  const out: React.ReactNode[] = [];
+  const opt = (s: NamedSource) => <option key={`${type}${s.id}`} value={encodeFunding(type, s.id)}>{s.name}</option>;
+  for (const g of groups) {
+    const members = sources.filter((s) => s.group_id === g.id);
+    if (members.length) out.push(<optgroup key={`${type}-g${g.id}`} label={`${sectionLabel} · ${g.name}`}>{members.map(opt)}</optgroup>);
+  }
+  const ungrouped = sources.filter((s) => s.group_id == null);
+  if (ungrouped.length) out.push(<optgroup key={`${type}-none`} label={sectionLabel}>{ungrouped.map(opt)}</optgroup>);
+  return out;
 }
 
 const ACCENT = 'var(--color-net-neg)';
@@ -87,11 +106,12 @@ interface EditorProps {
   initial: PaymentInput;
   incomes: NamedSource[];
   debts: NamedSource[];
+  groups: LineItemGroup[];
   onCancel: () => void;
   onSubmit: (data: PaymentInput) => Promise<void>;
 }
 
-function PaymentEditor({ title, initial, incomes, debts, onCancel, onSubmit }: EditorProps) {
+function PaymentEditor({ title, initial, incomes, debts, groups, onCancel, onSubmit }: EditorProps) {
   const [name, setName] = useState(initial.name);
   const [amount, setAmount] = useState(String(initial.amount || ''));
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
@@ -170,16 +190,8 @@ function PaymentEditor({ title, initial, incomes, debts, onCancel, onSubmit }: E
           <span style={labelStyle}>Paid from</span>
           <select value={funding} onChange={(e) => setFunding(e.target.value)} style={monthInputStyle}>
             <option value="cash">Cash / Savings</option>
-            {incomes.length > 0 && (
-              <optgroup label="Income">
-                {incomes.map((i) => <option key={`i${i.id}`} value={encodeFunding('income', i.id)}>{i.name}</option>)}
-              </optgroup>
-            )}
-            {debts.length > 0 && (
-              <optgroup label="Credit lines / cards">
-                {debts.map((d) => <option key={`d${d.id}`} value={encodeFunding('debt', d.id)}>{d.name}</option>)}
-              </optgroup>
-            )}
+            {fundingOptionGroups(incomes, groups.filter((g) => g.kind === 'income'), 'income', '💵 Income')}
+            {fundingOptionGroups(debts, groups.filter((g) => g.kind === 'debt'), 'debt', '💳 Card')}
           </select>
         </label>
         {fundingIsDebt && (
@@ -213,7 +225,7 @@ function PaymentEditor({ title, initial, incomes, debts, onCancel, onSubmit }: E
   );
 }
 
-export default function ScheduledPayments({ payments, incomes, debts, onAdd, onUpdate, onDelete }: Props) {
+export default function ScheduledPayments({ payments, incomes, debts, groups, onAdd, onUpdate, onDelete }: Props) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
@@ -312,6 +324,7 @@ export default function ScheduledPayments({ payments, incomes, debts, onAdd, onU
           title="Add Future Expense"
           incomes={incomes}
           debts={debts}
+          groups={groups}
           initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
@@ -322,6 +335,7 @@ export default function ScheduledPayments({ payments, incomes, debts, onAdd, onU
           title={`Edit ${editingPayment.name}`}
           incomes={incomes}
           debts={debts}
+          groups={groups}
           initial={{
             name: editingPayment.name,
             amount: editingPayment.amount,

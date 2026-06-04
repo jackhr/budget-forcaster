@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import type { ForecastPoint } from '../types';
 import { formatCompactMoney, formatMoney } from '../lib/format';
+import RangeControl from './RangeControl';
 
 interface Props {
   data: ForecastPoint[];
@@ -53,28 +54,7 @@ export default function ForecastChart({ data, months, onMonthsChange, compareDat
             Actual monthly in/out over {months} month{months !== 1 ? 's' : ''} — includes future expenses
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 260 }}>
-          <span style={{ color: 'var(--color-text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>1 mo</span>
-          <input
-            type="range"
-            min={1}
-            max={60}
-            value={months}
-            onChange={(e) => onMonthsChange(Number(e.target.value))}
-            style={{ flex: 1 }}
-          />
-          <span style={{ color: 'var(--color-text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>60 mo</span>
-          <span style={{
-            background: 'var(--color-primary)',
-            color: '#fff',
-            borderRadius: '6px',
-            padding: '2px 8px',
-            fontSize: '12px',
-            fontWeight: 600,
-            minWidth: 40,
-            textAlign: 'center',
-          }}>{months}</span>
-        </div>
+        <RangeControl months={months} onMonthsChange={onMonthsChange} />
       </div>
 
       <ResponsiveContainer width="100%" height={320}>

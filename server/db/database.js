@@ -96,6 +96,9 @@ const incomeCols = db.prepare('PRAGMA table_info(income_sources)').all();
 if (!incomeCols.some((c) => c.name === 'frequency')) {
   db.exec("ALTER TABLE income_sources ADD COLUMN frequency TEXT NOT NULL DEFAULT 'monthly'");
 }
+if (!incomeCols.some((c) => c.name === 'start_date')) {
+  db.exec('ALTER TABLE income_sources ADD COLUMN start_date TEXT'); // null = starts now / always
+}
 
 // --- Migration: scheduled_payments from one-off (due_date) to recurring (frequency/start_date/end_date) ---
 const schedCols = db.prepare('PRAGMA table_info(scheduled_payments)').all();

@@ -22,11 +22,13 @@ function hasFrequency(item: LineItem): item is IncomeSource {
 
 export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, groups, drag, dragging }: Props) {
   const itemFreq = hasFrequency(item) ? item.frequency : 'monthly';
+  const itemStart = hasFrequency(item) ? item.start_date : null;
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
   const [amount, setAmount] = useState(String(item.monthly_amount));
   const [frequency, setFrequency] = useState<Frequency>(itemFreq);
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
+  const [start, setStart] = useState(itemStart ? itemStart.slice(0, 7) : '');
   const [saving, setSaving] = useState(false);
 
   function openEditor() {
@@ -34,6 +36,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setAmount(String(item.monthly_amount));
     setFrequency(itemFreq);
     setGroupId(item.group_id);
+    setStart(itemStart ? itemStart.slice(0, 7) : '');
     setEditing(true);
   }
 
@@ -49,11 +52,15 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       name: name.trim(),
       monthly_amount: amt,
       group_id: groupId,
-      ...(showFrequency ? { frequency } : {}),
+      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
     });
     setSaving(false);
     setEditing(false);
   }
+
+  const startLabel = itemStart
+    ? new Date(Number(itemStart.slice(0, 4)), Number(itemStart.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    : null;
 
   return (
     <>
@@ -88,6 +95,15 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
               flexShrink: 0,
             }}>
               {FREQUENCY_LABELS[itemFreq]}
+            </span>
+          )}
+          {showFrequency && startLabel && (
+            <span style={{
+              fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
+              color: 'var(--color-text-muted)', background: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
+            }}>
+              from {startLabel}
             </span>
           )}
         </div>
@@ -168,6 +184,24 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                     <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
                   ))}
                 </select>
+              </label>
+            )}
+
+            {showFrequency && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Starts <span style={{ textTransform: 'none', opacity: 0.7 }}>(optional — blank = now)</span>
+                </span>
+                <input
+                  type="month"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  style={{
+                    background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
+                    padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
+                  }}
+                />
               </label>
             )}
 

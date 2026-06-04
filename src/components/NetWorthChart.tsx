@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import type { NetWorthPoint } from '../types';
 import { formatCompactMoney, formatMoney } from '../lib/format';
+import RangeControl from './RangeControl';
 
 export interface PayoffMarker { label: string; name: string }
 
@@ -44,12 +45,7 @@ export default function NetWorthChart({ data, months, onMonthsChange, payoffMark
             Cash minus remaining debt over {months} month{months !== 1 ? 's' : ''} — flags mark each debt payoff
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 260 }}>
-          <span style={{ color: 'var(--color-text-muted)', fontSize: 13, whiteSpace: 'nowrap' }}>1 mo</span>
-          <input type="range" min={1} max={60} value={months} onChange={(e) => onMonthsChange(Number(e.target.value))} style={{ flex: 1 }} />
-          <span style={{ color: 'var(--color-text-muted)', fontSize: 13, whiteSpace: 'nowrap' }}>60 mo</span>
-          <span style={{ background: 'var(--color-primary)', color: '#fff', borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 600, minWidth: 40, textAlign: 'center' }}>{months}</span>
-        </div>
+        <RangeControl months={months} onMonthsChange={onMonthsChange} />
       </div>
 
       <ResponsiveContainer width="100%" height={360}>

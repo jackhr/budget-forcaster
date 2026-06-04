@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import type { SavingsPoint } from '../types';
 import { formatCompactMoney, formatMoney } from '../lib/format';
+import RangeControl from './RangeControl';
 
 interface PayoffMarker { label: string; name: string }
 
@@ -87,15 +88,7 @@ export default function SavingsChart({ data, months, onMonthsChange, payoffMarke
             Running balance over {months} month{months !== 1 ? 's' : ''} — green bars are lump income, red bars are future expenses
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 260 }}>
-          <span style={{ color: 'var(--color-text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>1 mo</span>
-          <input type="range" min={1} max={60} value={months} onChange={(e) => onMonthsChange(Number(e.target.value))} style={{ flex: 1 }} />
-          <span style={{ color: 'var(--color-text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>60 mo</span>
-          <span style={{
-            background: 'var(--color-primary)', color: '#fff', borderRadius: '6px',
-            padding: '2px 8px', fontSize: '12px', fontWeight: 600, minWidth: 40, textAlign: 'center',
-          }}>{months}</span>
-        </div>
+        <RangeControl months={months} onMonthsChange={onMonthsChange} />
       </div>
 
       <ResponsiveContainer width="100%" height={360}>
