@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { normalizeDate, dateError } = require('../lib/dates');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
 const VALID_FUNDING = ['cash', 'income', 'debt', 'account'];
@@ -23,12 +24,21 @@ router.post('/', (req, res) => {
   if (!name || amount == null || !start_date) {
     return res.status(400).json({ error: 'name, amount and start_date are required' });
   }
+  let normalizedStart;
+  let normalizedEnd;
+  try {
+    normalizedStart = normalizeDate(start_date, 'start_date', { required: true });
+    normalizedEnd = normalizeDate(end_date, 'end_date');
+  } catch (e) {
+    if (dateError(res, e)) return;
+    throw e;
+  }
   const fundingType = normalizeFunding(funding_source_type);
   const fundingId = fundingType === 'cash' ? null : (funding_source_id ?? null);
   const stmt = db.prepare(
     'INSERT INTO scheduled_payments (name, amount, frequency, start_date, end_date, funding_source_type, funding_source_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
-  const result = stmt.run(name, amount, normalizeFrequency(frequency), start_date, end_date || null, fundingType, fundingId);
+  const result = stmt.run(name, amount, normalizeFrequency(frequency), normalizedStart, normalizedEnd, fundingType, fundingId);
   const row = db.prepare('SELECT * FROM scheduled_payments WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(row);
 });
@@ -38,6 +48,15 @@ router.put('/:id', (req, res) => {
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM scheduled_payments WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  let normalizedStart = existing.start_date;
+  let normalizedEnd = existing.end_date;
+  try {
+    if (start_date !== undefined) normalizedStart = normalizeDate(start_date, 'start_date', { required: true });
+    if (end_date !== undefined) normalizedEnd = normalizeDate(end_date, 'end_date');
+  } catch (e) {
+    if (dateError(res, e)) return;
+    throw e;
+  }
 
   const fundingType = funding_source_type !== undefined
     ? normalizeFunding(funding_source_type, existing.funding_source_type)
@@ -57,8 +76,8 @@ router.put('/:id', (req, res) => {
     name ?? existing.name,
     amount ?? existing.amount,
     frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency,
-    start_date ?? existing.start_date,
-    end_date !== undefined ? (end_date || null) : existing.end_date,
+    normalizedStart,
+    normalizedEnd,
     fundingType,
     fundingId,
     id

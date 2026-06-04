@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { reorder, ORDER_BY } = require('../lib/data');
+const { normalizeDate, dateError } = require('../lib/dates');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
 
@@ -50,13 +51,22 @@ router.post('/', (req, res) => {
   if (!name || !isAmount(monthly_amount) || monthly_amount < 0) {
     return res.status(400).json({ error: 'name and a non-negative numeric monthly_amount are required' });
   }
+  let normalizedStart;
+  let normalizedEnd;
+  try {
+    normalizedStart = normalizeDate(start_date, 'start_date');
+    normalizedEnd = normalizeDate(end_date, 'end_date');
+  } catch (e) {
+    if (dateError(res, e)) return;
+    throw e;
+  }
   const stmt = db.prepare(
     'INSERT INTO expenses (name, monthly_amount, group_id, funding_allocations, frequency, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
   const result = stmt.run(
     name, monthly_amount, group_id ?? null,
     JSON.stringify(cleanAllocations(funding_allocations)),
-    normalizeFrequency(frequency), start_date || null, end_date || null,
+    normalizeFrequency(frequency), normalizedStart, normalizedEnd,
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(serialize(row));
@@ -67,6 +77,15 @@ router.put('/:id', (req, res) => {
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  let normalizedStart = existing.start_date;
+  let normalizedEnd = existing.end_date;
+  try {
+    if (start_date !== undefined) normalizedStart = normalizeDate(start_date, 'start_date');
+    if (end_date !== undefined) normalizedEnd = normalizeDate(end_date, 'end_date');
+  } catch (e) {
+    if (dateError(res, e)) return;
+    throw e;
+  }
 
   db.prepare(
     `UPDATE expenses
@@ -78,8 +97,8 @@ router.put('/:id', (req, res) => {
     group_id !== undefined ? (group_id ?? null) : existing.group_id,
     funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations)) : existing.funding_allocations,
     frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency,
-    start_date !== undefined ? (start_date || null) : existing.start_date,
-    end_date !== undefined ? (end_date || null) : existing.end_date,
+    normalizedStart,
+    normalizedEnd,
     id
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);

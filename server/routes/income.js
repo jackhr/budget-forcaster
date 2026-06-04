@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { reorder, ORDER_BY } = require('../lib/data');
+const { normalizeDate, dateError } = require('../lib/dates');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
 
@@ -28,10 +29,17 @@ router.post('/', (req, res) => {
   if (!name || !isAmount(monthly_amount) || monthly_amount < 0) {
     return res.status(400).json({ error: 'name and a non-negative numeric monthly_amount are required' });
   }
+  let normalizedStart;
+  try {
+    normalizedStart = normalizeDate(start_date, 'start_date');
+  } catch (e) {
+    if (dateError(res, e)) return;
+    throw e;
+  }
   const stmt = db.prepare(
     'INSERT INTO income_sources (name, monthly_amount, frequency, group_id, start_date, account_id) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  const result = stmt.run(name, monthly_amount, normalizeFrequency(frequency), group_id ?? null, start_date || null, account_id ?? null);
+  const result = stmt.run(name, monthly_amount, normalizeFrequency(frequency), group_id ?? null, normalizedStart, account_id ?? null);
   const row = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(row);
 });
@@ -41,6 +49,15 @@ router.put('/:id', (req, res) => {
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  let normalizedStart = existing.start_date;
+  if (start_date !== undefined) {
+    try {
+      normalizedStart = normalizeDate(start_date, 'start_date');
+    } catch (e) {
+      if (dateError(res, e)) return;
+      throw e;
+    }
+  }
 
   db.prepare(
     `UPDATE income_sources
@@ -51,7 +68,7 @@ router.put('/:id', (req, res) => {
     monthly_amount ?? existing.monthly_amount,
     frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency,
     group_id !== undefined ? (group_id ?? null) : existing.group_id,
-    start_date !== undefined ? (start_date || null) : existing.start_date,
+    normalizedStart,
     account_id !== undefined ? (account_id ?? null) : existing.account_id,
     id
   );
