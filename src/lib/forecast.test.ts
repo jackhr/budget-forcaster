@@ -229,13 +229,30 @@ describe('debt pay-from account', () => {
   it('attributes each debt payment to its pay-from account', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
     const debts: Debt[] = [
-      { id: 1, name: 'A', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 2, created_at: '', updated_at: '' },
-      { id: 2, name: 'B', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 200, group_id: null, account_id: null, created_at: '', updated_at: '' },
+      { id: 1, name: 'A', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 2, funding_allocations: [], created_at: '', updated_at: '' },
+      { id: 2, name: 'B', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 200, group_id: null, account_id: null, funding_allocations: [], created_at: '', updated_at: '' },
     ];
     const plan = simulateDebtPlan(debts, 0, 'none', 3);
     const map = buildDebtOutByAccount(debts, plan, accounts);
     expect(map.get(2)![0]).toBe(100); // debt A -> Bills
     expect(map.get(1)![0]).toBe(200); // debt B (null) -> primary Checking
+  });
+
+  it('splits a debt payment across accounts and sends remainder to primary', () => {
+    const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
+    const debts: Debt[] = [
+      {
+        id: 1, name: 'Split', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 300,
+        group_id: null, account_id: null, funding_allocations: [
+          { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 125 },
+        ],
+        created_at: '', updated_at: '',
+      },
+    ];
+    const plan = simulateDebtPlan(debts, 0, 'none', 1);
+    const map = buildDebtOutByAccount(debts, plan, accounts);
+    expect(map.get(2)![0]).toBe(125);
+    expect(map.get(1)![0]).toBe(175);
   });
 });
 

@@ -76,6 +76,7 @@ router.delete('/:id', (req, res) => {
   ).run(id);
   removeFundingAllocations(db, 'expenses', 'account', id);
   removeFundingAllocations(db, 'scheduled_payments', 'account', id);
+  removeFundingAllocations(db, 'debts', 'account', id);
   // Debts paid from this account fall back to the primary account.
   db.prepare('UPDATE debts SET account_id = NULL WHERE account_id = ?').run(id);
   db.prepare('DELETE FROM accounts WHERE id = ?').run(id);

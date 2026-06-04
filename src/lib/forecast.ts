@@ -417,13 +417,40 @@ export function buildDebtOutByAccount(
   const accountIds = new Set(accounts.map((a) => a.id));
   const months = plan.outflow.length;
   const map = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
+
+  const allocatePayment = (debt: Debt, amount: number, monthIndex: number) => {
+    const allocs = debt.funding_allocations ?? [];
+    if (allocs.length === 0) {
+      const acctId = (debt.account_id != null && accountIds.has(debt.account_id)) ? debt.account_id : primaryId;
+      if (acctId != null) map.get(acctId)![monthIndex] += amount;
+      return;
+    }
+
+    let remaining = amount;
+    let allocated = 0;
+    const apply = (alloc: { source_type: string; source_id: number | null; alloc_type: string; value: number }) => {
+      if (alloc.source_type !== 'account' || alloc.source_id == null || !accountIds.has(alloc.source_id)) return;
+      let take = alloc.alloc_type === 'fixed' ? alloc.value : amount * (alloc.value / 100);
+      take = Math.min(take, remaining);
+      if (take <= 0) return;
+      map.get(alloc.source_id)![monthIndex] += take;
+      remaining -= take;
+      allocated += take;
+    };
+
+    for (const a of allocs) if (a.alloc_type === 'fixed') apply(a);
+    for (const a of allocs) if (a.alloc_type === 'percent') apply(a);
+    const remainder = amount - allocated;
+    if (remainder > 0.005 && primaryId != null) map.get(primaryId)![monthIndex] += remainder;
+  };
+
   for (const d of debts) {
-    const acctId = (d.account_id != null && accountIds.has(d.account_id)) ? d.account_id : primaryId;
-    if (acctId == null) continue;
     const series = plan.outflowByDebt.get(d.id);
     if (!series) continue;
-    const arr = map.get(acctId)!;
-    for (let m = 0; m < months; m++) arr[m] += series[m];
+    for (let m = 0; m < months; m++) {
+      const amount = series[m] ?? 0;
+      if (amount > 0) allocatePayment(d, amount, m);
+    }
   }
   for (const arr of map.values()) for (let m = 0; m < months; m++) arr[m] = round2(arr[m]);
   return map;

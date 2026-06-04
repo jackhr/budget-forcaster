@@ -70,6 +70,7 @@ export interface Debt {
   monthly_payment: number;
   group_id: number | null;
   account_id: number | null; // account that pays this debt; null = primary
+  funding_allocations: ExpenseAllocation[]; // split account funding for debt payments; empty = legacy account_id
   created_at: string;
   updated_at: string;
 }
