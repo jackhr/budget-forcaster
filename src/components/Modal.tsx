@@ -84,6 +84,9 @@ export default function Modal({ title, onClose, children, maxWidth = 420 }: Prop
           boxShadow: 'var(--shadow)',
           width: '100%',
           maxWidth,
+          maxHeight: 'calc(100vh - 40px)',
+          display: 'flex',
+          flexDirection: 'column',
           animation: 'modalSlide 0.15s ease-out',
         }}
       >
@@ -93,6 +96,7 @@ export default function Modal({ title, onClose, children, maxWidth = 420 }: Prop
           justifyContent: 'space-between',
           padding: '18px 20px',
           borderBottom: '1px solid var(--color-border)',
+          flexShrink: 0,
         }}>
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>{title}</h2>
           <button
@@ -109,7 +113,7 @@ export default function Modal({ title, onClose, children, maxWidth = 420 }: Prop
             ✕
           </button>
         </div>
-        <div style={{ padding: 20 }}>{children}</div>
+        <div style={{ padding: 20, overflowY: 'auto', minHeight: 0 }}>{children}</div>
       </div>
       <style>{`
         @keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
