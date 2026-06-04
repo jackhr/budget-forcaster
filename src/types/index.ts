@@ -69,6 +69,7 @@ export interface Debt {
   credit_limit: number | null;
   monthly_payment: number;
   group_id: number | null;
+  account_id: number | null; // account that pays this debt; null = primary
   created_at: string;
   updated_at: string;
 }

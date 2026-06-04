@@ -84,6 +84,7 @@ export type DebtStrategy = 'none' | 'avalanche' | 'snowball';
 
 export interface DebtPlan {
   outflow: number[];   // total debt payment each month
+  outflowByDebt: Map<number, number[]>; // per-debt payment each month (for pay-from attribution)
   remaining: number[]; // total remaining balance at each month-end (for net worth)
   remainingByDebt: Map<number, number[]>; // per-debt remaining balance each month (for breakdown)
   payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
@@ -130,6 +131,7 @@ export function simulateDebtPlan(
   for (const d of debts) payoffMonthByDebt.set(d.id, null);
   const stateById = new Map(states.map((s) => [s.id, s]));
   const remainingByDebt = new Map<number, number[]>(states.map((s) => [s.id, new Array(months).fill(0)]));
+  const outflowByDebt = new Map<number, number[]>(states.map((s) => [s.id, new Array(months).fill(0)]));
 
   // Bucket charges by month for quick lookup.
   const chargesByMonth = new Map<number, DebtCharge[]>();
@@ -170,6 +172,7 @@ export function simulateDebtPlan(
           const pay = Math.min(d.min, d.bal);
           d.bal -= pay;
           outflow[m] += pay;
+          outflowByDebt.get(d.id)![m] += pay;
         }
       }
     } else {
@@ -181,6 +184,7 @@ export function simulateDebtPlan(
           d.bal -= pay;
           budget -= pay;
           outflow[m] += pay;
+          outflowByDebt.get(d.id)![m] += pay;
         }
       }
       // Throw whatever's left at the target debt(s) in priority order.
@@ -193,6 +197,7 @@ export function simulateDebtPlan(
         d.bal -= pay;
         budget -= pay;
         outflow[m] += pay;
+        outflowByDebt.get(d.id)![m] += pay;
       }
     }
 
@@ -208,6 +213,7 @@ export function simulateDebtPlan(
     }
     outflow[m] = round2(outflow[m]);
     remaining[m] = round2(remaining[m]);
+    for (const d of states) outflowByDebt.get(d.id)![m] = round2(outflowByDebt.get(d.id)![m]);
     if (debtFreeMonthIndex === null && states.every((d) => d.bal <= 0.005)) {
       debtFreeMonthIndex = m;
     }
@@ -215,6 +221,7 @@ export function simulateDebtPlan(
 
   return {
     outflow,
+    outflowByDebt,
     remaining,
     remainingByDebt,
     payoffMonthByDebt,

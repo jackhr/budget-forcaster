@@ -6,6 +6,8 @@ import { useDnd } from '../lib/useDnd';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 
+interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
+
 interface DebtInput {
   name: string;
   balance: number;
@@ -13,11 +15,13 @@ interface DebtInput {
   credit_limit: number | null;
   monthly_payment: number;
   group_id: number | null;
+  account_id: number | null;
 }
 
 interface Props {
   debts: Debt[];
   groups: LineItemGroup[];
+  accounts: AccountOpt[];
   onAdd: (data: DebtInput) => Promise<void>;
   onUpdate: (id: number, data: DebtInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -58,17 +62,20 @@ interface EditorProps {
   title: string;
   initial: DebtInput;
   groups: LineItemGroup[];
+  accounts: AccountOpt[];
   onCancel: () => void;
   onSubmit: (data: DebtInput) => Promise<void>;
 }
 
-function DebtEditor({ title, initial, groups, onCancel, onSubmit }: EditorProps) {
+function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: EditorProps) {
+  const primaryId = accounts.find((a) => a.is_primary)?.id ?? null;
   const [name, setName] = useState(initial.name);
   const [balance, setBalance] = useState(String(initial.balance || ''));
   const [apr, setApr] = useState(String(initial.apr ?? ''));
   const [limit, setLimit] = useState(initial.credit_limit != null ? String(initial.credit_limit) : '');
   const [payment, setPayment] = useState(String(initial.monthly_payment || ''));
   const [groupId, setGroupId] = useState<number | null>(initial.group_id);
+  const [accountId, setAccountId] = useState<number | null>(initial.account_id);
   const [saving, setSaving] = useState(false);
 
   const balNum = parseFloat(balance);
@@ -77,7 +84,7 @@ function DebtEditor({ title, initial, groups, onCancel, onSubmit }: EditorProps)
   const limNum = limit ? parseFloat(limit) : null;
 
   const preview = (balNum > 0 && payNum > 0 && aprNum >= 0)
-    ? summarizeDebt({ id: 0, name, balance: balNum, apr: aprNum, credit_limit: limNum, monthly_payment: payNum, group_id: null, created_at: '', updated_at: '' })
+    ? summarizeDebt({ id: 0, name, balance: balNum, apr: aprNum, credit_limit: limNum, monthly_payment: payNum, group_id: null, account_id: null, created_at: '', updated_at: '' })
     : null;
 
   const valid = name.trim().length > 0 && balNum > 0 && payNum > 0 && (isNaN(aprNum) ? false : aprNum >= 0);
@@ -93,6 +100,7 @@ function DebtEditor({ title, initial, groups, onCancel, onSubmit }: EditorProps)
       credit_limit: limNum != null && !isNaN(limNum) ? limNum : null,
       monthly_payment: payNum,
       group_id: groupId,
+      account_id: accountId,
     });
     setSaving(false);
   }
@@ -140,12 +148,19 @@ function DebtEditor({ title, initial, groups, onCancel, onSubmit }: EditorProps)
             </div>
           ))}
         </div>
-        {field('Group', (
-          <select value={groupId ?? ''} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
-            <option value="">No group</option>
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-        ))}
+        <div style={{ display: 'flex', gap: 12 }}>
+          {field('Pay from', (
+            <select value={accountId ?? primaryId ?? ''} onChange={(e) => setAccountId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+            </select>
+          ))}
+          {field('Group', (
+            <select value={groupId ?? ''} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
+              <option value="">No group</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          ))}
+        </div>
 
         {preview && (
           <div style={{
@@ -178,9 +193,10 @@ function DebtEditor({ title, initial, groups, onCancel, onSubmit }: EditorProps)
   );
 }
 
-function DebtRow({ debt, groups, onUpdate, onDelete, drag, dragging }: {
+function DebtRow({ debt, groups, accounts, onUpdate, onDelete, drag, dragging }: {
   debt: Debt;
   groups: LineItemGroup[];
+  accounts: AccountOpt[];
   onUpdate: (id: number, data: DebtInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -188,6 +204,7 @@ function DebtRow({ debt, groups, onUpdate, onDelete, drag, dragging }: {
 }) {
   const [editing, setEditing] = useState(false);
   const s = summarizeDebt(debt);
+  const payFrom = accounts.find((a) => a.id === debt.account_id) ?? accounts.find((a) => a.is_primary) ?? null;
   return (
     <>
       <div {...drag} style={{
@@ -208,6 +225,7 @@ function DebtRow({ debt, groups, onUpdate, onDelete, drag, dragging }: {
           <div style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
             {formatMoney(debt.balance, { whole: true })} @ {debt.apr}% · {formatMoney(debt.monthly_payment, { whole: true })}/mo
             {s.utilization != null && <> · {Math.round(s.utilization * 100)}% used</>}
+            {payFrom && <> · from {payFrom.name}</>}
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 180, fontSize: 13 }}>
@@ -231,7 +249,8 @@ function DebtRow({ debt, groups, onUpdate, onDelete, drag, dragging }: {
         <DebtEditor
           title={`Edit ${debt.name}`}
           groups={groups}
-          initial={{ name: debt.name, balance: debt.balance, apr: debt.apr, credit_limit: debt.credit_limit, monthly_payment: debt.monthly_payment, group_id: debt.group_id }}
+          accounts={accounts}
+          initial={{ name: debt.name, balance: debt.balance, apr: debt.apr, credit_limit: debt.credit_limit, monthly_payment: debt.monthly_payment, group_id: debt.group_id, account_id: debt.account_id }}
           onCancel={() => setEditing(false)}
           onSubmit={async (data) => { await onUpdate(debt.id, data); setEditing(false); }}
         />
@@ -240,10 +259,11 @@ function DebtRow({ debt, groups, onUpdate, onDelete, drag, dragging }: {
   );
 }
 
-function DebtGroupBlock({ group, debts, groups, onUpdate, onDelete, onAddInGroup, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: {
+function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, onAddInGroup, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: {
   group: LineItemGroup;
   debts: Debt[];
   groups: LineItemGroup[];
+  accounts: AccountOpt[];
   onUpdate: (id: number, data: DebtInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onAddInGroup: (groupId: number) => void;
@@ -295,7 +315,7 @@ function DebtGroupBlock({ group, debts, groups, onUpdate, onDelete, onAddInGroup
 
       {!collapsed && (
         <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {debts.map((d) => <DebtRow key={d.id} debt={d} groups={groups} onUpdate={onUpdate} onDelete={onDelete} drag={dragFor(d)} dragging={draggingId === d.id} />)}
+          {debts.map((d) => <DebtRow key={d.id} debt={d} groups={groups} accounts={accounts} onUpdate={onUpdate} onDelete={onDelete} drag={dragFor(d)} dragging={draggingId === d.id} />)}
           {debts.length === 0 && (
             <p style={{ padding: '6px 4px', color: 'var(--color-text-muted)', fontSize: 12.5 }}>Empty group — add a debt below.</p>
           )}
@@ -347,7 +367,7 @@ function payoffDateFromIndex(monthIndex: number | null): string {
   return payoffDateLabel(monthIndex);
 }
 
-export default function Debts({ debts, groups, onAdd, onUpdate, onDelete, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup, plan, basePlan, extra, strategy, onExtraChange, onStrategyChange }: Props) {
+export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDelete, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup, plan, basePlan, extra, strategy, onExtraChange, onStrategyChange }: Props) {
   const [adding, setAdding] = useState<false | { groupId: number | null }>(false);
   const myGroups = groups.filter((g) => g.kind === 'debt');
   const ungrouped = debts.filter((d) => d.group_id == null);
@@ -431,6 +451,7 @@ export default function Debts({ debts, groups, onAdd, onUpdate, onDelete, onAddG
           group={group}
           debts={debts.filter((d) => d.group_id === group.id)}
           groups={myGroups}
+          accounts={accounts}
           onUpdate={onUpdate}
           onDelete={onDelete}
           onAddInGroup={(groupId) => setAdding({ groupId })}
@@ -444,7 +465,7 @@ export default function Debts({ debts, groups, onAdd, onUpdate, onDelete, onAddG
 
       {/* Ungrouped debts */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {ungrouped.map((d) => <DebtRow key={d.id} debt={d} groups={myGroups} onUpdate={onUpdate} onDelete={onDelete} drag={dnd.handlers(d)} dragging={dnd.dragId === d.id} />)}
+        {ungrouped.map((d) => <DebtRow key={d.id} debt={d} groups={myGroups} accounts={accounts} onUpdate={onUpdate} onDelete={onDelete} drag={dnd.handlers(d)} dragging={dnd.dragId === d.id} />)}
         {debts.length === 0 && (
           <p style={{ padding: '20px 12px', color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 13 }}>
             No debts tracked. Add a loan or credit card to see when it’s paid off.
@@ -467,7 +488,8 @@ export default function Debts({ debts, groups, onAdd, onUpdate, onDelete, onAddG
         <DebtEditor
           title="Add Debt"
           groups={myGroups}
-          initial={{ name: '', balance: 0, apr: 0, credit_limit: null, monthly_payment: 0, group_id: adding.groupId }}
+          accounts={accounts}
+          initial={{ name: '', balance: 0, apr: 0, credit_limit: null, monthly_payment: 0, group_id: adding.groupId, account_id: null }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
         />

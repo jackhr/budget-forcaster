@@ -74,6 +74,8 @@ router.delete('/:id', (req, res) => {
   db.prepare(
     "UPDATE scheduled_payments SET funding_source_type = 'cash', funding_source_id = NULL WHERE funding_source_type = 'account' AND funding_source_id = ?"
   ).run(id);
+  // Debts paid from this account fall back to the primary account.
+  db.prepare('UPDATE debts SET account_id = NULL WHERE account_id = ?').run(id);
   db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
   ensurePrimary();
   res.status(204).end();

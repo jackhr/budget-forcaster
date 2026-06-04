@@ -100,6 +100,9 @@ const debtColsForGroup = db.prepare('PRAGMA table_info(debts)').all();
 if (!debtColsForGroup.some((c) => c.name === 'group_id')) {
   db.exec('ALTER TABLE debts ADD COLUMN group_id INTEGER');
 }
+if (!debtColsForGroup.some((c) => c.name === 'account_id')) {
+  db.exec('ALTER TABLE debts ADD COLUMN account_id INTEGER'); // account that pays this debt; null = primary
+}
 // Split funding for expenses (JSON array of allocations).
 const expenseFundingCols = db.prepare('PRAGMA table_info(expenses)').all();
 if (!expenseFundingCols.some((c) => c.name === 'funding_allocations')) {

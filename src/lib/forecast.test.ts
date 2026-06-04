@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildAccountSeries, buildScheduledOutByAccount, monthOffset } from './forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
 import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
@@ -140,7 +140,7 @@ describe('buildAccountSeries', () => {
     ];
     const ep = buildExpensePlan([expense({ monthly_amount: 800 })], accounts, [], 3, 0);
     const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 3, 1500, NOW);
-    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), new Map(), NOW);
 
     const savingsSeries = bd.series.find((s) => s.id === 2)!;
     expect(savingsSeries.values[0]).toBe(800);  // 500 + 300
@@ -161,7 +161,7 @@ describe('buildAccountSeries', () => {
     const sources = [income({ id: 9, monthly_amount: 100, account_id: null })];
     const ep = buildExpensePlan([], accounts, [], 2, 0);
     const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 2, 0, NOW);
-    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), new Map(), NOW);
     expect(bd.series.find((s) => s.id === 1)!.values[0]).toBe(100);
     expect(bd.series.find((s) => s.id === 2)!.values[0]).toBe(0);
   });
@@ -189,6 +189,20 @@ describe('future-expense funding source (account vs card)', () => {
     ];
     const map = buildScheduledOutByAccount(payments, accounts, 1, NOW);
     expect(map.get(1)![0]).toBe(50); // cash -> primary; debt excluded
+  });
+});
+
+describe('debt pay-from account', () => {
+  it('attributes each debt payment to its pay-from account', () => {
+    const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
+    const debts: Debt[] = [
+      { id: 1, name: 'A', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 2, created_at: '', updated_at: '' },
+      { id: 2, name: 'B', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 200, group_id: null, account_id: null, created_at: '', updated_at: '' },
+    ];
+    const plan = simulateDebtPlan(debts, 0, 'none', 3);
+    const map = buildDebtOutByAccount(debts, plan, accounts);
+    expect(map.get(2)![0]).toBe(100); // debt A -> Bills
+    expect(map.get(1)![0]).toBe(200); // debt B (null) -> primary Checking
   });
 });
 
