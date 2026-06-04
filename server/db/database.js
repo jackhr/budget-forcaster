@@ -152,6 +152,9 @@ if (!schedFundingCols.some((c) => c.name === 'funding_source_type')) {
   db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_source_type TEXT NOT NULL DEFAULT 'cash'");
   db.exec('ALTER TABLE scheduled_payments ADD COLUMN funding_source_id INTEGER');
 }
+if (!schedFundingCols.some((c) => c.name === 'funding_allocations')) {
+  db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_allocations TEXT NOT NULL DEFAULT '[]'");
+}
 
 // --- Seed example data on first run ---
 function relativeMonth(offset) {

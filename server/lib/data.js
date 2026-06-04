@@ -44,6 +44,25 @@ function reorder(db, table, ids) {
   tx(ids);
 }
 
+function removeFundingAllocations(db, table, sourceType, sourceId) {
+  const rows = db.prepare(`SELECT id, funding_allocations FROM ${table}`).all();
+  const update = db.prepare(`UPDATE ${table} SET funding_allocations = ?, updated_at = datetime('now') WHERE id = ?`);
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      let allocations;
+      try {
+        allocations = JSON.parse(row.funding_allocations || '[]');
+      } catch {
+        allocations = [];
+      }
+      if (!Array.isArray(allocations) || allocations.length === 0) continue;
+      const next = allocations.filter((a) => !(a?.source_type === sourceType && Number(a.source_id) === Number(sourceId)));
+      if (next.length !== allocations.length) update.run(JSON.stringify(next), row.id);
+    }
+  });
+  tx();
+}
+
 const ORDER_BY = 'ORDER BY COALESCE(sort_order, 1000000000), id';
 
-module.exports = { exportData, importData, reorder, ORDER_BY, TABLES };
+module.exports = { exportData, importData, reorder, removeFundingAllocations, ORDER_BY, TABLES };

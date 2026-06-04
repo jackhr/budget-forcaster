@@ -106,6 +106,49 @@ function paymentCashAtMonth(p: ScheduledPayment, monthIndex: number, now: Date):
   }
 }
 
+interface PaymentFundingPart {
+  source_type: 'account' | 'debt';
+  source_id: number | null;
+  amount: number;
+}
+
+interface PaymentFunding {
+  cash: number;
+  parts: PaymentFundingPart[];
+}
+
+function paymentFundingAtAmount(p: ScheduledPayment, amount: number): PaymentFunding {
+  const allocs = p.funding_allocations ?? [];
+  if (allocs.length === 0) {
+    if (p.funding_source_type === 'debt' && p.funding_source_id != null) {
+      return { cash: 0, parts: [{ source_type: 'debt', source_id: p.funding_source_id, amount }] };
+    }
+    if (p.funding_source_type === 'account' && p.funding_source_id != null) {
+      return { cash: amount, parts: [{ source_type: 'account', source_id: p.funding_source_id, amount }] };
+    }
+    return { cash: amount, parts: [] };
+  }
+
+  let remaining = amount;
+  const parts: PaymentFundingPart[] = [];
+  const apply = (alloc: { source_type: string; source_id: number | null; alloc_type: string; value: number }) => {
+    let take = alloc.alloc_type === 'fixed' ? alloc.value : amount * (alloc.value / 100);
+    take = Math.min(take, remaining);
+    if (take <= 0) return;
+    if ((alloc.source_type === 'account' || alloc.source_type === 'debt') && alloc.source_id != null) {
+      parts.push({ source_type: alloc.source_type, source_id: alloc.source_id, amount: round2(take) });
+      remaining -= take;
+    }
+  };
+
+  for (const a of allocs) if (a.alloc_type === 'fixed') apply(a);
+  for (const a of allocs) if (a.alloc_type === 'percent') apply(a);
+  return {
+    cash: round2(parts.filter((p) => p.source_type === 'account').reduce((sum, p) => sum + p.amount, 0) + Math.max(0, remaining)),
+    parts,
+  };
+}
+
 interface MonthCashflow {
   income: number;
   incomeLump: number;
@@ -134,11 +177,10 @@ function cashflowAtMonth(
   let scheduledOut = 0;
   const names: string[] = [];
   for (const p of payments) {
-    // Debt-funded expenses are charged to a card, not paid from cash — they don't dip the balance.
-    if (p.funding_source_type === 'debt') continue;
     const c = paymentCashAtMonth(p, monthIndex, now);
-    if (c > 0) {
-      scheduledOut += c;
+    const funding = c > 0 ? paymentFundingAtAmount(p, c) : null;
+    if (funding && funding.cash > 0) {
+      scheduledOut += funding.cash;
       names.push(p.name);
     }
   }
@@ -166,10 +208,15 @@ export function buildDebtCharges(
 ): DebtCharge[] {
   const charges: DebtCharge[] = [];
   for (const p of payments) {
-    if (p.funding_source_type !== 'debt' || p.funding_source_id == null) continue;
     for (let m = 0; m < months; m++) {
       const c = paymentCashAtMonth(p, m, now);
-      if (c > 0) charges.push({ debtId: p.funding_source_id, monthIndex: m, amount: c });
+      if (c <= 0) continue;
+      const funding = paymentFundingAtAmount(p, c);
+      for (const part of funding.parts) {
+        if (part.source_type === 'debt' && part.source_id != null && part.amount > 0) {
+          charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount) });
+        }
+      }
     }
   }
   return charges;
@@ -340,15 +387,20 @@ export function buildScheduledOutByAccount(
   const accountIds = new Set(accounts.map((a) => a.id));
   const map = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
   for (const p of payments) {
-    if (p.funding_source_type === 'debt') continue; // charged to a card, not cash
-    const acctId = (p.funding_source_type === 'account' && p.funding_source_id != null && accountIds.has(p.funding_source_id))
-      ? p.funding_source_id
-      : primaryId;
-    if (acctId == null) continue;
-    const arr = map.get(acctId)!;
     for (let m = 0; m < months; m++) {
       const c = paymentCashAtMonth(p, m, now);
-      if (c > 0) arr[m] += c;
+      if (c <= 0) continue;
+      const funding = paymentFundingAtAmount(p, c);
+      let allocatedCash = 0;
+      for (const part of funding.parts) {
+        if (part.source_type !== 'account' || part.source_id == null || !accountIds.has(part.source_id)) continue;
+        map.get(part.source_id)![m] += part.amount;
+        allocatedCash += part.amount;
+      }
+      const remainder = funding.cash - allocatedCash;
+      if (remainder > 0.005 && primaryId != null) {
+        map.get(primaryId)![m] += remainder;
+      }
     }
   }
   for (const arr of map.values()) for (let m = 0; m < months; m++) arr[m] = round2(arr[m]);

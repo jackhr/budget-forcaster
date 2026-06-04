@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Frequency, FundingSourceType, LineItemGroup, ScheduledPayment } from '../types';
+import type { ExpenseAllocation, Frequency, FundingSourceType, LineItemGroup, ScheduledPayment } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS, monthOffset } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
@@ -16,6 +16,7 @@ interface PaymentInput {
   end_date: string | null;
   funding_source_type: FundingSourceType;
   funding_source_id: number | null;
+  funding_allocations: ExpenseAllocation[];
 }
 
 interface Props {
@@ -34,10 +35,6 @@ const ACCENT = 'var(--color-net-neg)';
 function encodeFunding(type: 'account' | 'debt', id: number): string {
   return `${type}:${id}`;
 }
-function decodeFunding(value: string): { type: FundingSourceType; id: number | null } {
-  const [type, id] = value.split(':');
-  return { type: type as FundingSourceType, id: Number(id) };
-}
 
 // <optgroup>s for credit lines, one per debt group (optgroups can't nest in HTML).
 function debtOptionGroups(debts: NamedSource[], groups: LineItemGroup[]) {
@@ -52,14 +49,32 @@ function debtOptionGroups(debts: NamedSource[], groups: LineItemGroup[]) {
   return out;
 }
 
-// The select value for a payment, mapping legacy cash/income funding to the primary account.
-function fundingValue(p: { funding_source_type: FundingSourceType; funding_source_id: number | null }, primaryId: number | null): string {
-  if (p.funding_source_type === 'debt' && p.funding_source_id != null) return encodeFunding('debt', p.funding_source_id);
-  if (p.funding_source_type === 'account' && p.funding_source_id != null) return encodeFunding('account', p.funding_source_id);
-  return primaryId != null ? encodeFunding('account', primaryId) : '';
+function allocationsFromLegacy(p: { funding_source_type: FundingSourceType; funding_source_id: number | null; funding_allocations?: ExpenseAllocation[] }): ExpenseAllocation[] {
+  if (p.funding_allocations?.length) return p.funding_allocations;
+  if ((p.funding_source_type === 'account' || p.funding_source_type === 'debt') && p.funding_source_id != null) {
+    return [{ source_type: p.funding_source_type, source_id: p.funding_source_id, alloc_type: 'percent', value: 100 }];
+  }
+  return [];
+}
+
+function legacyFundingFromAllocations(allocations: ExpenseAllocation[]): { type: FundingSourceType; id: number | null } {
+  const first = allocations.find((a) => a.source_id != null && (a.source_type === 'account' || a.source_type === 'debt'));
+  return first ? { type: first.source_type, id: first.source_id } : { type: 'cash', id: null };
 }
 
 function fundingLabel(p: ScheduledPayment, accounts: AccountOpt[], debts: NamedSource[]): string {
+  const allocations = allocationsFromLegacy(p);
+  if (allocations.length > 0) {
+    const debtCount = allocations.filter((a) => a.source_type === 'debt').length;
+    const accountCount = allocations.filter((a) => a.source_type === 'account').length;
+    if (debtCount && accountCount) return `${allocations.length} splits`;
+    if (debtCount) return debtCount === 1
+      ? debts.find((d) => d.id === allocations.find((a) => a.source_type === 'debt')?.source_id)?.name ?? 'card'
+      : `${debtCount} cards`;
+    if (accountCount) return accountCount === 1
+      ? accounts.find((a) => a.id === allocations.find((a) => a.source_type === 'account')?.source_id)?.name ?? 'account'
+      : `${accountCount} accounts`;
+  }
   if (p.funding_source_type === 'debt') return debts.find((d) => d.id === p.funding_source_id)?.name ?? 'card';
   if (p.funding_source_type === 'account') return accounts.find((a) => a.id === p.funding_source_id)?.name ?? 'account';
   return accounts.find((a) => a.is_primary)?.name ?? 'Cash'; // legacy cash/income -> primary
@@ -116,19 +131,23 @@ function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSu
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
   const [start, setStart] = useState(initial.start_date.slice(0, 7));
   const [end, setEnd] = useState(initial.end_date ? initial.end_date.slice(0, 7) : '');
-  const [funding, setFunding] = useState(fundingValue(initial, primaryId));
+  const [allocations, setAllocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
   const [saving, setSaving] = useState(false);
 
   const recurring = frequency !== 'one-time';
   const amtNum = parseFloat(amount);
   const endBeforeStart = recurring && !!end && end < start;
   const valid = name.trim().length > 0 && amtNum > 0 && !!start && !endBeforeStart;
-  const fundingIsDebt = funding.startsWith('debt:');
+  const debtFunded = allocations.some((a) => a.source_type === 'debt' && a.source_id != null && a.value > 0);
+  const fixedSum = allocations.filter((a) => a.alloc_type === 'fixed').reduce((s, a) => s + (a.value || 0), 0);
+  const pctSum = allocations.filter((a) => a.alloc_type === 'percent').reduce((s, a) => s + (a.value || 0), 0);
+  const remainderAmt = Math.max(0, (amtNum || 0) - fixedSum - (amtNum || 0) * pctSum / 100);
 
   async function handle(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    const f = decodeFunding(funding);
+    const clean = allocations.filter((a) => a.source_id != null && a.value > 0);
+    const f = legacyFundingFromAllocations(clean);
     setSaving(true);
     await onSubmit({
       name: name.trim(),
@@ -138,6 +157,7 @@ function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSu
       end_date: recurring && end ? `${end}-01` : null,
       funding_source_type: f.type,
       funding_source_id: f.id,
+      funding_allocations: clean,
     });
     setSaving(false);
   }
@@ -187,18 +207,61 @@ function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSu
         </div>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={labelStyle}>Paid from</span>
-          <select value={funding} onChange={(e) => setFunding(e.target.value)} style={monthInputStyle}>
-            {accounts.length > 0 && (
-              <optgroup label="💵 Accounts (cash)">
-                {accounts.map((a) => <option key={`a${a.id}`} value={encodeFunding('account', a.id)}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
-              </optgroup>
-            )}
-            {debtOptionGroups(debts, groups.filter((g) => g.kind === 'debt'))}
-          </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {allocations.map((a, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select
+                  value={a.source_id == null ? '' : `${a.source_type}:${a.source_id}`}
+                  onChange={(e) => {
+                    const [type, sid] = e.target.value.split(':');
+                    setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, source_type: type as 'account' | 'debt', source_id: Number(sid) } : x));
+                  }}
+                  style={{ flex: 1, ...monthInputStyle }}
+                >
+                  <option value="" disabled>Choose source…</option>
+                  {accounts.length > 0 && (
+                    <optgroup label="💵 Accounts (cash)">
+                      {accounts.map((a) => <option key={`a${a.id}`} value={encodeFunding('account', a.id)}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+                    </optgroup>
+                  )}
+                  {debtOptionGroups(debts, groups.filter((g) => g.kind === 'debt'))}
+                </select>
+                <select
+                  value={a.alloc_type}
+                  onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, alloc_type: e.target.value as 'percent' | 'fixed' } : x))}
+                  style={{ ...monthInputStyle, width: 74 }}
+                >
+                  <option value="percent">%</option>
+                  <option value="fixed">$</option>
+                </select>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={a.value || ''}
+                  onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, value: parseFloat(e.target.value) || 0 } : x))}
+                  style={{ width: 80 }}
+                />
+                <button type="button" onClick={() => setAllocations((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px' }}>✕</button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setAllocations((prev) => [...prev, { source_type: 'account', source_id: primaryId, alloc_type: 'percent', value: 0 }])}
+              style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
+            >
+              + Add split
+            </button>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              {allocations.length === 0
+                ? 'Whole amount is paid from the primary account.'
+                : `Remainder (${formatMoney(remainderAmt, { whole: true })}) is paid from the primary account.`}
+            </p>
+          </div>
         </label>
-        {fundingIsDebt && (
+        {debtFunded && (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -6 }}>
-            Charged to the card — adds to its balance instead of spending cash, then pays down via the debt’s payment.
+            Card-funded portions add to debt instead of spending cash, then pay down via the debt’s payment.
           </p>
         )}
 
@@ -285,11 +348,11 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
               <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
               <span style={{
                 flexShrink: 0, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-                color: p.funding_source_type === 'debt' ? 'var(--color-net-neg)' : 'var(--color-text-muted)',
-                background: p.funding_source_type === 'debt' ? 'var(--color-net-neg)1f' : 'var(--color-surface-2)',
+                color: allocationsFromLegacy(p).some((a) => a.source_type === 'debt') ? 'var(--color-net-neg)' : 'var(--color-text-muted)',
+                background: allocationsFromLegacy(p).some((a) => a.source_type === 'debt') ? 'var(--color-net-neg)1f' : 'var(--color-surface-2)',
                 border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
               }}>
-                {p.funding_source_type === 'debt' ? '💳 ' : '↳ '}{fundingLabel(p, accounts, debts)}
+                {allocationsFromLegacy(p).some((a) => a.source_type === 'debt') ? '💳 ' : '↳ '}{fundingLabel(p, accounts, debts)}
               </span>
             </div>
             <span style={{ fontWeight: 600, color: ACCENT }}>
@@ -327,7 +390,7 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
           accounts={accounts}
           debts={debts}
           groups={groups}
-          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null }}
+          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [] }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
         />
@@ -346,6 +409,7 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
             end_date: editingPayment.end_date,
             funding_source_type: editingPayment.funding_source_type,
             funding_source_id: editingPayment.funding_source_id,
+            funding_allocations: editingPayment.funding_allocations ?? [],
           }}
           onCancel={() => setEditingId(null)}
           onSubmit={async (data) => { await onUpdate(editingPayment.id, data); setEditingId(null); }}

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
-const { reorder, ORDER_BY } = require('../lib/data');
+const { reorder, removeFundingAllocations, ORDER_BY } = require('../lib/data');
 
 function isAmount(v) {
   return typeof v === 'number' && isFinite(v);
@@ -62,6 +62,8 @@ router.delete('/:id', (req, res) => {
   db.prepare(
     "UPDATE scheduled_payments SET funding_source_type = 'cash', funding_source_id = NULL WHERE funding_source_type = 'debt' AND funding_source_id = ?"
   ).run(id);
+  removeFundingAllocations(db, 'expenses', 'debt', id);
+  removeFundingAllocations(db, 'scheduled_payments', 'debt', id);
   db.prepare('DELETE FROM debts WHERE id = ?').run(id);
   res.status(204).end();
 });

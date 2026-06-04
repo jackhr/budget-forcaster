@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
-const { reorder, ORDER_BY } = require('../lib/data');
+const { reorder, removeFundingAllocations, ORDER_BY } = require('../lib/data');
 
 function isAmount(v) {
   return typeof v === 'number' && isFinite(v);
@@ -74,6 +74,8 @@ router.delete('/:id', (req, res) => {
   db.prepare(
     "UPDATE scheduled_payments SET funding_source_type = 'cash', funding_source_id = NULL WHERE funding_source_type = 'account' AND funding_source_id = ?"
   ).run(id);
+  removeFundingAllocations(db, 'expenses', 'account', id);
+  removeFundingAllocations(db, 'scheduled_payments', 'account', id);
   // Debts paid from this account fall back to the primary account.
   db.prepare('UPDATE debts SET account_id = NULL WHERE account_id = ?').run(id);
   db.prepare('DELETE FROM accounts WHERE id = ?').run(id);

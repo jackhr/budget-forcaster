@@ -101,7 +101,7 @@ describe('buildSavings', () => {
   });
 
   it('subtracts a one-off future expense in the right month', () => {
-    const pay: ScheduledPayment = { id: 1, name: 'Trip', amount: 1000, frequency: 'one-time', start_date: '2026-03-01', end_date: null, funding_source_type: 'cash', funding_source_id: null, created_at: '', updated_at: '' };
+    const pay: ScheduledPayment = { id: 1, name: 'Trip', amount: 1000, frequency: 'one-time', start_date: '2026-03-01', end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], created_at: '', updated_at: '' };
     const sv = buildSavings([], flat(0, 4), [pay], [], 4, 1000, NOW);
     expect(monthOffset('2026-03-01', NOW)).toBe(2);
     expect(sv[2].scheduledOut).toBe(1000);
@@ -113,7 +113,7 @@ describe('debt-funded future expenses', () => {
   const card: Debt = { id: 9, name: 'Card', balance: 0, apr: 24, credit_limit: null, monthly_payment: 500, group_id: null, created_at: '', updated_at: '' };
   const charged: ScheduledPayment = {
     id: 1, name: 'Laptop', amount: 2000, frequency: 'one-time', start_date: '2026-02-01', end_date: null,
-    funding_source_type: 'debt', funding_source_id: 9, created_at: '', updated_at: '',
+    funding_source_type: 'debt', funding_source_id: 9, funding_allocations: [], created_at: '', updated_at: '',
   };
 
   it('does not dip cash for a charged expense', () => {
@@ -170,7 +170,7 @@ describe('buildAccountSeries', () => {
 describe('future-expense funding source (account vs card)', () => {
   const pay = (over: Partial<ScheduledPayment>): ScheduledPayment => ({
     id: 1, name: 'P', amount: 100, frequency: 'monthly', start_date: '2026-01-01', end_date: null,
-    funding_source_type: 'account', funding_source_id: null, created_at: '', updated_at: '', ...over,
+    funding_source_type: 'account', funding_source_id: null, funding_allocations: [], created_at: '', updated_at: '', ...over,
   });
 
   it('attributes an account-funded payment to that account, not primary', () => {
@@ -189,6 +189,39 @@ describe('future-expense funding source (account vs card)', () => {
     ];
     const map = buildScheduledOutByAccount(payments, accounts, 1, NOW);
     expect(map.get(1)![0]).toBe(50); // cash -> primary; debt excluded
+  });
+});
+
+describe('split-funded future expenses', () => {
+  const pay = (over: Partial<ScheduledPayment>): ScheduledPayment => ({
+    id: 1, name: 'P', amount: 1000, frequency: 'one-time', start_date: '2026-01-01', end_date: null,
+    funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], created_at: '', updated_at: '', ...over,
+  });
+
+  it('splits a future expense between cash and a card', () => {
+    const payment = pay({
+      amount: 1000,
+      funding_allocations: [
+        { source_type: 'debt', source_id: 9, alloc_type: 'percent', value: 60 },
+        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 150 },
+      ],
+    });
+    const sv = buildSavings([], flat(0, 1), [payment], [], 1, 1000, NOW);
+    expect(sv[0].scheduledOut).toBe(400); // $150 account + $250 remainder to primary.
+    expect(buildDebtCharges([payment], 1, NOW)).toEqual([{ debtId: 9, monthIndex: 0, amount: 600 }]);
+  });
+
+  it('attributes account-funded future expense portions by account and remainder to primary', () => {
+    const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Vacation', 0)];
+    const payment = pay({
+      amount: 1000,
+      funding_allocations: [
+        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 300 },
+      ],
+    });
+    const map = buildScheduledOutByAccount([payment], accounts, 1, NOW);
+    expect(map.get(2)![0]).toBe(300);
+    expect(map.get(1)![0]).toBe(700);
   });
 });
 

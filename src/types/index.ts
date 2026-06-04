@@ -85,6 +85,7 @@ export interface ScheduledPayment {
   end_date: string | null; // YYYY-MM-DD, last occurrence (inclusive); null = open-ended
   funding_source_type: FundingSourceType; // what pays for it
   funding_source_id: number | null; // income/debt id when type !== 'cash'
+  funding_allocations: ExpenseAllocation[]; // split funding; empty = legacy funding source
   created_at: string;
   updated_at: string;
 }
