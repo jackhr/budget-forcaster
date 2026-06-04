@@ -176,15 +176,23 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
             </div>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          {field('Pay from', (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {allocations.map((a, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {field('Pay from', (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            {allocations.map((a, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) 74px 96px 32px',
+                  gap: 8,
+                  alignItems: 'center',
+                  width: '100%',
+                }}
+              >
                   <select
                     value={a.source_id ?? ''}
                     onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, source_type: 'account', source_id: e.target.value ? Number(e.target.value) : null } : x))}
-                    style={{ ...selectStyle, flex: 1 }}
+                    style={{ ...selectStyle, minWidth: 0 }}
                   >
                     <option value="" disabled>Choose account…</option>
                     {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
@@ -192,7 +200,7 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
                   <select
                     value={a.alloc_type}
                     onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, alloc_type: e.target.value as 'percent' | 'fixed' } : x))}
-                    style={{ ...selectStyle, width: 74 }}
+                    style={selectStyle}
                   >
                     <option value="percent">%</option>
                     <option value="fixed">$</option>
@@ -203,32 +211,31 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
                     step="any"
                     value={a.value || ''}
                     onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, value: parseFloat(e.target.value) || 0 } : x))}
-                    style={{ width: 80 }}
+                    style={{ width: '100%' }}
                   />
                   <button type="button" onClick={() => setAllocations((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px' }}>✕</button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setAllocations((prev) => [...prev, { source_type: 'account', source_id: primaryId, alloc_type: 'percent', value: 0 }])}
-                style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
-              >
-                + Add split
-              </button>
-              <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                {allocations.length === 0
-                  ? 'Whole payment is paid from the primary account.'
-                  : `Remainder (${formatMoney(remainderAmt, { whole: true })}) is paid from the primary account.`}
-              </p>
-            </div>
-          ))}
-          {field('Group', (
-            <select value={groupId ?? ''} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
-              <option value="">No group</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          ))}
-        </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setAllocations((prev) => [...prev, { source_type: 'account', source_id: primaryId, alloc_type: 'percent', value: 0 }])}
+              style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
+            >
+              + Add split
+            </button>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              {allocations.length === 0
+                ? 'Whole payment is paid from the primary account.'
+                : `Remainder (${formatMoney(remainderAmt, { whole: true })}) is paid from the primary account.`}
+            </p>
+          </div>
+        ))}
+        {field('Group', (
+          <select value={groupId ?? ''} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
+            <option value="">No group</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        ))}
 
         {preview && (
           <div style={{
