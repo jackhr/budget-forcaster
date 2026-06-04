@@ -48,6 +48,12 @@ export interface ExpenseAllocation {
   value: number;
 }
 
+export interface FundingRule extends ExpenseAllocation {
+  frequency: Frequency; // how often this source contributes while the rule is active
+  start_date: string | null; // YYYY-MM-DD; null = active now / always
+  end_date: string | null; // YYYY-MM-DD; null = ongoing
+}
+
 export interface Expense {
   id: number;
   name: string;
@@ -57,6 +63,7 @@ export interface Expense {
   end_date: string | null; // YYYY-MM-DD; null = ongoing
   group_id: number | null;
   funding_allocations: ExpenseAllocation[]; // remainder draws from the primary account
+  funding_rules: FundingRule[]; // scheduled funding plan; empty = use funding_allocations
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +78,7 @@ export interface Debt {
   group_id: number | null;
   account_id: number | null; // account that pays this debt; null = primary
   funding_allocations: ExpenseAllocation[]; // split account funding for debt payments; empty = legacy account_id
+  funding_rules: FundingRule[]; // scheduled account funding plan; empty = use funding_allocations/account_id
   created_at: string;
   updated_at: string;
 }
@@ -87,6 +95,7 @@ export interface ScheduledPayment {
   funding_source_type: FundingSourceType; // what pays for it
   funding_source_id: number | null; // income/debt id when type !== 'cash'
   funding_allocations: ExpenseAllocation[]; // split funding; empty = legacy funding source
+  funding_rules: FundingRule[]; // scheduled funding plan; empty = use funding_allocations/source
   created_at: string;
   updated_at: string;
 }
@@ -131,4 +140,5 @@ export interface ItemFormData {
   end_date?: string | null;
   account_id?: number | null;
   funding_allocations?: ExpenseAllocation[];
+  funding_rules?: FundingRule[];
 }

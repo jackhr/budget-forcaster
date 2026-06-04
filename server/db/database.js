@@ -106,10 +106,16 @@ if (!debtColsForGroup.some((c) => c.name === 'account_id')) {
 if (!debtColsForGroup.some((c) => c.name === 'funding_allocations')) {
   db.exec("ALTER TABLE debts ADD COLUMN funding_allocations TEXT NOT NULL DEFAULT '[]'");
 }
+if (!debtColsForGroup.some((c) => c.name === 'funding_rules')) {
+  db.exec("ALTER TABLE debts ADD COLUMN funding_rules TEXT NOT NULL DEFAULT '[]'");
+}
 // Split funding for expenses (JSON array of allocations).
 const expenseFundingCols = db.prepare('PRAGMA table_info(expenses)').all();
 if (!expenseFundingCols.some((c) => c.name === 'funding_allocations')) {
   db.exec("ALTER TABLE expenses ADD COLUMN funding_allocations TEXT NOT NULL DEFAULT '[]'");
+}
+if (!expenseFundingCols.some((c) => c.name === 'funding_rules')) {
+  db.exec("ALTER TABLE expenses ADD COLUMN funding_rules TEXT NOT NULL DEFAULT '[]'");
 }
 // Expenses get a frequency + date range (like income / future expenses).
 if (!expenseFundingCols.some((c) => c.name === 'frequency')) {
@@ -157,6 +163,9 @@ if (!schedFundingCols.some((c) => c.name === 'funding_source_type')) {
 }
 if (!schedFundingCols.some((c) => c.name === 'funding_allocations')) {
   db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_allocations TEXT NOT NULL DEFAULT '[]'");
+}
+if (!schedFundingCols.some((c) => c.name === 'funding_rules')) {
+  db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_rules TEXT NOT NULL DEFAULT '[]'");
 }
 
 // --- Seed example data on first run ---

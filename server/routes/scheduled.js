@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { normalizeDate, dateError } = require('../lib/dates');
+const { cleanAllocations, cleanFundingRules, parseJsonArray } = require('../lib/funding');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
 const VALID_FUNDING = ['cash', 'income', 'debt', 'account'];
@@ -18,25 +19,12 @@ function normalizeFunding(type, fallback = 'cash') {
   return VALID_FUNDING.includes(type) ? type : fallback;
 }
 
-function cleanAllocations(input) {
-  if (!Array.isArray(input)) return [];
-  const out = [];
-  for (const a of input) {
-    if (!a || (a.source_type !== 'account' && a.source_type !== 'debt')) continue;
-    if (a.alloc_type !== 'percent' && a.alloc_type !== 'fixed') continue;
-    if (!isAmount(a.value) || a.value < 0) continue;
-    out.push({
-      source_type: a.source_type,
-      source_id: a.source_id == null ? null : Number(a.source_id),
-      alloc_type: a.alloc_type,
-      value: a.value,
-    });
-  }
-  return out;
-}
-
 function serialize(row) {
-  return { ...row, funding_allocations: JSON.parse(row.funding_allocations || '[]') };
+  return {
+    ...row,
+    funding_allocations: parseJsonArray(row.funding_allocations),
+    funding_rules: parseJsonArray(row.funding_rules),
+  };
 }
 
 router.get('/', (req, res) => {
@@ -45,15 +33,17 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, amount, frequency, start_date, end_date, funding_source_type, funding_source_id, funding_allocations } = req.body;
+  const { name, amount, frequency, start_date, end_date, funding_source_type, funding_source_id, funding_allocations, funding_rules } = req.body;
   if (!name || !isAmount(amount) || amount < 0 || !start_date) {
     return res.status(400).json({ error: 'name, a non-negative numeric amount and start_date are required' });
   }
   let normalizedStart;
   let normalizedEnd;
+  let cleanedRules;
   try {
     normalizedStart = normalizeDate(start_date, 'start_date', { required: true });
     normalizedEnd = normalizeDate(end_date, 'end_date');
+    cleanedRules = cleanFundingRules(funding_rules);
   } catch (e) {
     if (dateError(res, e)) return;
     throw e;
@@ -62,15 +52,15 @@ router.post('/', (req, res) => {
   const fundingId = fundingType === 'cash' ? null : (funding_source_id ?? null);
   const allocations = cleanAllocations(funding_allocations);
   const stmt = db.prepare(
-    'INSERT INTO scheduled_payments (name, amount, frequency, start_date, end_date, funding_source_type, funding_source_id, funding_allocations) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO scheduled_payments (name, amount, frequency, start_date, end_date, funding_source_type, funding_source_id, funding_allocations, funding_rules) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
-  const result = stmt.run(name, amount, normalizeFrequency(frequency), normalizedStart, normalizedEnd, fundingType, fundingId, JSON.stringify(allocations));
+  const result = stmt.run(name, amount, normalizeFrequency(frequency), normalizedStart, normalizedEnd, fundingType, fundingId, JSON.stringify(allocations), JSON.stringify(cleanedRules));
   const row = db.prepare('SELECT * FROM scheduled_payments WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(serialize(row));
 });
 
 router.put('/:id', (req, res) => {
-  const { name, amount, frequency, start_date, end_date, funding_source_type, funding_source_id, funding_allocations } = req.body;
+  const { name, amount, frequency, start_date, end_date, funding_source_type, funding_source_id, funding_allocations, funding_rules } = req.body;
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM scheduled_payments WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -79,9 +69,11 @@ router.put('/:id', (req, res) => {
   }
   let normalizedStart = existing.start_date;
   let normalizedEnd = existing.end_date;
+  let cleanedRules = existing.funding_rules;
   try {
     if (start_date !== undefined) normalizedStart = normalizeDate(start_date, 'start_date', { required: true });
     if (end_date !== undefined) normalizedEnd = normalizeDate(end_date, 'end_date');
+    if (funding_rules !== undefined) cleanedRules = JSON.stringify(cleanFundingRules(funding_rules));
   } catch (e) {
     if (dateError(res, e)) return;
     throw e;
@@ -99,7 +91,7 @@ router.put('/:id', (req, res) => {
 
   db.prepare(
     `UPDATE scheduled_payments
-     SET name = ?, amount = ?, frequency = ?, start_date = ?, end_date = ?, funding_source_type = ?, funding_source_id = ?, funding_allocations = ?, updated_at = datetime('now')
+     SET name = ?, amount = ?, frequency = ?, start_date = ?, end_date = ?, funding_source_type = ?, funding_source_id = ?, funding_allocations = ?, funding_rules = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     name ?? existing.name,
@@ -110,6 +102,7 @@ router.put('/:id', (req, res) => {
     fundingType,
     fundingId,
     funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations)) : existing.funding_allocations,
+    cleanedRules,
     id
   );
   const row = db.prepare('SELECT * FROM scheduled_payments WHERE id = ?').get(id);

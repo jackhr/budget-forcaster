@@ -45,19 +45,29 @@ function reorder(db, table, ids) {
 }
 
 function removeFundingAllocations(db, table, sourceType, sourceId) {
-  const rows = db.prepare(`SELECT id, funding_allocations FROM ${table}`).all();
-  const update = db.prepare(`UPDATE ${table} SET funding_allocations = ?, updated_at = datetime('now') WHERE id = ?`);
+  const rows = db.prepare(`SELECT id, funding_allocations, funding_rules FROM ${table}`).all();
+  const update = db.prepare(`UPDATE ${table} SET funding_allocations = ?, funding_rules = ?, updated_at = datetime('now') WHERE id = ?`);
   const tx = db.transaction(() => {
     for (const row of rows) {
       let allocations;
+      let rules;
       try {
         allocations = JSON.parse(row.funding_allocations || '[]');
       } catch {
         allocations = [];
       }
-      if (!Array.isArray(allocations) || allocations.length === 0) continue;
-      const next = allocations.filter((a) => !(a?.source_type === sourceType && Number(a.source_id) === Number(sourceId)));
-      if (next.length !== allocations.length) update.run(JSON.stringify(next), row.id);
+      try {
+        rules = JSON.parse(row.funding_rules || '[]');
+      } catch {
+        rules = [];
+      }
+      if (!Array.isArray(allocations)) allocations = [];
+      if (!Array.isArray(rules)) rules = [];
+      const nextAllocations = allocations.filter((a) => !(a?.source_type === sourceType && Number(a.source_id) === Number(sourceId)));
+      const nextRules = rules.filter((a) => !(a?.source_type === sourceType && Number(a.source_id) === Number(sourceId)));
+      if (nextAllocations.length !== allocations.length || nextRules.length !== rules.length) {
+        update.run(JSON.stringify(nextAllocations), JSON.stringify(nextRules), row.id);
+      }
     }
   });
   tx();

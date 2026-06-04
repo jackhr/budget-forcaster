@@ -5,7 +5,7 @@ import type { Debt } from '../types';
 function makeDebt(over: Partial<Debt>): Debt {
   return {
     id: 1, name: 'D', balance: 0, apr: 0, credit_limit: null, monthly_payment: 0,
-    group_id: null, created_at: '', updated_at: '', ...over,
+    group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '', ...over,
   };
 }
 

@@ -4,9 +4,10 @@ interface Props {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  maxWidth?: number;
 }
 
-export default function Modal({ title, onClose, children }: Props) {
+export default function Modal({ title, onClose, children, maxWidth = 420 }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -82,7 +83,7 @@ export default function Modal({ title, onClose, children }: Props) {
           borderRadius: 'var(--radius)',
           boxShadow: 'var(--shadow)',
           width: '100%',
-          maxWidth: 420,
+          maxWidth,
           animation: 'modalSlide 0.15s ease-out',
         }}
       >

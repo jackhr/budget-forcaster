@@ -9,7 +9,7 @@ function income(over: Partial<IncomeSource>): IncomeSource {
   return { id: 1, name: 'I', monthly_amount: 0, frequency: 'monthly', group_id: null, start_date: null, account_id: null, created_at: '', updated_at: '', ...over };
 }
 function expense(over: Partial<Expense>): Expense {
-  return { id: 1, name: 'E', monthly_amount: 0, frequency: 'monthly', start_date: null, end_date: null, group_id: null, funding_allocations: [], created_at: '', updated_at: '', ...over };
+  return { id: 1, name: 'E', monthly_amount: 0, frequency: 'monthly', start_date: null, end_date: null, group_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '', ...over };
 }
 function acct(id: number, name: string, balance: number, primary = false): Account {
   return { id, name, balance, is_primary: primary ? 1 : 0, sort_order: null, created_at: '', updated_at: '' };
@@ -65,7 +65,7 @@ describe('buildExpensePlan', () => {
 
   it('splits a bill across cash and a card; remainder to the primary account', () => {
     const accounts = [acct(1, 'Cash', 0, true)];
-    const debts: Debt[] = [{ id: 5, name: 'Visa', balance: 0, apr: 20, credit_limit: null, monthly_payment: 100, group_id: null, created_at: '', updated_at: '' }];
+    const debts: Debt[] = [{ id: 5, name: 'Visa', balance: 0, apr: 20, credit_limit: null, monthly_payment: 100, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' }];
     const exp = [expense({
       id: 1, monthly_amount: 1000, funding_allocations: [
         { source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 50 },
@@ -81,7 +81,7 @@ describe('buildExpensePlan', () => {
 
   it('charged portions feed the debt and lower cash outflow accordingly', () => {
     const accounts = [acct(1, 'Cash', 1000, true)];
-    const card: Debt = { id: 5, name: 'Visa', balance: 0, apr: 24, credit_limit: null, monthly_payment: 1000, group_id: null, created_at: '', updated_at: '' };
+    const card: Debt = { id: 5, name: 'Visa', balance: 0, apr: 24, credit_limit: null, monthly_payment: 1000, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
     const exp = [expense({ id: 1, monthly_amount: 400, funding_allocations: [{ source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 100 }] })];
     const ep = buildExpensePlan(exp, accounts, [card], 2, 0);
     expect(ep.ongoingCashOut[0]).toBe(0); // 100% on the card -> no cash out
@@ -101,7 +101,7 @@ describe('buildSavings', () => {
   });
 
   it('subtracts a one-off future expense in the right month', () => {
-    const pay: ScheduledPayment = { id: 1, name: 'Trip', amount: 1000, frequency: 'one-time', start_date: '2026-03-01', end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], created_at: '', updated_at: '' };
+    const pay: ScheduledPayment = { id: 1, name: 'Trip', amount: 1000, frequency: 'one-time', start_date: '2026-03-01', end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
     const sv = buildSavings([], flat(0, 4), [pay], [], 4, 1000, NOW);
     expect(monthOffset('2026-03-01', NOW)).toBe(2);
     expect(sv[2].scheduledOut).toBe(1000);
@@ -110,10 +110,10 @@ describe('buildSavings', () => {
 });
 
 describe('debt-funded future expenses', () => {
-  const card: Debt = { id: 9, name: 'Card', balance: 0, apr: 24, credit_limit: null, monthly_payment: 500, group_id: null, created_at: '', updated_at: '' };
+  const card: Debt = { id: 9, name: 'Card', balance: 0, apr: 24, credit_limit: null, monthly_payment: 500, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
   const charged: ScheduledPayment = {
     id: 1, name: 'Laptop', amount: 2000, frequency: 'one-time', start_date: '2026-02-01', end_date: null,
-    funding_source_type: 'debt', funding_source_id: 9, funding_allocations: [], created_at: '', updated_at: '',
+    funding_source_type: 'debt', funding_source_id: 9, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
   };
 
   it('does not dip cash for a charged expense', () => {
@@ -170,7 +170,7 @@ describe('buildAccountSeries', () => {
 describe('future-expense funding source (account vs card)', () => {
   const pay = (over: Partial<ScheduledPayment>): ScheduledPayment => ({
     id: 1, name: 'P', amount: 100, frequency: 'monthly', start_date: '2026-01-01', end_date: null,
-    funding_source_type: 'account', funding_source_id: null, funding_allocations: [], created_at: '', updated_at: '', ...over,
+    funding_source_type: 'account', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '', ...over,
   });
 
   it('attributes an account-funded payment to that account, not primary', () => {
@@ -195,7 +195,7 @@ describe('future-expense funding source (account vs card)', () => {
 describe('split-funded future expenses', () => {
   const pay = (over: Partial<ScheduledPayment>): ScheduledPayment => ({
     id: 1, name: 'P', amount: 1000, frequency: 'one-time', start_date: '2026-01-01', end_date: null,
-    funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], created_at: '', updated_at: '', ...over,
+    funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '', ...over,
   });
 
   it('splits a future expense between cash and a card', () => {
@@ -223,14 +223,31 @@ describe('split-funded future expenses', () => {
     expect(map.get(2)![0]).toBe(300);
     expect(map.get(1)![0]).toBe(700);
   });
+
+  it('switches future-expense funding sources by date range', () => {
+    const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Vacation', 0)];
+    const payment = pay({
+      amount: 1000,
+      frequency: 'monthly',
+      funding_rules: [
+        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 300, frequency: 'monthly', start_date: '2026-01-01', end_date: '2026-01-01' },
+        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 600, frequency: 'monthly', start_date: '2026-02-01', end_date: null },
+      ],
+    });
+    const map = buildScheduledOutByAccount([payment], accounts, 2, NOW);
+    expect(map.get(2)![0]).toBe(300);
+    expect(map.get(1)![0]).toBe(700);
+    expect(map.get(2)![1]).toBe(600);
+    expect(map.get(1)![1]).toBe(400);
+  });
 });
 
 describe('debt pay-from account', () => {
   it('attributes each debt payment to its pay-from account', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
     const debts: Debt[] = [
-      { id: 1, name: 'A', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 2, funding_allocations: [], created_at: '', updated_at: '' },
-      { id: 2, name: 'B', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 200, group_id: null, account_id: null, funding_allocations: [], created_at: '', updated_at: '' },
+      { id: 1, name: 'A', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 2, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
+      { id: 2, name: 'B', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 200, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
     ];
     const plan = simulateDebtPlan(debts, 0, 'none', 3);
     const map = buildDebtOutByAccount(debts, plan, accounts);
@@ -246,6 +263,7 @@ describe('debt pay-from account', () => {
         group_id: null, account_id: null, funding_allocations: [
           { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 125 },
         ],
+        funding_rules: [],
         created_at: '', updated_at: '',
       },
     ];
@@ -253,6 +271,26 @@ describe('debt pay-from account', () => {
     const map = buildDebtOutByAccount(debts, plan, accounts);
     expect(map.get(2)![0]).toBe(125);
     expect(map.get(1)![0]).toBe(175);
+  });
+
+  it('switches debt payment funding by date range', () => {
+    const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
+    const debts: Debt[] = [
+      {
+        id: 1, name: 'Split', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 300,
+        group_id: null, account_id: null, funding_allocations: [], funding_rules: [
+          { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 100, frequency: 'one-time', start_date: '2026-01-01', end_date: null },
+          { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 200, frequency: 'monthly', start_date: '2026-02-01', end_date: null },
+        ],
+        created_at: '', updated_at: '',
+      },
+    ];
+    const plan = simulateDebtPlan(debts, 0, 'none', 2);
+    const map = buildDebtOutByAccount(debts, plan, accounts, NOW);
+    expect(map.get(2)![0]).toBe(100);
+    expect(map.get(1)![0]).toBe(200);
+    expect(map.get(2)![1]).toBe(200);
+    expect(map.get(1)![1]).toBe(100);
   });
 });
 

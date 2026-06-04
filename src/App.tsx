@@ -223,7 +223,7 @@ export default function App() {
     const item = await expensesApi.create({
       name: data.name, monthly_amount: data.monthly_amount,
       frequency: data.frequency ?? 'monthly', start_date: data.start_date ?? null, end_date: data.end_date ?? null,
-      group_id: data.group_id ?? null, funding_allocations: data.funding_allocations ?? [],
+      group_id: data.group_id ?? null, funding_allocations: data.funding_allocations ?? [], funding_rules: data.funding_rules ?? [],
     });
     setExpenses((prev) => [...prev, item]);
   }, 'Could not add expense');
@@ -530,7 +530,6 @@ export default function App() {
           payments={payments}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
           debts={debts.map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))}
-          groups={groups}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}
         />
         <Debts

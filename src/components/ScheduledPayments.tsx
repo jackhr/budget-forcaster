@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { ExpenseAllocation, Frequency, FundingSourceType, LineItemGroup, ScheduledPayment } from '../types';
+import type { ExpenseAllocation, Frequency, FundingRule, FundingSourceType, ScheduledPayment } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS, monthOffset } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
+import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
 
 interface NamedSource { id: number; name: string; group_id: number | null }
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
@@ -17,37 +18,19 @@ interface PaymentInput {
   funding_source_type: FundingSourceType;
   funding_source_id: number | null;
   funding_allocations: ExpenseAllocation[];
+  funding_rules: FundingRule[];
 }
 
 interface Props {
   payments: ScheduledPayment[];
   accounts: AccountOpt[];
   debts: NamedSource[];
-  groups: LineItemGroup[];
   onAdd: (data: PaymentInput) => Promise<void>;
   onUpdate: (id: number, data: PaymentInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
 
 const ACCENT = 'var(--color-net-neg)';
-
-// Encodes/decodes the "Paid from" <select> value as "type:id".
-function encodeFunding(type: 'account' | 'debt', id: number): string {
-  return `${type}:${id}`;
-}
-
-// <optgroup>s for credit lines, one per debt group (optgroups can't nest in HTML).
-function debtOptionGroups(debts: NamedSource[], groups: LineItemGroup[]) {
-  const out: React.ReactNode[] = [];
-  const opt = (s: NamedSource) => <option key={`debt${s.id}`} value={encodeFunding('debt', s.id)}>{s.name}</option>;
-  for (const g of groups) {
-    const members = debts.filter((s) => s.group_id === g.id);
-    if (members.length) out.push(<optgroup key={`debt-g${g.id}`} label={`💳 Card · ${g.name}`}>{members.map(opt)}</optgroup>);
-  }
-  const ungrouped = debts.filter((s) => s.group_id == null);
-  if (ungrouped.length) out.push(<optgroup key="debt-none" label="💳 Credit lines / cards">{ungrouped.map(opt)}</optgroup>);
-  return out;
-}
 
 function allocationsFromLegacy(p: { funding_source_type: FundingSourceType; funding_source_id: number | null; funding_allocations?: ExpenseAllocation[] }): ExpenseAllocation[] {
   if (p.funding_allocations?.length) return p.funding_allocations;
@@ -63,6 +46,7 @@ function legacyFundingFromAllocations(allocations: ExpenseAllocation[]): { type:
 }
 
 function fundingLabel(p: ScheduledPayment, accounts: AccountOpt[], debts: NamedSource[]): string {
+  if (p.funding_rules?.length) return `${p.funding_rules.length} scheduled rule${p.funding_rules.length !== 1 ? 's' : ''}`;
   const allocations = allocationsFromLegacy(p);
   if (allocations.length > 0) {
     const debtCount = allocations.filter((a) => a.source_type === 'debt').length;
@@ -119,35 +103,33 @@ interface EditorProps {
   initial: PaymentInput;
   accounts: AccountOpt[];
   debts: NamedSource[];
-  groups: LineItemGroup[];
   onCancel: () => void;
   onSubmit: (data: PaymentInput) => Promise<void>;
 }
 
-function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSubmit }: EditorProps) {
-  const primaryId = accounts.find((a) => a.is_primary)?.id ?? accounts[0]?.id ?? null;
+function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: EditorProps) {
   const [name, setName] = useState(initial.name);
   const [amount, setAmount] = useState(String(initial.amount || ''));
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
   const [start, setStart] = useState(initial.start_date.slice(0, 7));
   const [end, setEnd] = useState(initial.end_date ? initial.end_date.slice(0, 7) : '');
-  const [allocations, setAllocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
+  const [allocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
+  const [fundingRules, setFundingRules] = useState<FundingRule[]>(initial.funding_rules ?? []);
+  const [editingFunding, setEditingFunding] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const recurring = frequency !== 'one-time';
   const amtNum = parseFloat(amount);
   const endBeforeStart = recurring && !!end && end < start;
   const valid = name.trim().length > 0 && amtNum > 0 && !!start && !endBeforeStart;
-  const debtFunded = allocations.some((a) => a.source_type === 'debt' && a.source_id != null && a.value > 0);
-  const fixedSum = allocations.filter((a) => a.alloc_type === 'fixed').reduce((s, a) => s + (a.value || 0), 0);
-  const pctSum = allocations.filter((a) => a.alloc_type === 'percent').reduce((s, a) => s + (a.value || 0), 0);
-  const remainderAmt = Math.max(0, (amtNum || 0) - fixedSum - (amtNum || 0) * pctSum / 100);
+  const debtFunded = [...allocations, ...fundingRules].some((a) => a.source_type === 'debt' && a.source_id != null && a.value > 0);
 
   async function handle(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) return;
     const clean = allocations.filter((a) => a.source_id != null && a.value > 0);
-    const f = legacyFundingFromAllocations(clean);
+    const cleanRules = fundingRules.filter((r) => r.source_id != null && r.value > 0);
+    const f = legacyFundingFromAllocations(clean.length ? clean : cleanRules);
     setSaving(true);
     await onSubmit({
       name: name.trim(),
@@ -158,6 +140,7 @@ function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSu
       funding_source_type: f.type,
       funding_source_id: f.id,
       funding_allocations: clean,
+      funding_rules: cleanRules,
     });
     setSaving(false);
   }
@@ -166,6 +149,22 @@ function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSu
     fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)',
     textTransform: 'uppercase', letterSpacing: '0.05em',
   };
+
+  if (editingFunding) {
+    return (
+      <FundingPlanModal
+        title={`Funding plan for ${name || 'future expense'}`}
+        amount={amtNum || initial.amount}
+        accounts={accounts}
+        debts={debts}
+        allowDebt
+        rules={fundingRules}
+        legacyAllocations={allocations}
+        onCancel={() => setEditingFunding(false)}
+        onSave={(rules) => { setFundingRules(rules); setEditingFunding(false); }}
+      />
+    );
+  }
 
   return (
     <Modal title={title} onClose={onCancel}>
@@ -208,54 +207,15 @@ function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSu
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={labelStyle}>Paid from</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {allocations.map((a, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <select
-                  value={a.source_id == null ? '' : `${a.source_type}:${a.source_id}`}
-                  onChange={(e) => {
-                    const [type, sid] = e.target.value.split(':');
-                    setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, source_type: type as 'account' | 'debt', source_id: Number(sid) } : x));
-                  }}
-                  style={{ flex: 1, ...monthInputStyle }}
-                >
-                  <option value="" disabled>Choose source…</option>
-                  {accounts.length > 0 && (
-                    <optgroup label="💵 Accounts (cash)">
-                      {accounts.map((a) => <option key={`a${a.id}`} value={encodeFunding('account', a.id)}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
-                    </optgroup>
-                  )}
-                  {debtOptionGroups(debts, groups.filter((g) => g.kind === 'debt'))}
-                </select>
-                <select
-                  value={a.alloc_type}
-                  onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, alloc_type: e.target.value as 'percent' | 'fixed' } : x))}
-                  style={{ ...monthInputStyle, width: 74 }}
-                >
-                  <option value="percent">%</option>
-                  <option value="fixed">$</option>
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={a.value || ''}
-                  onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, value: parseFloat(e.target.value) || 0 } : x))}
-                  style={{ width: 80 }}
-                />
-                <button type="button" onClick={() => setAllocations((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px' }}>✕</button>
-              </div>
-            ))}
             <button
               type="button"
-              onClick={() => setAllocations((prev) => [...prev, { source_type: 'account', source_id: primaryId, alloc_type: 'percent', value: 0 }])}
+              onClick={() => setEditingFunding(true)}
               style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
             >
-              + Add split
+              Edit funding plan
             </button>
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              {allocations.length === 0
-                ? 'Whole amount is paid from the primary account.'
-                : `Remainder (${formatMoney(remainderAmt, { whole: true })}) is paid from the primary account.`}
+              {summarizeFundingPlan(fundingRules, allocations)}
             </p>
           </div>
         </label>
@@ -290,7 +250,7 @@ function PaymentEditor({ title, initial, accounts, debts, groups, onCancel, onSu
   );
 }
 
-export default function ScheduledPayments({ payments, accounts, debts, groups, onAdd, onUpdate, onDelete }: Props) {
+export default function ScheduledPayments({ payments, accounts, debts, onAdd, onUpdate, onDelete }: Props) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
@@ -331,6 +291,9 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {payments.map((p) => (
+          (() => {
+            const hasDebtFunding = [...(p.funding_rules ?? []), ...allocationsFromLegacy(p)].some((a) => a.source_type === 'debt');
+            return (
           <div key={p.id} style={{
             display: 'grid',
             gridTemplateColumns: '1fr 110px 1.2fr 96px',
@@ -348,11 +311,11 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
               <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
               <span style={{
                 flexShrink: 0, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-                color: allocationsFromLegacy(p).some((a) => a.source_type === 'debt') ? 'var(--color-net-neg)' : 'var(--color-text-muted)',
-                background: allocationsFromLegacy(p).some((a) => a.source_type === 'debt') ? 'var(--color-net-neg)1f' : 'var(--color-surface-2)',
+                color: hasDebtFunding ? 'var(--color-net-neg)' : 'var(--color-text-muted)',
+                background: hasDebtFunding ? 'var(--color-net-neg)1f' : 'var(--color-surface-2)',
                 border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
               }}>
-                {allocationsFromLegacy(p).some((a) => a.source_type === 'debt') ? '💳 ' : '↳ '}{fundingLabel(p, accounts, debts)}
+                {hasDebtFunding ? '💳 ' : '↳ '}{fundingLabel(p, accounts, debts)}
               </span>
             </div>
             <span style={{ fontWeight: 600, color: ACCENT }}>
@@ -366,6 +329,8 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
               <ConfirmButton onConfirm={() => onDelete(p.id)} title={`Delete ${p.name}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}>✕</ConfirmButton>
             </div>
           </div>
+            );
+          })()
         ))}
         {payments.length === 0 && (
           <p style={{ padding: '20px 12px', color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 13 }}>
@@ -389,8 +354,7 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
           title="Add Future Expense"
           accounts={accounts}
           debts={debts}
-          groups={groups}
-          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [] }}
+          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [] }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
         />
@@ -400,7 +364,6 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
           title={`Edit ${editingPayment.name}`}
           accounts={accounts}
           debts={debts}
-          groups={groups}
           initial={{
             name: editingPayment.name,
             amount: editingPayment.amount,
@@ -410,6 +373,7 @@ export default function ScheduledPayments({ payments, accounts, debts, groups, o
             funding_source_type: editingPayment.funding_source_type,
             funding_source_id: editingPayment.funding_source_id,
             funding_allocations: editingPayment.funding_allocations ?? [],
+            funding_rules: editingPayment.funding_rules ?? [],
           }}
           onCancel={() => setEditingId(null)}
           onSubmit={async (data) => { await onUpdate(editingPayment.id, data); setEditingId(null); }}

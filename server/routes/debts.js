@@ -2,30 +2,19 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { reorder, removeFundingAllocations, ORDER_BY } = require('../lib/data');
+const { cleanAllocations, cleanFundingRules, parseJsonArray } = require('../lib/funding');
+const { dateError } = require('../lib/dates');
 
 function isAmount(v) {
   return typeof v === 'number' && isFinite(v);
 }
 
-function cleanAllocations(input) {
-  if (!Array.isArray(input)) return [];
-  const out = [];
-  for (const a of input) {
-    if (!a || a.source_type !== 'account') continue;
-    if (a.alloc_type !== 'percent' && a.alloc_type !== 'fixed') continue;
-    if (!isAmount(a.value) || a.value < 0) continue;
-    out.push({
-      source_type: 'account',
-      source_id: a.source_id == null ? null : Number(a.source_id),
-      alloc_type: a.alloc_type,
-      value: a.value,
-    });
-  }
-  return out;
-}
-
 function serialize(row) {
-  return { ...row, funding_allocations: JSON.parse(row.funding_allocations || '[]') };
+  return {
+    ...row,
+    funding_allocations: parseJsonArray(row.funding_allocations),
+    funding_rules: parseJsonArray(row.funding_rules),
+  };
 }
 
 router.get('/', (req, res) => {
@@ -39,30 +28,45 @@ router.post('/reorder', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations } = req.body;
+  const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules } = req.body;
   if (!name || !isAmount(balance) || balance < 0 || !isAmount(monthly_payment) || monthly_payment < 0) {
     return res.status(400).json({ error: 'name, a non-negative balance and monthly_payment are required' });
   }
+  let cleanedRules;
+  try {
+    cleanedRules = cleanFundingRules(funding_rules, { allowDebt: false });
+  } catch (e) {
+    if (dateError(res, e)) return;
+    throw e;
+  }
   const stmt = db.prepare(
-    'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const result = stmt.run(
     name, balance, apr ?? 0, credit_limit ?? null, monthly_payment, group_id ?? null, account_id ?? null,
-    JSON.stringify(cleanAllocations(funding_allocations)),
+    JSON.stringify(cleanAllocations(funding_allocations, { allowDebt: false })),
+    JSON.stringify(cleanedRules),
   );
   const row = db.prepare('SELECT * FROM debts WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(serialize(row));
 });
 
 router.put('/:id', (req, res) => {
-  const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations } = req.body;
+  const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules } = req.body;
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  let cleanedRules = existing.funding_rules;
+  try {
+    if (funding_rules !== undefined) cleanedRules = JSON.stringify(cleanFundingRules(funding_rules, { allowDebt: false }));
+  } catch (e) {
+    if (dateError(res, e)) return;
+    throw e;
+  }
 
   db.prepare(
     `UPDATE debts
-     SET name = ?, balance = ?, apr = ?, credit_limit = ?, monthly_payment = ?, group_id = ?, account_id = ?, funding_allocations = ?, updated_at = datetime('now')
+     SET name = ?, balance = ?, apr = ?, credit_limit = ?, monthly_payment = ?, group_id = ?, account_id = ?, funding_allocations = ?, funding_rules = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     name ?? existing.name,
@@ -72,7 +76,8 @@ router.put('/:id', (req, res) => {
     monthly_payment ?? existing.monthly_payment,
     group_id !== undefined ? (group_id ?? null) : existing.group_id,
     account_id !== undefined ? (account_id ?? null) : existing.account_id,
-    funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations)) : existing.funding_allocations,
+    funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations, { allowDebt: false })) : existing.funding_allocations,
+    cleanedRules,
     id
   );
   const row = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);

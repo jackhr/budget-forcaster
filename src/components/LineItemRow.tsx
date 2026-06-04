@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { ExpenseAllocation, Frequency, ItemFormData, LineItem, LineItemGroup } from '../types';
+import type { ExpenseAllocation, Frequency, FundingRule, ItemFormData, LineItem, LineItemGroup } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
+import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string }
@@ -24,8 +25,6 @@ interface Props {
   dragging?: boolean;
 }
 
-function encodeSource(type: 'account' | 'debt', id: number): string { return `${type}:${id}`; }
-
 function monthShort(ym: string | null): string | null {
   if (!ym) return null;
   return new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
@@ -37,8 +36,10 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const itemEnd = 'end_date' in item ? item.end_date : null;
   const itemAccount = 'account_id' in item ? item.account_id : null;
   const itemAllocations: ExpenseAllocation[] = 'funding_allocations' in item ? (item.funding_allocations ?? []) : [];
+  const itemRules: FundingRule[] = 'funding_rules' in item ? (item.funding_rules ?? []) : [];
   const primaryId = accounts?.find((a) => a.is_primary)?.id ?? null;
   const [editing, setEditing] = useState(false);
+  const [editingFunding, setEditingFunding] = useState(false);
   const [name, setName] = useState(item.name);
   const [amount, setAmount] = useState(String(item.monthly_amount));
   const [frequency, setFrequency] = useState<Frequency>(itemFreq);
@@ -47,6 +48,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const [end, setEnd] = useState(itemEnd ? itemEnd.slice(0, 7) : '');
   const [account, setAccount] = useState<number | null>(itemAccount);
   const [allocations, setAllocations] = useState<ExpenseAllocation[]>(itemAllocations);
+  const [fundingRules, setFundingRules] = useState<FundingRule[]>(itemRules);
   const [saving, setSaving] = useState(false);
 
   function openEditor() {
@@ -58,6 +60,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setEnd(itemEnd ? itemEnd.slice(0, 7) : '');
     setAccount(itemAccount);
     setAllocations(itemAllocations);
+    setFundingRules(itemRules);
     setEditing(true);
   }
 
@@ -78,15 +81,11 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       ...(showEndDate ? { end_date: end ? `${end}-01` : null } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: allocations.filter((a) => a.source_id != null && a.value > 0) } : {}),
+      ...(showFunding ? { funding_rules: fundingRules.filter((r) => r.source_id != null && r.value > 0) } : {}),
     });
     setSaving(false);
     setEditing(false);
   }
-
-  // For the split-funding remainder hint.
-  const fixedSum = allocations.filter((a) => a.alloc_type === 'fixed').reduce((s, a) => s + (a.value || 0), 0);
-  const pctSum = allocations.filter((a) => a.alloc_type === 'percent').reduce((s, a) => s + (a.value || 0), 0);
-  const remainderAmt = Math.max(0, (amtNum || 0) - fixedSum - (amtNum || 0) * pctSum / 100);
 
   const startLabel = monthShort(itemStart);
   const endLabel = monthShort(itemEnd);
@@ -156,7 +155,19 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
         </div>
       </div>
 
-      {editing && (
+      {editing && (editingFunding ? (
+        <FundingPlanModal
+          title={`Funding plan for ${item.name}`}
+          amount={amtNum || item.monthly_amount}
+          accounts={accounts}
+          debts={debts}
+          allowDebt
+          rules={fundingRules}
+          legacyAllocations={allocations}
+          onCancel={() => setEditingFunding(false)}
+          onSave={(rules) => { setFundingRules(rules); setEditingFunding(false); }}
+        />
+      ) : (
         <Modal title={`Edit ${item.name}`} onClose={() => setEditing(false)}>
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -307,55 +318,15 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Paid from
                 </span>
-                {allocations.map((a, idx) => (
-                  <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <select
-                      value={a.source_id == null ? '' : `${a.source_type}:${a.source_id}`}
-                      onChange={(e) => {
-                        const [type, sid] = e.target.value.split(':');
-                        setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, source_type: type as 'account' | 'debt', source_id: Number(sid) } : x));
-                      }}
-                      style={{ flex: 1, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 8px', fontSize: 13 }}
-                    >
-                      <option value="" disabled>Choose source…</option>
-                      {accounts && accounts.length > 0 && (
-                        <optgroup label="Accounts (cash)">
-                          {accounts.map((ac) => <option key={`a${ac.id}`} value={encodeSource('account', ac.id)}>{ac.name}{ac.is_primary ? ' ★' : ''}</option>)}
-                        </optgroup>
-                      )}
-                      {debts && debts.length > 0 && (
-                        <optgroup label="Credit lines / cards">
-                          {debts.map((d) => <option key={`d${d.id}`} value={encodeSource('debt', d.id)}>{d.name}</option>)}
-                        </optgroup>
-                      )}
-                    </select>
-                    <select
-                      value={a.alloc_type}
-                      onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, alloc_type: e.target.value as 'percent' | 'fixed' } : x))}
-                      style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 8px', fontSize: 13 }}
-                    >
-                      <option value="percent">%</option>
-                      <option value="fixed">$</option>
-                    </select>
-                    <input
-                      type="number" min={0} step="any" value={a.value || ''}
-                      onChange={(e) => setAllocations((prev) => prev.map((x, i) => i === idx ? { ...x, value: parseFloat(e.target.value) || 0 } : x))}
-                      style={{ width: 80 }}
-                    />
-                    <button type="button" onClick={() => setAllocations((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px' }}>✕</button>
-                  </div>
-                ))}
                 <button
                   type="button"
-                  onClick={() => setAllocations((prev) => [...prev, { source_type: 'account', source_id: primaryId, alloc_type: 'percent', value: 0 }])}
+                  onClick={() => setEditingFunding(true)}
                   style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
                 >
-                  + Add split
+                  Edit funding plan
                 </button>
                 <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  {allocations.length === 0
-                    ? 'Whole amount is paid from the primary account.'
-                    : `Remainder (${formatMoney(remainderAmt, { whole: true })}) is paid from the primary account.`}
+                  {summarizeFundingPlan(fundingRules, allocations)}
                 </p>
               </div>
             )}
@@ -383,7 +354,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
             </div>
           </form>
         </Modal>
-      )}
+      ))}
     </>
   );
 }

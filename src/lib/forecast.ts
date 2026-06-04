@@ -4,6 +4,7 @@ import type {
   Expense,
   ForecastPoint,
   Frequency,
+  FundingRule,
   IncomeSource,
   NetWorthPoint,
   SavingsPoint,
@@ -106,6 +107,31 @@ function paymentCashAtMonth(p: ScheduledPayment, monthIndex: number, now: Date):
   }
 }
 
+function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number, now: Date): number {
+  const startOff = rule.start_date ? Math.max(0, monthOffset(rule.start_date, now)) : 0;
+  if (monthIndex < startOff) return 0;
+  const endOff = rule.end_date ? monthOffset(rule.end_date, now) : Infinity;
+  if (monthIndex > endOff) return 0;
+  const since = monthIndex - startOff;
+  if (rule.alloc_type === 'percent') {
+    switch (rule.frequency) {
+      case 'quarterly': if (since % 3 !== 0) return 0; break;
+      case 'annually': if (since % 12 !== 0) return 0; break;
+      case 'one-time': if (since !== 0) return 0; break;
+      default: break;
+    }
+    return amount * (rule.value / 100);
+  }
+  switch (rule.frequency) {
+    case 'weekly': return rule.value * (52 / 12);
+    case 'biweekly': return rule.value * (26 / 12);
+    case 'monthly': return rule.value;
+    case 'quarterly': return since % 3 === 0 ? rule.value : 0;
+    case 'annually': return since % 12 === 0 ? rule.value : 0;
+    case 'one-time': return since === 0 ? rule.value : 0;
+  }
+}
+
 interface PaymentFundingPart {
   source_type: 'account' | 'debt';
   source_id: number | null;
@@ -117,16 +143,38 @@ interface PaymentFunding {
   parts: PaymentFundingPart[];
 }
 
-function paymentFundingAtAmount(p: ScheduledPayment, amount: number): PaymentFunding {
-  const allocs = p.funding_allocations ?? [];
-  if (allocs.length === 0) {
-    if (p.funding_source_type === 'debt' && p.funding_source_id != null) {
-      return { cash: 0, parts: [{ source_type: 'debt', source_id: p.funding_source_id, amount }] };
-    }
-    if (p.funding_source_type === 'account' && p.funding_source_id != null) {
-      return { cash: amount, parts: [{ source_type: 'account', source_id: p.funding_source_id, amount }] };
-    }
-    return { cash: amount, parts: [] };
+function paymentFundingFromSources(
+  amount: number,
+  monthIndex: number,
+  now: Date,
+  rules: FundingRule[] | undefined,
+  allocs: { source_type: string; source_id: number | null; alloc_type: string; value: number }[] | undefined,
+  legacy: () => PaymentFunding,
+): PaymentFunding {
+  const activeRules = rules ?? [];
+  if (activeRules.length > 0) {
+    let remaining = amount;
+    const parts: PaymentFundingPart[] = [];
+    const apply = (rule: FundingRule) => {
+      let take = fundingRuleValue(rule, amount, monthIndex, now);
+      take = Math.min(take, remaining);
+      if (take <= 0) return;
+      if ((rule.source_type === 'account' || rule.source_type === 'debt') && rule.source_id != null) {
+        parts.push({ source_type: rule.source_type, source_id: rule.source_id, amount: round2(take) });
+        remaining -= take;
+      }
+    };
+    for (const r of activeRules) if (r.alloc_type === 'fixed') apply(r);
+    for (const r of activeRules) if (r.alloc_type === 'percent') apply(r);
+    return {
+      cash: round2(parts.filter((p) => p.source_type === 'account').reduce((sum, p) => sum + p.amount, 0) + Math.max(0, remaining)),
+      parts,
+    };
+  }
+
+  const allocations = allocs ?? [];
+  if (allocations.length === 0) {
+    return legacy();
   }
 
   let remaining = amount;
@@ -141,12 +189,24 @@ function paymentFundingAtAmount(p: ScheduledPayment, amount: number): PaymentFun
     }
   };
 
-  for (const a of allocs) if (a.alloc_type === 'fixed') apply(a);
-  for (const a of allocs) if (a.alloc_type === 'percent') apply(a);
+  for (const a of allocations) if (a.alloc_type === 'fixed') apply(a);
+  for (const a of allocations) if (a.alloc_type === 'percent') apply(a);
   return {
     cash: round2(parts.filter((p) => p.source_type === 'account').reduce((sum, p) => sum + p.amount, 0) + Math.max(0, remaining)),
     parts,
   };
+}
+
+function paymentFundingAtAmount(p: ScheduledPayment, amount: number, monthIndex: number, now: Date): PaymentFunding {
+  return paymentFundingFromSources(amount, monthIndex, now, p.funding_rules, p.funding_allocations, () => {
+    if (p.funding_source_type === 'debt' && p.funding_source_id != null) {
+      return { cash: 0, parts: [{ source_type: 'debt', source_id: p.funding_source_id, amount }] };
+    }
+    if (p.funding_source_type === 'account' && p.funding_source_id != null) {
+      return { cash: amount, parts: [{ source_type: 'account', source_id: p.funding_source_id, amount }] };
+    }
+    return { cash: amount, parts: [] };
+  });
 }
 
 interface MonthCashflow {
@@ -178,7 +238,7 @@ function cashflowAtMonth(
   const names: string[] = [];
   for (const p of payments) {
     const c = paymentCashAtMonth(p, monthIndex, now);
-    const funding = c > 0 ? paymentFundingAtAmount(p, c) : null;
+    const funding = c > 0 ? paymentFundingAtAmount(p, c, monthIndex, now) : null;
     if (funding && funding.cash > 0) {
       scheduledOut += funding.cash;
       names.push(p.name);
@@ -211,7 +271,7 @@ export function buildDebtCharges(
     for (let m = 0; m < months; m++) {
       const c = paymentCashAtMonth(p, m, now);
       if (c <= 0) continue;
-      const funding = paymentFundingAtAmount(p, c);
+      const funding = paymentFundingAtAmount(p, c, m, now);
       for (const part of funding.parts) {
         if (part.source_type === 'debt' && part.source_id != null && part.amount > 0) {
           charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount) });
@@ -251,30 +311,21 @@ export function buildExpensePlan(
     for (const e of expenses) {
       const amount = expenseOccurrenceAtMonth(e, m, now) * f;
       if (amount <= 0) continue;
-      let remaining = amount;
-
-      const apply = (alloc: { source_type: string; source_id: number | null; alloc_type: string; value: number }) => {
-        let take = alloc.alloc_type === 'fixed' ? alloc.value : amount * (alloc.value / 100);
-        take = Math.min(take, remaining);
-        if (take <= 0) return;
-        if (alloc.source_type === 'debt' && alloc.source_id != null && debtIds.has(alloc.source_id)) {
-          charges.push({ debtId: alloc.source_id, monthIndex: m, amount: round2(take) });
-          remaining -= take;
-        } else if (alloc.source_type === 'account' && alloc.source_id != null && accountIds.has(alloc.source_id)) {
-          outByAccount.get(alloc.source_id)![m] += take;
-          ongoingCashOut[m] += take;
-          remaining -= take;
+      const funding = paymentFundingFromSources(amount, m, now, e.funding_rules, e.funding_allocations, () => ({ cash: amount, parts: [] }));
+      let allocatedCash = 0;
+      for (const part of funding.parts) {
+        if (part.source_type === 'debt' && part.source_id != null && debtIds.has(part.source_id)) {
+          charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount) });
+        } else if (part.source_type === 'account' && part.source_id != null && accountIds.has(part.source_id)) {
+          outByAccount.get(part.source_id)![m] += part.amount;
+          ongoingCashOut[m] += part.amount;
+          allocatedCash += part.amount;
         }
-        // unknown/deleted source: skip — its share falls into the remainder.
-      };
-
-      const allocs = e.funding_allocations ?? [];
-      for (const a of allocs) if (a.alloc_type === 'fixed') apply(a);
-      for (const a of allocs) if (a.alloc_type === 'percent') apply(a);
-
-      if (remaining > 0.005 && primaryId != null) {
-        outByAccount.get(primaryId)![m] += remaining;
-        ongoingCashOut[m] += remaining;
+      }
+      const remainder = funding.cash - allocatedCash;
+      if (remainder > 0.005 && primaryId != null) {
+        outByAccount.get(primaryId)![m] += remainder;
+        ongoingCashOut[m] += remainder;
       }
     }
     ongoingCashOut[m] = round2(ongoingCashOut[m]);
@@ -390,7 +441,7 @@ export function buildScheduledOutByAccount(
     for (let m = 0; m < months; m++) {
       const c = paymentCashAtMonth(p, m, now);
       if (c <= 0) continue;
-      const funding = paymentFundingAtAmount(p, c);
+      const funding = paymentFundingAtAmount(p, c, m, now);
       let allocatedCash = 0;
       for (const part of funding.parts) {
         if (part.source_type !== 'account' || part.source_id == null || !accountIds.has(part.source_id)) continue;
@@ -412,6 +463,7 @@ export function buildDebtOutByAccount(
   debts: Debt[],
   plan: DebtPlan,
   accounts: Account[],
+  now: Date = new Date(),
 ): Map<number, number[]> {
   const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const accountIds = new Set(accounts.map((a) => a.id));
@@ -419,7 +471,20 @@ export function buildDebtOutByAccount(
   const map = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
 
   const allocatePayment = (debt: Debt, amount: number, monthIndex: number) => {
+    const rules = debt.funding_rules ?? [];
     const allocs = debt.funding_allocations ?? [];
+    if (rules.length > 0) {
+      const funding = paymentFundingFromSources(amount, monthIndex, now, rules, [], () => ({ cash: amount, parts: [] }));
+      let allocated = 0;
+      for (const part of funding.parts) {
+        if (part.source_type !== 'account' || part.source_id == null || !accountIds.has(part.source_id)) continue;
+        map.get(part.source_id)![monthIndex] += part.amount;
+        allocated += part.amount;
+      }
+      const remainder = amount - allocated;
+      if (remainder > 0.005 && primaryId != null) map.get(primaryId)![monthIndex] += remainder;
+      return;
+    }
     if (allocs.length === 0) {
       const acctId = (debt.account_id != null && accountIds.has(debt.account_id)) ? debt.account_id : primaryId;
       if (acctId != null) map.get(acctId)![monthIndex] += amount;
