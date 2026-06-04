@@ -35,6 +35,22 @@ function defaultRule(accounts?: AccountOpt[]): FundingRule {
   };
 }
 
+const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+
+function monthDraft(value: string | null): string {
+  if (!value) return '';
+  return value.length >= 7 ? value.slice(0, 7) : value;
+}
+
+function cleanMonthInput(value: string): string {
+  return value.replace(/[^\d-]/g, '').slice(0, 7);
+}
+
+function monthToDate(value: string | null): string | null {
+  const draft = monthDraft(value);
+  return draft ? `${draft}-01` : null;
+}
+
 export function rulesFromLegacy(allocations?: ExpenseAllocation[]): FundingRule[] {
   return (allocations ?? []).map((a) => ({
     source_type: a.source_type,
@@ -64,7 +80,13 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
   const fixedSum = draft.filter((r) => r.alloc_type === 'fixed').reduce((s, r) => s + (r.value || 0), 0);
   const pctSum = draft.filter((r) => r.alloc_type === 'percent').reduce((s, r) => s + (r.value || 0), 0);
   const remainderAmt = Math.max(0, (amount || 0) - fixedSum - (amount || 0) * pctSum / 100);
-  const dateInvalid = draft.some((r) => r.start_date && r.end_date && r.end_date < r.start_date);
+  const dateInvalid = draft.some((r) => {
+    const start = monthDraft(r.start_date);
+    const end = monthDraft(r.end_date);
+    return (!!start && !MONTH_PATTERN.test(start)) ||
+      (!!end && !MONTH_PATTERN.test(end)) ||
+      (!!start && !!end && MONTH_PATTERN.test(start) && MONTH_PATTERN.test(end) && end < start);
+  });
 
   const labelStyle: React.CSSProperties = {
     fontSize: 12,
@@ -93,7 +115,13 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
     e.preventDefault();
     if (dateInvalid) return;
     setSaving(true);
-    onSave(draft.filter((r) => r.source_id != null && r.value > 0));
+    onSave(draft
+      .filter((r) => r.source_id != null && r.value > 0)
+      .map((r) => ({
+        ...r,
+        start_date: monthToDate(r.start_date),
+        end_date: monthToDate(r.end_date),
+      })));
   }
 
   return (
@@ -147,12 +175,28 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
                 </select>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Starts</span>
-                <input type="month" value={rule.start_date ? rule.start_date.slice(0, 7) : ''} onChange={(e) => update(idx, { start_date: e.target.value ? `${e.target.value}-01` : null })} style={inputStyle} />
+                <span style={labelStyle}>Starts <span style={{ textTransform: 'none', letterSpacing: 0, opacity: 0.75 }}>(YYYY-MM)</span></span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="YYYY-MM"
+                  value={monthDraft(rule.start_date)}
+                  onChange={(e) => update(idx, { start_date: cleanMonthInput(e.target.value) || null })}
+                  style={inputStyle}
+                />
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Ends</span>
-                <input type="month" value={rule.end_date ? rule.end_date.slice(0, 7) : ''} min={rule.start_date ? rule.start_date.slice(0, 7) : undefined} onChange={(e) => update(idx, { end_date: e.target.value ? `${e.target.value}-01` : null })} style={inputStyle} />
+                <span style={labelStyle}>Ends <span style={{ textTransform: 'none', letterSpacing: 0, opacity: 0.75 }}>(YYYY-MM)</span></span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="YYYY-MM"
+                  value={monthDraft(rule.end_date)}
+                  onChange={(e) => update(idx, { end_date: cleanMonthInput(e.target.value) || null })}
+                  style={inputStyle}
+                />
               </label>
             </div>
           </div>
@@ -164,7 +208,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
           Remainder for uncovered periods is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
         </p>
-        {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>End date cannot be before start date.</p>}
+        {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Use YYYY-MM, and make sure end is not before start.</p>}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" onClick={onCancel} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '9px 16px' }}>Cancel</button>
