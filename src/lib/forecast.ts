@@ -565,3 +565,207 @@ export function buildNetWorth(savings: SavingsPoint[], debtRemaining: number[]):
     };
   });
 }
+
+// ---- Account activity (what moves in/out of one account, with detail) ----
+
+export interface AccountActivityItem {
+  key: string;
+  name: string;
+  kind: 'income' | 'expense' | 'future' | 'debt';
+  direction: 'in' | 'out';
+  frequency: Frequency;
+  detail: string;
+  perOccurrence: number;
+  monthlyAvg: number;
+  total: number;
+  nextLabel: string | null;
+  rangeLabel: string | null;
+}
+
+export interface AccountActivity {
+  labels: string[];
+  inByMonth: number[];
+  outByMonth: number[];
+  items: AccountActivityItem[];
+}
+
+function accountPortionOfFunding(funding: PaymentFunding, accountId: number, isPrimary: boolean): number {
+  let portion = 0;
+  let allocatedCash = 0;
+  for (const part of funding.parts) {
+    if (part.source_type === 'account') {
+      allocatedCash += part.amount;
+      if (part.source_id === accountId) portion += part.amount;
+    }
+  }
+  const remainder = round2(funding.cash - allocatedCash);
+  if (isPrimary && remainder > 0.005) portion += remainder;
+  return round2(portion);
+}
+
+function rangeLabelOf(start: string | null, end: string | null, now: Date): string | null {
+  const fmt = (d: string) => monthLabel(now, monthOffset(d, now));
+  if (start && end) return `${fmt(start)} → ${fmt(end)}`;
+  if (start) return `from ${fmt(start)}`;
+  if (end) return `until ${fmt(end)}`;
+  return null;
+}
+
+function fundingDetailForAccount(
+  allocs: { source_type: string; source_id: number | null; alloc_type: string; value: number }[] | undefined,
+  rules: FundingRule[] | undefined,
+  accountId: number,
+  isPrimary: boolean,
+): string {
+  const usingRules = !!(rules && rules.length);
+  const list = usingRules ? (rules as FundingRule[]) : (allocs ?? []);
+  const mine: string[] = [];
+  let hasOther = false;
+  for (const a of list) {
+    if (a.source_type === 'account' && a.source_id === accountId) {
+      const base = a.alloc_type === 'percent' ? `${a.value}%` : `$${a.value}`;
+      const freq = usingRules ? (a as FundingRule).frequency : undefined;
+      mine.push(freq && freq !== 'monthly' ? `${base}/${FREQUENCY_LABELS[freq].toLowerCase()}` : base);
+    } else if (a.source_id != null) {
+      hasOther = true;
+    }
+  }
+  if (mine.length === 0) return isPrimary ? (list.length ? 'Remainder' : 'Full amount') : 'Funded';
+  let s = mine.join(' + ');
+  if (isPrimary && hasOther) s += ' + remainder';
+  return s;
+}
+
+function debtPortionToAccount(
+  debt: Debt, amount: number, monthIndex: number, accountId: number,
+  primaryId: number | null, accountIds: Set<number>, isPrimary: boolean, now: Date,
+): number {
+  const rules = debt.funding_rules ?? [];
+  const allocs = debt.funding_allocations ?? [];
+  if (rules.length > 0) {
+    const funding = paymentFundingFromSources(amount, monthIndex, now, rules, [], () => ({ cash: amount, parts: [] }));
+    return accountPortionOfFunding(funding, accountId, isPrimary);
+  }
+  if (allocs.length === 0) {
+    const acctId = (debt.account_id != null && accountIds.has(debt.account_id)) ? debt.account_id : primaryId;
+    return acctId === accountId ? round2(amount) : 0;
+  }
+  let remaining = amount;
+  let allocated = 0;
+  let portion = 0;
+  const apply = (a: { source_type: string; source_id: number | null; alloc_type: string; value: number }) => {
+    if (a.source_type !== 'account' || a.source_id == null || !accountIds.has(a.source_id)) return;
+    let take = a.alloc_type === 'fixed' ? a.value : amount * (a.value / 100);
+    take = Math.min(take, remaining);
+    if (take <= 0) return;
+    if (a.source_id === accountId) portion += take;
+    remaining -= take;
+    allocated += take;
+  };
+  for (const a of allocs) if (a.alloc_type === 'fixed') apply(a);
+  for (const a of allocs) if (a.alloc_type === 'percent') apply(a);
+  const remainder = amount - allocated;
+  if (isPrimary && remainder > 0.005) portion += remainder;
+  return round2(portion);
+}
+
+export function buildAccountActivity(
+  accountId: number,
+  accounts: Account[],
+  sources: IncomeSource[],
+  expenses: Expense[],
+  payments: ScheduledPayment[],
+  debts: Debt[],
+  plan: DebtPlan,
+  months: number,
+  inflation = 0,
+  now: Date = new Date(),
+): AccountActivity {
+  const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
+  const isPrimary = accountId === primaryId;
+  const accountIds = new Set(accounts.map((a) => a.id));
+  const labels = labelsFor(months, now);
+  const inByMonth = new Array(months).fill(0);
+  const outByMonth = new Array(months).fill(0);
+  const items: AccountActivityItem[] = [];
+
+  const finalize = (
+    key: string, name: string, kind: AccountActivityItem['kind'], direction: 'in' | 'out',
+    frequency: Frequency, detail: string, start: string | null, end: string | null, series: number[],
+  ) => {
+    let total = 0;
+    let nextIndex = -1;
+    for (let m = 0; m < months; m++) {
+      const v = series[m];
+      total += v;
+      if (direction === 'in') inByMonth[m] += v; else outByMonth[m] += v;
+      if (v > 0.005 && nextIndex < 0) nextIndex = m;
+    }
+    if (total <= 0.005) return;
+    items.push({
+      key, name, kind, direction, frequency, detail,
+      perOccurrence: nextIndex >= 0 ? round2(series[nextIndex]) : 0,
+      monthlyAvg: round2(total / months),
+      total: round2(total),
+      nextLabel: nextIndex >= 0 ? labels[nextIndex] : null,
+      rangeLabel: rangeLabelOf(start, end, now),
+    });
+  };
+
+  for (const s of sources) {
+    const lands = s.account_id === accountId || (s.account_id == null && isPrimary);
+    if (!lands) continue;
+    const series = Array.from({ length: months }, (_, m) => round2(incomeCashAtMonth(s, m, now)));
+    finalize(`inc${s.id}`, s.name, 'income', 'in', s.frequency, 'Deposited here', s.start_date, null, series);
+  }
+
+  for (const e of expenses) {
+    const series = Array.from({ length: months }, (_, m) => {
+      const amt = expenseOccurrenceAtMonth(e, m, now) * inflationFactor(inflation, m);
+      if (amt <= 0) return 0;
+      const funding = paymentFundingFromSources(amt, m, now, e.funding_rules, e.funding_allocations, () => ({ cash: amt, parts: [] }));
+      return accountPortionOfFunding(funding, accountId, isPrimary);
+    });
+    finalize(`exp${e.id}`, e.name, 'expense', 'out', e.frequency,
+      fundingDetailForAccount(e.funding_allocations, e.funding_rules, accountId, isPrimary),
+      e.start_date, e.end_date, series);
+  }
+
+  for (const p of payments) {
+    const series = Array.from({ length: months }, (_, m) => {
+      const c = paymentCashAtMonth(p, m, now);
+      if (c <= 0) return 0;
+      return accountPortionOfFunding(paymentFundingAtAmount(p, c, m, now), accountId, isPrimary);
+    });
+    let detail: string;
+    if ((p.funding_rules?.length) || (p.funding_allocations?.length)) {
+      detail = fundingDetailForAccount(p.funding_allocations, p.funding_rules, accountId, isPrimary);
+    } else if (p.funding_source_type === 'account' && p.funding_source_id === accountId) {
+      detail = 'Paid from here';
+    } else {
+      detail = isPrimary ? 'Paid from here (default)' : 'Funded';
+    }
+    finalize(`fut${p.id}`, p.name, 'future', 'out', p.frequency, detail, p.start_date, p.end_date, series);
+  }
+
+  for (const d of debts) {
+    const payByMonth = plan.outflowByDebt.get(d.id);
+    if (!payByMonth) continue;
+    const series = Array.from({ length: months }, (_, m) => {
+      const amount = payByMonth[m] ?? 0;
+      return amount > 0 ? debtPortionToAccount(d, amount, m, accountId, primaryId, accountIds, isPrimary, now) : 0;
+    });
+    let detail: string;
+    if ((d.funding_rules?.length) || (d.funding_allocations?.length)) {
+      detail = fundingDetailForAccount(d.funding_allocations, d.funding_rules, accountId, isPrimary);
+    } else if (d.account_id === accountId) {
+      detail = 'Full payment';
+    } else {
+      detail = (d.account_id == null && isPrimary) ? 'Full payment (default)' : 'Funded';
+    }
+    finalize(`debt${d.id}`, d.name, 'debt', 'out', 'monthly', detail, null, null, series);
+  }
+
+  items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));
+  return { labels, inByMonth, outByMonth, items };
+}

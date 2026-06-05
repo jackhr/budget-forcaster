@@ -4,7 +4,7 @@ import {
   accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -24,8 +24,9 @@ const SavingsChart = lazy(() => import('./components/SavingsChart'));
 const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
 const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
 const OverviewChart = lazy(() => import('./components/OverviewChart'));
+const AccountActivity = lazy(() => import('./components/AccountActivity'));
 
-type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview';
+type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview' | 'account';
 type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
@@ -91,6 +92,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'forecast');
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
+  const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -428,6 +430,7 @@ export default function App() {
             {tabBtn('networth', 'Net Worth')}
             {tabBtn('breakdown', 'Breakdown')}
             {tabBtn('overview', 'Overview')}
+            {tabBtn('account', 'Account')}
           </div>
         </div>
 
@@ -482,6 +485,27 @@ export default function App() {
             <OverviewChart data={overviewData} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} />
           </Suspense>
         )}
+        {tab === 'account' && (() => {
+          const primary = accounts.find((a) => a.is_primary) ?? accounts[0];
+          const resolvedId = (activeAccountId != null && accounts.some((a) => a.id === activeAccountId)) ? activeAccountId : (primary?.id ?? null);
+          if (resolvedId == null) {
+            return <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24, color: 'var(--color-text-muted)' }}>Add an account to see its activity.</div>;
+          }
+          const activity = buildAccountActivity(resolvedId, accounts, incomeSources, expenses, payments, debts, plan, months, inflation);
+          return (
+            <Suspense fallback={<ChartFallback />}>
+              <AccountActivity
+                accounts={accounts}
+                selectedId={resolvedId}
+                onSelect={setActiveAccountId}
+                account={accounts.find((a) => a.id === resolvedId)}
+                activity={activity}
+                months={months}
+                onMonthsChange={setMonths}
+              />
+            </Suspense>
+          );
+        })()}
         {tab === 'breakdown' && (
           <>
             <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>

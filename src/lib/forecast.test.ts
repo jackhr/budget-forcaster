@@ -303,3 +303,32 @@ describe('buildNetWorth', () => {
     expect(nw[0].netWorth).toBe(sv[0].balance - 800);
   });
 });
+
+describe('buildAccountActivity', () => {
+  it('lists income into the account, expense split, and debt pay-from with detail', async () => {
+    const { buildAccountActivity } = await import('./forecast');
+    const { simulateDebtPlan } = await import('./debt');
+    const accounts = [acct(1, 'Checking', 5000, true), acct(2, 'Savings', 0)];
+    const sources = [
+      income({ id: 10, name: 'Salary', monthly_amount: 4000, account_id: 1 }),
+      income({ id: 11, name: 'Side', monthly_amount: 200, account_id: 2 }),
+    ];
+    const debts: Debt[] = [{ id: 5, name: 'Visa', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 1, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' }];
+    const expenses = [expense({ id: 20, name: 'Rent', monthly_amount: 1000, funding_allocations: [{ source_type: 'account', source_id: 1, alloc_type: 'percent', value: 60 }] })];
+    const plan = simulateDebtPlan(debts, 0, 'none', 6);
+
+    const a1 = buildAccountActivity(1, accounts, sources, expenses, [], debts, plan, 6, 0, NOW);
+    const names = a1.items.map((i) => i.name);
+    expect(names).toContain('Salary');   // income lands in Checking
+    expect(names).toContain('Rent');     // 60% + remainder (primary) from Checking
+    expect(names).toContain('Visa');     // debt paid from Checking
+    expect(names).not.toContain('Side'); // goes to Savings, not Checking
+    const rent = a1.items.find((i) => i.name === 'Rent')!;
+    expect(rent.perOccurrence).toBe(1000); // 60% + 40% remainder to primary = full
+    const visa = a1.items.find((i) => i.name === 'Visa')!;
+    expect(visa.perOccurrence).toBe(100);
+
+    const a2 = buildAccountActivity(2, accounts, sources, expenses, [], debts, plan, 6, 0, NOW);
+    expect(a2.items.map((i) => i.name)).toEqual(['Side']); // only Side income
+  });
+});
