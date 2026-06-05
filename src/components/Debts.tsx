@@ -3,6 +3,7 @@ import type { Debt, ExpenseAllocation, FundingRule, LineItemGroup } from '../typ
 import { summarizeDebt, type DebtPlan, type DebtStrategy } from '../lib/debt';
 import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
+import { useCollapsedGroup } from '../lib/useCollapsedGroup';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
@@ -325,7 +326,7 @@ function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, on
   draggingId: number | null;
   groupDrag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, toggle: toggleCollapsed } = useCollapsedGroup(group.id);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
   const subtotal = debts.reduce((sum, d) => sum + d.balance, 0);
@@ -340,7 +341,7 @@ function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, on
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', marginBottom: 8, overflow: 'hidden' }}>
       <div {...groupDrag} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--color-surface-2)', borderLeft: `3px solid ${ACCENT}`, cursor: groupDrag ? 'grab' : undefined }}>
-        <button onClick={() => setCollapsed((c) => !c)} style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 18, lineHeight: 1, width: 26 }} aria-label={collapsed ? 'Expand group' : 'Collapse group'}>
+        <button onClick={toggleCollapsed} style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 18, lineHeight: 1, width: 26 }} aria-label={collapsed ? 'Expand group' : 'Collapse group'}>
           {collapsed ? '▸' : '▾'}
         </button>
         {renaming ? (

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { GroupKind, ItemFormData, LineItem, LineItemGroup } from '../types';
 import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
+import { useCollapsedGroup } from '../lib/useCollapsedGroup';
 import LineItemRow from './LineItemRow';
 import AddItemForm from './AddItemForm';
 import ConfirmButton from './ConfirmButton';
@@ -79,7 +80,7 @@ interface GroupBlockProps {
 }
 
 function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, showEndDate, dragFor, draggingId, groupDrag }: GroupBlockProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, toggle: toggleCollapsed } = useCollapsedGroup(group.id);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
   const subtotal = items.reduce((sum, i) => sum + i.monthly_amount, 0);
@@ -109,7 +110,7 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
         cursor: groupDrag ? 'grab' : undefined,
       }}>
         <button
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={toggleCollapsed}
           style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 18, lineHeight: 1, width: 26 }}
           aria-label={collapsed ? 'Expand group' : 'Collapse group'}
         >
