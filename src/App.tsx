@@ -23,8 +23,9 @@ const ForecastChart = lazy(() => import('./components/ForecastChart'));
 const SavingsChart = lazy(() => import('./components/SavingsChart'));
 const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
 const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
+const OverviewChart = lazy(() => import('./components/OverviewChart'));
 
-type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown';
+type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview';
 type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
@@ -152,6 +153,17 @@ export default function App() {
     }
   }
   for (const [mi, names] of byMonth) payoffMarkers.push({ label: savings[mi].label, name: names.join(', ') });
+
+  // Combined overview series: monthly flows, balances, and future-expense totals.
+  const futureTotals = buildFutureExpenseBreakdown(payments, months).total;
+  const overviewData = savings.map((s, i) => ({
+    label: s.label,
+    income: s.income,
+    expenses: s.expenses,
+    future: futureTotals[i] ?? 0,
+    cash: s.balance,
+    debt: plan.remaining[i] ?? 0,
+  }));
 
   // Per-item breakdown for the selected section.
   let breakdown: Breakdown;
@@ -415,6 +427,7 @@ export default function App() {
             {tabBtn('savings', 'Savings')}
             {tabBtn('networth', 'Net Worth')}
             {tabBtn('breakdown', 'Breakdown')}
+            {tabBtn('overview', 'Overview')}
           </div>
         </div>
 
@@ -462,6 +475,11 @@ export default function App() {
         {tab === 'networth' && (
           <Suspense fallback={<ChartFallback />}>
             <NetWorthChart data={netWorth} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} compareData={compareSeries?.networth} compareName={compareScenario?.name} />
+          </Suspense>
+        )}
+        {tab === 'overview' && (
+          <Suspense fallback={<ChartFallback />}>
+            <OverviewChart data={overviewData} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} />
           </Suspense>
         )}
         {tab === 'breakdown' && (
