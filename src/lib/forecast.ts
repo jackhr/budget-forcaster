@@ -769,3 +769,51 @@ export function buildAccountActivity(
   items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));
   return { labels, inByMonth, outByMonth, items };
 }
+
+// One account's savings balance over time (for the Savings view's account switcher).
+export function buildAccountSavings(
+  accountId: number,
+  accounts: Account[],
+  sources: IncomeSource[],
+  payments: ScheduledPayment[],
+  expenseOutByAccount: Map<number, number[]>,
+  scheduledOutByAccount: Map<number, number[]>,
+  debtOutByAccount: Map<number, number[]>,
+  months: number,
+  now: Date = new Date(),
+): SavingsPoint[] {
+  const account = accounts.find((a) => a.id === accountId);
+  const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
+  const isPrimary = accountId === primaryId;
+  const mine = sources.filter((s) => s.account_id === accountId || (s.account_id == null && isPrimary));
+  const expOut = expenseOutByAccount.get(accountId) ?? [];
+  const schOut = scheduledOutByAccount.get(accountId) ?? [];
+  const debtOut = debtOutByAccount.get(accountId) ?? [];
+  let bal = account?.balance ?? 0;
+  return Array.from({ length: months }, (_, i) => {
+    let income = 0;
+    let incomeLump = 0;
+    for (const s of mine) {
+      const c = incomeCashAtMonth(s, i, now);
+      income += c;
+      if (c > 0 && LUMP_FREQUENCIES.includes(s.frequency)) incomeLump += c;
+    }
+    const names: string[] = [];
+    for (const p of payments) {
+      const c = paymentCashAtMonth(p, i, now);
+      if (c <= 0) continue;
+      if (accountPortionOfFunding(paymentFundingAtAmount(p, c, i, now), accountId, isPrimary) > 0.005) names.push(p.name);
+    }
+    const expenses = expOut[i] ?? 0;
+    const scheduledOut = schOut[i] ?? 0;
+    const dOut = debtOut[i] ?? 0;
+    const net = income - expenses - scheduledOut - dOut;
+    bal += net;
+    return {
+      month: i + 1, label: monthLabel(now, i),
+      income: round2(income), incomeLump: round2(incomeLump),
+      expenses: round2(expenses), scheduledOut: round2(scheduledOut), scheduledLabel: names.join(', '),
+      debtOut: round2(dOut), net: round2(net), balance: round2(bal),
+    };
+  });
+}

@@ -4,7 +4,7 @@ import {
   accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -93,6 +93,7 @@ export default function App() {
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
   const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
+  const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +157,11 @@ export default function App() {
   }
   for (const [mi, names] of byMonth) payoffMarkers.push({ label: savings[mi].label, name: names.join(', ') });
 
+  // Shared per-account outflow maps (used by Savings switcher, Account tab, Breakdown).
+  const primaryAccountId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
+  const scheduledOutByAccount = buildScheduledOutByAccount(payments, accounts, months);
+  const debtOutByAccount = buildDebtOutByAccount(debts, plan, accounts);
+
   // Combined overview series: monthly flows, balances, and future-expense totals.
   const futureTotals = buildFutureExpenseBreakdown(payments, months).total;
   const overviewData = savings.map((s, i) => ({
@@ -172,9 +178,7 @@ export default function App() {
   let breakdownTitle: string;
   let breakdownSubtitle: string;
   if (breakdownSection === 'account') {
-    const scheduledByAccount = buildScheduledOutByAccount(payments, accounts, months);
-    const debtByAccount = buildDebtOutByAccount(debts, plan, accounts);
-    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, scheduledByAccount, debtByAccount);
+    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, scheduledOutByAccount, debtOutByAccount);
     breakdownTitle = 'Accounts Over Time';
     breakdownSubtitle = 'Balance of each account/savings pile over time, alongside total cash';
   } else if (breakdownSection === 'income') {
@@ -467,14 +471,44 @@ export default function App() {
             </Suspense>
           </>
         )}
-        {tab === 'savings' && (
-          <>
-            <SavingsSummary data={savings} startingBalance={totalCash} />
-            <Suspense fallback={<ChartFallback />}>
-              <SavingsChart data={savings} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} compareData={compareSeries?.savings} compareName={compareScenario?.name} />
-            </Suspense>
-          </>
-        )}
+        {tab === 'savings' && (() => {
+          const selectedId = (savingsAccountId != null && accounts.some((a) => a.id === savingsAccountId)) ? savingsAccountId : null;
+          const acct = selectedId != null ? accounts.find((a) => a.id === selectedId) : undefined;
+          const data = selectedId != null
+            ? buildAccountSavings(selectedId, accounts, incomeSources, payments, expensePlan.outByAccount, scheduledOutByAccount, debtOutByAccount, months)
+            : savings;
+          const startBal = selectedId != null ? (acct?.balance ?? 0) : totalCash;
+          // Payoff markers only for debts paid from the selected account.
+          const markers = selectedId == null ? payoffMarkers : (() => {
+            const byM = new Map<number, string[]>();
+            for (const d of debts) {
+              const acctId = (d.account_id != null && accounts.some((a) => a.id === d.account_id)) ? d.account_id : primaryAccountId;
+              if (acctId !== selectedId) continue;
+              const mi = plan.payoffMonthByDebt.get(d.id);
+              if (mi != null && mi < savings.length) { if (!byM.has(mi)) byM.set(mi, []); byM.get(mi)!.push(d.name); }
+            }
+            return [...byM].map(([mi, names]) => ({ label: savings[mi].label, name: names.join(', ') }));
+          })();
+          return (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>
+                Showing
+                <select
+                  value={selectedId ?? ''}
+                  onChange={(e) => setSavingsAccountId(e.target.value ? Number(e.target.value) : null)}
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 10px', fontSize: 13, fontWeight: 600 }}
+                >
+                  <option value="">All accounts (total cash)</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+                </select>
+              </div>
+              <SavingsSummary data={data} startingBalance={startBal} />
+              <Suspense fallback={<ChartFallback />}>
+                <SavingsChart data={data} months={months} onMonthsChange={setMonths} payoffMarkers={markers} compareData={selectedId == null ? compareSeries?.savings : undefined} compareName={selectedId == null ? compareScenario?.name : undefined} />
+              </Suspense>
+            </>
+          );
+        })()}
         {tab === 'networth' && (
           <Suspense fallback={<ChartFallback />}>
             <NetWorthChart data={netWorth} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} compareData={compareSeries?.networth} compareName={compareScenario?.name} />
