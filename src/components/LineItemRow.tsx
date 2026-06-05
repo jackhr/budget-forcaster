@@ -106,34 +106,39 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <div style={{ width: 3, height: 24, borderRadius: 2, background: accentColor, flexShrink: 0 }} />
-          <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-          {showFrequency && itemFreq !== 'monthly' && (
-            <span style={{
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              color: accentColor,
-              background: `${accentColor}1f`,
-              border: `1px solid ${accentColor}40`,
-              borderRadius: 5,
-              padding: '1px 6px',
-              flexShrink: 0,
-            }}>
-              {FREQUENCY_LABELS[itemFreq]}
-            </span>
-          )}
-          {showFrequency && (startLabel || endLabel) && (
-            <span style={{
-              fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
-              color: 'var(--color-text-muted)', background: 'var(--color-surface-2)',
-              border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
-            }}>
-              {startLabel ? `from ${startLabel}` : ''}{startLabel && endLabel ? ' ' : ''}{endLabel ? `until ${endLabel}` : ''}
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
+          <div style={{ width: 3, height: 24, marginTop: 1, borderRadius: 2, background: accentColor, flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+            <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+            {showFrequency && (itemFreq !== 'monthly' || startLabel || endLabel) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
+                {itemFreq !== 'monthly' && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: accentColor,
+                    background: `${accentColor}1f`,
+                    border: `1px solid ${accentColor}40`,
+                    borderRadius: 5,
+                    padding: '1px 6px',
+                  }}>
+                    {FREQUENCY_LABELS[itemFreq]}
+                  </span>
+                )}
+                {(startLabel || endLabel) && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
+                    color: 'var(--color-text-muted)', background: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
+                  }}>
+                    {startLabel ? `from ${startLabel}` : ''}{startLabel && endLabel ? ' ' : ''}{endLabel ? `until ${endLabel}` : ''}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <span style={{ fontWeight: 600, color: accentColor }}>
           {formatMoney(item.monthly_amount)}
