@@ -341,7 +341,7 @@ function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, on
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', marginBottom: 8, overflow: 'hidden' }}>
       <div {...groupDrag} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--color-surface-2)', borderLeft: `3px solid ${ACCENT}`, cursor: groupDrag ? 'grab' : undefined }}>
-        <button onClick={toggleCollapsed} style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 18, lineHeight: 1, width: 26 }} aria-label={collapsed ? 'Expand group' : 'Collapse group'}>
+        <button onClick={toggleCollapsed} style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 32, lineHeight: 1, width: 26 }} aria-label={collapsed ? 'Expand group' : 'Collapse group'}>
           {collapsed ? '▸' : '▾'}
         </button>
         {renaming ? (

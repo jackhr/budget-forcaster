@@ -111,7 +111,7 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
       }}>
         <button
           onClick={toggleCollapsed}
-          style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 18, lineHeight: 1, width: 26 }}
+          style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 32, lineHeight: 1, width: 26 }}
           aria-label={collapsed ? 'Expand group' : 'Collapse group'}
         >
           {collapsed ? '▸' : '▾'}
