@@ -9,6 +9,15 @@ function isAmount(v) {
   return typeof v === 'number' && isFinite(v);
 }
 
+function normalizeDebtType(t, fallback = 'credit_card') {
+  return t === 'credit_card' || t === 'loan' ? t : fallback;
+}
+
+function normalizeDay(v) {
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) && n >= 1 && n <= 31 ? n : null;
+}
+
 function serialize(row) {
   return {
     ...row,
@@ -28,7 +37,7 @@ router.post('/reorder', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules } = req.body;
+  const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules, debt_type, payment_day } = req.body;
   if (!name || !isAmount(balance) || balance < 0 || !isAmount(monthly_payment) || monthly_payment < 0) {
     return res.status(400).json({ error: 'name, a non-negative balance and monthly_payment are required' });
   }
@@ -40,12 +49,13 @@ router.post('/', (req, res) => {
     throw e;
   }
   const stmt = db.prepare(
-    'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules, debt_type, payment_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const result = stmt.run(
     name, balance, apr ?? 0, credit_limit ?? null, monthly_payment, group_id ?? null, account_id ?? null,
     JSON.stringify(cleanAllocations(funding_allocations, { allowDebt: false })),
     JSON.stringify(cleanedRules),
+    normalizeDebtType(debt_type), normalizeDay(payment_day),
   );
   const row = db.prepare('SELECT * FROM debts WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(serialize(row));
@@ -54,6 +64,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules } = req.body;
   const { id } = req.params;
+  const { debt_type, payment_day } = req.body;
   const existing = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   let cleanedRules = existing.funding_rules;
@@ -66,7 +77,7 @@ router.put('/:id', (req, res) => {
 
   db.prepare(
     `UPDATE debts
-     SET name = ?, balance = ?, apr = ?, credit_limit = ?, monthly_payment = ?, group_id = ?, account_id = ?, funding_allocations = ?, funding_rules = ?, updated_at = datetime('now')
+     SET name = ?, balance = ?, apr = ?, credit_limit = ?, monthly_payment = ?, group_id = ?, account_id = ?, funding_allocations = ?, funding_rules = ?, debt_type = ?, payment_day = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     name ?? existing.name,
@@ -78,6 +89,8 @@ router.put('/:id', (req, res) => {
     account_id !== undefined ? (account_id ?? null) : existing.account_id,
     funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations, { allowDebt: false })) : existing.funding_allocations,
     cleanedRules,
+    debt_type !== undefined ? normalizeDebtType(debt_type, existing.debt_type) : existing.debt_type,
+    payment_day !== undefined ? normalizeDay(payment_day) : existing.payment_day,
     id
   );
   const row = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);

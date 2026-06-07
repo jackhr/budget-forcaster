@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Debt, ExpenseAllocation, FundingRule, LineItemGroup } from '../types';
+import type { Debt, DebtType, ExpenseAllocation, FundingRule, LineItemGroup } from '../types';
 import { summarizeDebt, type DebtPlan, type DebtStrategy } from '../lib/debt';
 import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
@@ -16,6 +16,8 @@ interface DebtInput {
   apr: number;
   credit_limit: number | null;
   monthly_payment: number;
+  debt_type: DebtType;
+  payment_day: number | null;
   group_id: number | null;
   account_id: number | null;
   funding_allocations: ExpenseAllocation[];
@@ -43,6 +45,12 @@ interface Props {
 }
 
 const ACCENT = 'var(--color-net-neg)';
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
+}
 
 function payoffDateLabel(monthIndex: number): string {
   const d = new Date();
@@ -100,19 +108,24 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
   const [apr, setApr] = useState(String(initial.apr ?? ''));
   const [limit, setLimit] = useState(initial.credit_limit != null ? String(initial.credit_limit) : '');
   const [payment, setPayment] = useState(String(initial.monthly_payment || ''));
+  const [debtType, setDebtType] = useState<DebtType>(initial.debt_type);
+  const [payDay, setPayDay] = useState(initial.payment_day != null ? String(initial.payment_day) : '');
   const [groupId, setGroupId] = useState<number | null>(initial.group_id);
   const [allocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
   const [fundingRules, setFundingRules] = useState<FundingRule[]>(initial.funding_rules ?? []);
   const [editingFunding, setEditingFunding] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const isCard = debtType === 'credit_card';
   const balNum = parseFloat(balance);
   const aprNum = parseFloat(apr);
   const payNum = parseFloat(payment);
-  const limNum = limit ? parseFloat(limit) : null;
+  // Loans have no credit line, so a limit only applies to cards.
+  const limNum = isCard && limit ? parseFloat(limit) : null;
+  const dayNum = payDay ? Math.trunc(parseFloat(payDay)) : null;
 
   const preview = (balNum > 0 && payNum > 0 && aprNum >= 0)
-    ? summarizeDebt({ id: 0, name, balance: balNum, apr: aprNum, credit_limit: limNum, monthly_payment: payNum, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' })
+    ? summarizeDebt({ id: 0, name, balance: balNum, apr: aprNum, credit_limit: limNum, monthly_payment: payNum, debt_type: debtType, payment_day: dayNum, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' })
     : null;
 
   const valid = name.trim().length > 0 && balNum > 0 && payNum > 0 && (isNaN(aprNum) ? false : aprNum >= 0);
@@ -128,6 +141,8 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
       apr: isNaN(aprNum) ? 0 : aprNum,
       credit_limit: limNum != null && !isNaN(limNum) ? limNum : null,
       monthly_payment: payNum,
+      debt_type: debtType,
+      payment_day: dayNum != null && dayNum >= 1 && dayNum <= 31 ? dayNum : null,
       group_id: groupId,
       account_id: legacyAccountFromAllocations(clean.length ? clean : cleanRules),
       funding_allocations: clean,
@@ -167,6 +182,17 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Amex" autoFocus required style={inputStyle} />
         ))}
         <div style={{ display: 'flex', gap: 12 }}>
+          {field('Type', (
+            <select value={debtType} onChange={(e) => setDebtType(e.target.value as DebtType)} style={selectStyle}>
+              <option value="credit_card">Credit card (revolving — can be charged)</option>
+              <option value="loan">Loan (installment — no credit)</option>
+            </select>
+          ))}
+          {field('Autopay day (optional)', (
+            <input type="number" value={payDay} onChange={(e) => setPayDay(e.target.value)} min={1} max={31} step={1} placeholder="1–31" style={inputStyle} />
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
           {field('Balance', (
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }}>$</span>
@@ -187,12 +213,13 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
               <input type="number" value={payment} onChange={(e) => setPayment(e.target.value)} min={0} step="any" style={{ ...inputStyle, paddingLeft: 24 }} required />
             </div>
           ))}
-          {field('Credit Limit (optional)', (
+          {isCard && field('Credit Limit (optional)', (
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }}>$</span>
               <input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} min={0} step="any" style={{ ...inputStyle, paddingLeft: 24 }} />
             </div>
           ))}
+          {!isCard && <div style={{ flex: 1 }} />}
         </div>
         {field('Pay from', (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
@@ -276,8 +303,9 @@ function DebtRow({ debt, groups, accounts, onUpdate, onDelete, drag, dragging }:
         <div style={{ minWidth: 160 }}>
           <div style={{ fontWeight: 600 }}>{debt.name}</div>
           <div style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
-            {formatMoney(debt.balance, { whole: true })} @ {debt.apr}% · {formatMoney(debt.monthly_payment, { whole: true })}/mo
+            {debt.debt_type === 'loan' ? 'Loan' : 'Card'} · {formatMoney(debt.balance, { whole: true })} @ {debt.apr}% · {formatMoney(debt.monthly_payment, { whole: true })}/mo
             {s.utilization != null && <> · {Math.round(s.utilization * 100)}% used</>}
+            {debt.payment_day != null && <> · autopay {ordinal(debt.payment_day)}</>}
             {payFrom && <> · from {payFrom}</>}
           </div>
         </div>
@@ -303,7 +331,7 @@ function DebtRow({ debt, groups, accounts, onUpdate, onDelete, drag, dragging }:
           title={`Edit ${debt.name}`}
           groups={groups}
           accounts={accounts}
-          initial={{ name: debt.name, balance: debt.balance, apr: debt.apr, credit_limit: debt.credit_limit, monthly_payment: debt.monthly_payment, group_id: debt.group_id, account_id: debt.account_id, funding_allocations: debt.funding_allocations ?? [], funding_rules: debt.funding_rules ?? [] }}
+          initial={{ name: debt.name, balance: debt.balance, apr: debt.apr, credit_limit: debt.credit_limit, monthly_payment: debt.monthly_payment, debt_type: debt.debt_type, payment_day: debt.payment_day, group_id: debt.group_id, account_id: debt.account_id, funding_allocations: debt.funding_allocations ?? [], funding_rules: debt.funding_rules ?? [] }}
           onCancel={() => setEditing(false)}
           onSubmit={async (data) => { await onUpdate(debt.id, data); setEditing(false); }}
         />
@@ -542,7 +570,7 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
           title="Add Debt"
           groups={myGroups}
           accounts={accounts}
-          initial={{ name: '', balance: 0, apr: 0, credit_limit: null, monthly_payment: 0, group_id: adding.groupId, account_id: null, funding_allocations: [], funding_rules: [] }}
+          initial={{ name: '', balance: 0, apr: 0, credit_limit: null, monthly_payment: 0, debt_type: 'credit_card', payment_day: null, group_id: adding.groupId, account_id: null, funding_allocations: [], funding_rules: [] }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
         />

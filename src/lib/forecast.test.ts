@@ -65,7 +65,7 @@ describe('buildExpensePlan', () => {
 
   it('splits a bill across cash and a card; remainder to the primary account', () => {
     const accounts = [acct(1, 'Cash', 0, true)];
-    const debts: Debt[] = [{ id: 5, name: 'Visa', balance: 0, apr: 20, credit_limit: null, monthly_payment: 100, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' }];
+    const debts: Debt[] = [{ id: 5, name: 'Visa', balance: 0, apr: 20, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' }];
     const exp = [expense({
       id: 1, monthly_amount: 1000, funding_allocations: [
         { source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 50 },
@@ -81,7 +81,7 @@ describe('buildExpensePlan', () => {
 
   it('charged portions feed the debt and lower cash outflow accordingly', () => {
     const accounts = [acct(1, 'Cash', 1000, true)];
-    const card: Debt = { id: 5, name: 'Visa', balance: 0, apr: 24, credit_limit: null, monthly_payment: 1000, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
+    const card: Debt = { id: 5, name: 'Visa', balance: 0, apr: 24, credit_limit: null, monthly_payment: 1000, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
     const exp = [expense({ id: 1, monthly_amount: 400, funding_allocations: [{ source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 100 }] })];
     const ep = buildExpensePlan(exp, accounts, [card], 2, 0);
     expect(ep.ongoingCashOut[0]).toBe(0); // 100% on the card -> no cash out
@@ -110,7 +110,7 @@ describe('buildSavings', () => {
 });
 
 describe('debt-funded future expenses', () => {
-  const card: Debt = { id: 9, name: 'Card', balance: 0, apr: 24, credit_limit: null, monthly_payment: 500, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
+  const card: Debt = { id: 9, name: 'Card', balance: 0, apr: 24, credit_limit: null, monthly_payment: 500, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
   const charged: ScheduledPayment = {
     id: 1, name: 'Laptop', amount: 2000, frequency: 'one-time', start_date: '2026-02-01', end_date: null,
     funding_source_type: 'debt', funding_source_id: 9, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
@@ -246,8 +246,8 @@ describe('debt pay-from account', () => {
   it('attributes each debt payment to its pay-from account', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
     const debts: Debt[] = [
-      { id: 1, name: 'A', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 2, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
-      { id: 2, name: 'B', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 200, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
+      { id: 1, name: 'A', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: 2, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
+      { id: 2, name: 'B', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 200, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
     ];
     const plan = simulateDebtPlan(debts, 0, 'none', 3);
     const map = buildDebtOutByAccount(debts, plan, accounts);
@@ -259,7 +259,7 @@ describe('debt pay-from account', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
     const debts: Debt[] = [
       {
-        id: 1, name: 'Split', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 300,
+        id: 1, name: 'Split', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 300, debt_type: 'credit_card', payment_day: null,
         group_id: null, account_id: null, funding_allocations: [
           { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 125 },
         ],
@@ -277,7 +277,7 @@ describe('debt pay-from account', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
     const debts: Debt[] = [
       {
-        id: 1, name: 'Split', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 300,
+        id: 1, name: 'Split', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 300, debt_type: 'credit_card', payment_day: null,
         group_id: null, account_id: null, funding_allocations: [], funding_rules: [
           { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 100, frequency: 'one-time', start_date: '2026-01-01', end_date: null },
           { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 200, frequency: 'monthly', start_date: '2026-02-01', end_date: null },
@@ -313,7 +313,7 @@ describe('buildAccountActivity', () => {
       income({ id: 10, name: 'Salary', monthly_amount: 4000, account_id: 1 }),
       income({ id: 11, name: 'Side', monthly_amount: 200, account_id: 2 }),
     ];
-    const debts: Debt[] = [{ id: 5, name: 'Visa', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, group_id: null, account_id: 1, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' }];
+    const debts: Debt[] = [{ id: 5, name: 'Visa', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: 1, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' }];
     const expenses = [expense({ id: 20, name: 'Rent', monthly_amount: 1000, funding_allocations: [{ source_type: 'account', source_id: 1, alloc_type: 'percent', value: 60 }] })];
     const plan = simulateDebtPlan(debts, 0, 'none', 6);
 

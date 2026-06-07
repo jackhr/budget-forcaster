@@ -88,6 +88,7 @@ export interface DebtPlan {
   remaining: number[]; // total remaining balance at each month-end (for net worth)
   remainingByDebt: Map<number, number[]>; // per-debt remaining balance each month (for breakdown)
   payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
+  chargeOverflow: number[]; // charges that exceeded a card's credit limit (or hit a loan) -> spill to cash
   totalInterest: number;
   debtFreeMonthIndex: number | null; // when the last debt clears
 }
@@ -105,6 +106,8 @@ interface DebtState {
   rate: number;
   min: number;
   paidMonth: number | null;
+  limit: number | null;   // credit limit (null = no cap)
+  chargeable: boolean;    // credit cards can be charged; loans cannot
 }
 
 // Simulate a combined payoff plan across all debts.
@@ -120,6 +123,7 @@ export function simulateDebtPlan(
 ): DebtPlan {
   const outflow = new Array(months).fill(0);
   const remaining = new Array(months).fill(0);
+  const chargeOverflow = new Array(months).fill(0);
   const payoffMonthByDebt = new Map<number, number | null>();
   const states: DebtState[] = debts.map((d) => ({
     id: d.id,
@@ -127,6 +131,8 @@ export function simulateDebtPlan(
     rate: d.apr / 1200,
     min: d.monthly_payment,
     paidMonth: null,
+    limit: d.credit_limit ?? null,
+    chargeable: d.debt_type !== 'loan', // default (undefined) treated as chargeable
   }));
   for (const d of debts) payoffMonthByDebt.set(d.id, null);
   const stateById = new Map(states.map((s) => [s.id, s]));
@@ -154,15 +160,18 @@ export function simulateDebtPlan(
       }
     }
 
-    // Apply this month's charges (future expenses billed to a card).
+    // Apply this month's charges (obligations billed to a card). Cap at available
+    // credit; anything that doesn't fit (over limit, or a loan) spills to cash.
     for (const c of chargesByMonth.get(m) ?? []) {
       const st = stateById.get(c.debtId);
-      if (st) {
-        st.bal += c.amount;
-        if (st.paidMonth !== null && st.bal > 0.005) {
-          st.paidMonth = null; // reactivated by a new charge
-          payoffMonthByDebt.set(st.id, null);
-        }
+      if (!st || !st.chargeable) { chargeOverflow[m] += c.amount; continue; }
+      const available = st.limit == null ? Infinity : Math.max(0, st.limit - st.bal);
+      const applied = Math.min(c.amount, available);
+      st.bal += applied;
+      if (applied < c.amount) chargeOverflow[m] += (c.amount - applied);
+      if (applied > 0 && st.paidMonth !== null && st.bal > 0.005) {
+        st.paidMonth = null; // reactivated by a new charge
+        payoffMonthByDebt.set(st.id, null);
       }
     }
 
@@ -213,6 +222,7 @@ export function simulateDebtPlan(
     }
     outflow[m] = round2(outflow[m]);
     remaining[m] = round2(remaining[m]);
+    chargeOverflow[m] = round2(chargeOverflow[m]);
     for (const d of states) outflowByDebt.get(d.id)![m] = round2(outflowByDebt.get(d.id)![m]);
     if (debtFreeMonthIndex === null && states.every((d) => d.bal <= 0.005)) {
       debtFreeMonthIndex = m;
@@ -224,6 +234,7 @@ export function simulateDebtPlan(
     outflowByDebt,
     remaining,
     remainingByDebt,
+    chargeOverflow,
     payoffMonthByDebt,
     totalInterest: round2(totalInterest),
     debtFreeMonthIndex,

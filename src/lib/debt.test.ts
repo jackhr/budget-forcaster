@@ -5,6 +5,7 @@ import type { Debt } from '../types';
 function makeDebt(over: Partial<Debt>): Debt {
   return {
     id: 1, name: 'D', balance: 0, apr: 0, credit_limit: null, monthly_payment: 0,
+    debt_type: 'credit_card', payment_day: null,
     group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '', ...over,
   };
 }
@@ -73,5 +74,35 @@ describe('simulateDebtPlan', () => {
     const aval = simulateDebtPlan(debts, 150, 'avalanche', 6);
     // first month: 100 + 100 minimums + 150 extra = 350
     expect(aval.outflow[0]).toBeCloseTo(350, 5);
+  });
+});
+
+describe('simulateDebtPlan charges & credit limits', () => {
+  it('charges a credit card and grows its balance', () => {
+    const card = makeDebt({ id: 1, balance: 0, apr: 0, monthly_payment: 0, debt_type: 'credit_card' });
+    const plan = simulateDebtPlan([card], 0, 'none', 3, [{ debtId: 1, monthIndex: 0, amount: 500 }]);
+    expect(plan.remainingByDebt.get(1)![0]).toBeCloseTo(500, 5);
+    expect(plan.chargeOverflow.every((v) => v === 0)).toBe(true);
+  });
+
+  it('caps a charge at available credit and spills the rest to overflow', () => {
+    const card = makeDebt({ id: 1, balance: 800, apr: 0, monthly_payment: 0, credit_limit: 1000, debt_type: 'credit_card' });
+    const plan = simulateDebtPlan([card], 0, 'none', 1, [{ debtId: 1, monthIndex: 0, amount: 500 }]);
+    // only 200 of the 500 fits under the 1000 limit
+    expect(plan.remainingByDebt.get(1)![0]).toBeCloseTo(1000, 5);
+    expect(plan.chargeOverflow[0]).toBeCloseTo(300, 5);
+  });
+
+  it('never charges a loan — the whole amount overflows to cash', () => {
+    const loan = makeDebt({ id: 1, balance: 5000, apr: 0, monthly_payment: 0, debt_type: 'loan' });
+    const plan = simulateDebtPlan([loan], 0, 'none', 1, [{ debtId: 1, monthIndex: 0, amount: 400 }]);
+    expect(plan.remainingByDebt.get(1)![0]).toBeCloseTo(5000, 5); // unchanged
+    expect(plan.chargeOverflow[0]).toBeCloseTo(400, 5);
+  });
+
+  it('overflows charges aimed at an unknown debt', () => {
+    const card = makeDebt({ id: 1, balance: 0, apr: 0, monthly_payment: 0 });
+    const plan = simulateDebtPlan([card], 0, 'none', 1, [{ debtId: 999, monthIndex: 0, amount: 250 }]);
+    expect(plan.chargeOverflow[0]).toBeCloseTo(250, 5);
   });
 });

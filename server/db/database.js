@@ -109,6 +109,16 @@ if (!debtColsForGroup.some((c) => c.name === 'funding_allocations')) {
 if (!debtColsForGroup.some((c) => c.name === 'funding_rules')) {
   db.exec("ALTER TABLE debts ADD COLUMN funding_rules TEXT NOT NULL DEFAULT '[]'");
 }
+// Debt type: credit cards (revolving, chargeable) vs loans (installment, not chargeable).
+if (!debtColsForGroup.some((c) => c.name === 'debt_type')) {
+  db.exec("ALTER TABLE debts ADD COLUMN debt_type TEXT NOT NULL DEFAULT 'credit_card'");
+  // Infer existing rows: a credit limit implies revolving credit; otherwise it's a loan.
+  db.exec("UPDATE debts SET debt_type = 'loan' WHERE credit_limit IS NULL");
+}
+// Optional autopay day-of-month (1-31) for the debt's payment.
+if (!debtColsForGroup.some((c) => c.name === 'payment_day')) {
+  db.exec('ALTER TABLE debts ADD COLUMN payment_day INTEGER');
+}
 // Split funding for expenses (JSON array of allocations).
 const expenseFundingCols = db.prepare('PRAGMA table_info(expenses)').all();
 if (!expenseFundingCols.some((c) => c.name === 'funding_allocations')) {

@@ -68,6 +68,8 @@ export interface Expense {
   updated_at: string;
 }
 
+export type DebtType = 'credit_card' | 'loan';
+
 export interface Debt {
   id: number;
   name: string;
@@ -75,6 +77,8 @@ export interface Debt {
   apr: number; // annual percentage rate, e.g. 19.9
   credit_limit: number | null;
   monthly_payment: number;
+  debt_type: DebtType; // credit_card = revolving (chargeable); loan = installment (not chargeable)
+  payment_day: number | null; // autopay day-of-month (1-31); null = unspecified
   group_id: number | null;
   account_id: number | null; // account that pays this debt; null = primary
   funding_allocations: ExpenseAllocation[]; // split account funding for debt payments; empty = legacy account_id

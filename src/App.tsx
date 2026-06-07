@@ -61,8 +61,9 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const ep = buildExpensePlan(exp, accts, debts, months, infl);
   const charges = [...buildDebtCharges(pay, months), ...ep.charges];
   const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges);
-  const fc = buildForecast(inc, ep.ongoingCashOut, pay, plan.outflow, months);
-  const sv = buildSavings(inc, ep.ongoingCashOut, pay, plan.outflow, months, start);
+  const cashOut = plan.outflow.map((v, i) => Math.round((v + plan.chargeOverflow[i]) * 100) / 100);
+  const fc = buildForecast(inc, ep.ongoingCashOut, pay, cashOut, months);
+  const sv = buildSavings(inc, ep.ongoingCashOut, pay, cashOut, months, start);
   const nw = buildNetWorth(sv, plan.remaining);
   return { forecast: fc.map((p) => p.net), savings: sv.map((p) => p.balance), networth: nw.map((p) => p.netWorth) };
 }
@@ -141,8 +142,10 @@ export default function App() {
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
-  const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, plan.outflow, months);
-  const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, plan.outflow, months, totalCash);
+  // Charges that can't go on a card (over limit, or aimed at a loan) are paid in cash.
+  const debtCashOut = plan.outflow.map((v, i) => Math.round((v + plan.chargeOverflow[i]) * 100) / 100);
+  const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months);
+  const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months, totalCash);
   const netWorth = buildNetWorth(savings, plan.remaining);
 
   // Payoff markers (one debt name per month it clears).
@@ -161,6 +164,12 @@ export default function App() {
   const primaryAccountId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const scheduledOutByAccount = buildScheduledOutByAccount(payments, accounts, months);
   const debtOutByAccount = buildDebtOutByAccount(debts, plan, accounts);
+  // Over-limit / loan charge overflow is paid from primary cash; attribute it there
+  // so the per-account series sum keeps matching total savings.
+  if (primaryAccountId != null) {
+    const arr = debtOutByAccount.get(primaryAccountId);
+    if (arr) for (let i = 0; i < arr.length; i++) arr[i] = Math.round((arr[i] + plan.chargeOverflow[i]) * 100) / 100;
+  }
 
   // Combined overview series: monthly flows, balances, and future-expense totals.
   const futureTotals = buildFutureExpenseBreakdown(payments, months).total;
@@ -596,7 +605,7 @@ export default function App() {
             items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
             kind="expense" groups={groups} showFrequency showEndDate showFunding
             accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-            debts={debts.map((d) => ({ id: d.id, name: d.name }))}
+            debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name }))}
             onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}
             onAddGroup={(name) => addGroup(name, 'expense')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
             onReorder={reorderExpenses} onReorderGroup={reorderGroups}
@@ -605,7 +614,7 @@ export default function App() {
         <ScheduledPayments
           payments={payments}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-          debts={debts.map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))}
+          debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}
         />
         <Debts
