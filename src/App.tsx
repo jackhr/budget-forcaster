@@ -14,6 +14,7 @@ import SavingsSummary from './components/SavingsSummary';
 import ScheduledPayments from './components/ScheduledPayments';
 import Debts from './components/Debts';
 import Accounts from './components/Accounts';
+import PlaidConnect from './components/PlaidConnect';
 import HeaderControls from './components/HeaderControls';
 import Toolbar from './components/Toolbar';
 import type { PayoffMarker } from './components/NetWorthChart';
@@ -590,6 +591,7 @@ export default function App() {
           onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount}
           onMakePrimary={makePrimary} onReorder={reorderAccounts}
         />
+        <PlaidConnect onImported={load} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 20 }}>
           <LineItemTable
             title="Income Sources" description="Money coming in, by pay frequency"

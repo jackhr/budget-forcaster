@@ -115,3 +115,34 @@ export const settingsApi = {
       body: JSON.stringify({ value }),
     }),
 };
+
+// ---- Plaid (sandbox) ----
+export interface PlaidItem { id: number; item_id: string; institution_name: string | null; created_at: string }
+export interface PlaidStatus { configured: boolean; env: string; items: PlaidItem[] }
+export interface PlaidAccount {
+  item_id: string;
+  institution_name: string | null;
+  account_id: string;
+  name: string;
+  official_name: string | null;
+  mask: string | null;
+  type: string;
+  subtype: string | null;
+  current: number | null;
+  available: number | null;
+  limit: number | null;
+  currency: string | null;
+}
+
+export const plaidApi = {
+  status: () => req<PlaidStatus>('/plaid/status'),
+  createLinkToken: () => req<{ link_token: string }>('/plaid/create_link_token', { method: 'POST' }),
+  exchange: (publicToken: string) =>
+    req<{ ok: boolean; item_id: string; institution_name: string | null }>('/plaid/exchange_public_token', {
+      method: 'POST', body: JSON.stringify({ public_token: publicToken }),
+    }),
+  accounts: () => req<PlaidAccount[]>('/plaid/accounts'),
+  importAccounts: (accounts: { name: string; balance: number; type: string; credit_limit?: number | null }[]) =>
+    req<{ ok: boolean; created: number; accountsCreated: number; debtsCreated: number }>('/plaid/import_accounts', { method: 'POST', body: JSON.stringify({ accounts }) }),
+  removeItem: (id: number) => req<void>(`/plaid/items/${id}`, { method: 'DELETE' }),
+};

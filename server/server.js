@@ -1,3 +1,5 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const express = require('express');
 const cors = require('cors');
 
@@ -14,6 +16,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/debts', require('./routes/debts'));
 app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/plaid', require('./routes/plaid'));
 app.use('/api/scenarios', require('./routes/scenarios'));
 app.use('/api', require('./routes/data'));
 
