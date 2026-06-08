@@ -17,6 +17,8 @@ import Accounts from './components/Accounts';
 import PlaidConnect from './components/PlaidConnect';
 import HeaderControls from './components/HeaderControls';
 import Toolbar from './components/Toolbar';
+import NavMenu from './components/NavMenu';
+import { useMediaQuery } from './lib/useMediaQuery';
 import type { PayoffMarker } from './components/NetWorthChart';
 
 // Charts pull in Recharts (~the bulk of the bundle) — load them on demand.
@@ -29,6 +31,16 @@ const AccountActivity = lazy(() => import('./components/AccountActivity'));
 const Transactions = lazy(() => import('./components/Transactions'));
 
 type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview' | 'account' | 'transactions';
+
+const TABS: [Tab, string][] = [
+  ['forecast', 'Forecast'],
+  ['savings', 'Savings'],
+  ['networth', 'Net Worth'],
+  ['breakdown', 'Breakdown'],
+  ['overview', 'Overview'],
+  ['account', 'Account'],
+  ['transactions', 'Transactions'],
+];
 type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
@@ -100,10 +112,13 @@ export default function App() {
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isNarrow = useMediaQuery('(max-width: 760px)');
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => { localStorage.setItem('bf.months', String(months)); }, [months]);
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
+  useEffect(() => { if (!isNarrow) setMenuOpen(false); }, [isNarrow]);
 
   const load = useCallback(async () => {
     try {
@@ -416,6 +431,21 @@ export default function App() {
     </button>
   );
 
+  // Scenarios + export/import. Lives in the toolbar on wide screens, and inside
+  // the hamburger menu on narrow ones.
+  const toolbar = (
+    <Toolbar
+      scenarios={scenarios}
+      compareId={compareId}
+      onSave={saveScenario}
+      onRestore={restoreScenario}
+      onDelete={deleteScenario}
+      onCompareChange={setCompareId}
+      onExport={onExport}
+      onImport={onImport}
+    />
+  );
+
   return (
     <div style={{ minHeight: '100vh', padding: '0 0 60px' }}>
       <header style={{
@@ -439,15 +469,21 @@ export default function App() {
             inflation={inflation}
             onInflationChange={changeInflation}
           />
-          <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
-            {tabBtn('forecast', 'Forecast')}
-            {tabBtn('savings', 'Savings')}
-            {tabBtn('networth', 'Net Worth')}
-            {tabBtn('breakdown', 'Breakdown')}
-            {tabBtn('overview', 'Overview')}
-            {tabBtn('account', 'Account')}
-            {tabBtn('transactions', 'Transactions')}
-          </div>
+          {isNarrow ? (
+            <NavMenu
+              tabs={TABS.map(([id, label]) => ({ id, label }))}
+              current={tab}
+              onSelect={(id) => setTab(id as Tab)}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+            >
+              {toolbar}
+            </NavMenu>
+          ) : (
+            <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+              {TABS.map(([id, label]) => tabBtn(id, label))}
+            </div>
+          )}
         </div>
 
         {error && (
@@ -464,16 +500,7 @@ export default function App() {
       </header>
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: 'clamp(16px, 3vw, 28px)', display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <Toolbar
-          scenarios={scenarios}
-          compareId={compareId}
-          onSave={saveScenario}
-          onRestore={restoreScenario}
-          onDelete={deleteScenario}
-          onCompareChange={setCompareId}
-          onExport={onExport}
-          onImport={onImport}
-        />
+        {!isNarrow && toolbar}
 
         {tab === 'forecast' && (
           <>
