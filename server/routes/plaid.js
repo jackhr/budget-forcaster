@@ -102,49 +102,112 @@ router.get('/accounts', async (req, res) => {
 });
 
 // Past transactions for a single linked account (or all accounts if none given).
-// Uses /transactions/get over a rolling date window; paginates per item.
+// Transactions are cached in SQLite and kept current with /transactions/sync
+// (cursor-based deltas), so the page loads instantly from cache and only the
+// first sync (or an explicit refresh) hits Plaid.
+const upsertTxn = db.prepare(`
+  INSERT INTO plaid_transactions
+    (transaction_id, item_id, account_id, date, name, amount, currency, pending, category, logo_url, updated_at)
+  VALUES (@transaction_id, @item_id, @account_id, @date, @name, @amount, @currency, @pending, @category, @logo_url, datetime('now'))
+  ON CONFLICT(transaction_id) DO UPDATE SET
+    account_id = excluded.account_id, date = excluded.date, name = excluded.name, amount = excluded.amount,
+    currency = excluded.currency, pending = excluded.pending, category = excluded.category, logo_url = excluded.logo_url,
+    updated_at = datetime('now')
+`);
+const deleteTxn = db.prepare('DELETE FROM plaid_transactions WHERE transaction_id = ?');
+
+function txnRow(item_id, t) {
+  return {
+    transaction_id: t.transaction_id,
+    item_id,
+    account_id: t.account_id,
+    date: t.date,
+    name: t.merchant_name || t.name,
+    amount: t.amount, // Plaid: positive = money out (a charge), negative = refund/payment
+    currency: t.iso_currency_code,
+    pending: t.pending ? 1 : 0,
+    category: t.personal_finance_category?.primary || (t.category && t.category[0]) || null,
+    logo_url: t.logo_url || (t.counterparties && t.counterparties[0]?.logo_url) || null,
+  };
+}
+
+function serializeTxn(r) {
+  return {
+    transaction_id: r.transaction_id,
+    account_id: r.account_id,
+    date: r.date,
+    name: r.name,
+    amount: r.amount,
+    currency: r.currency,
+    pending: Boolean(r.pending),
+    category: r.category,
+    logo_url: r.logo_url,
+  };
+}
+
+// Pull a single item's deltas into the cache, advancing its cursor.
+async function syncItem(client, item) {
+  let cursor = item.cursor || undefined;
+  const totals = { added: 0, modified: 0, removed: 0 };
+  // First sync (no cursor) returns history in pages; loop until caught up.
+  for (;;) {
+    const { data } = await client.transactionsSync({ access_token: item.access_token, cursor, count: 250 });
+    const apply = db.transaction(() => {
+      for (const t of data.added) upsertTxn.run(txnRow(item.item_id, t));
+      for (const t of data.modified) upsertTxn.run(txnRow(item.item_id, t));
+      for (const r of data.removed) deleteTxn.run(r.transaction_id);
+    });
+    apply();
+    totals.added += data.added.length;
+    totals.modified += data.modified.length;
+    totals.removed += data.removed.length;
+    cursor = data.next_cursor;
+    if (!data.has_more) break;
+  }
+  db.prepare("UPDATE plaid_items SET cursor = ?, transactions_synced_at = datetime('now') WHERE id = ?").run(cursor, item.id);
+  return totals;
+}
+
+async function syncItems(client, items) {
+  const totals = { added: 0, modified: 0, removed: 0 };
+  for (const item of items) {
+    const r = await syncItem(client, item);
+    totals.added += r.added; totals.modified += r.modified; totals.removed += r.removed;
+  }
+  return totals;
+}
+
+// Past transactions for one account (or all) from the local cache. The very
+// first request for a freshly-linked item syncs it; afterwards it's instant.
 router.get('/transactions', async (req, res) => {
-  const client = requireClient(res);
-  if (!client) return;
   const accountId = req.query.account_id ? String(req.query.account_id) : null;
   const days = Math.min(730, Math.max(1, Number(req.query.days) || 90));
-  const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - days);
-  const fmt = (d) => d.toISOString().slice(0, 10);
-
-  const items = db.prepare('SELECT * FROM plaid_items').all();
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = since.toISOString().slice(0, 10);
   try {
-    const out = [];
-    for (const item of items) {
-      // One page of 100 most-recent transactions per item is plenty for a local view.
-      const resp = await client.transactionsGet({
-        access_token: item.access_token,
-        start_date: fmt(start),
-        end_date: fmt(end),
-        options: { count: 100, offset: 0, ...(accountId ? { account_ids: [accountId] } : {}) },
-      }).catch((e) => {
-        // An account_id that doesn't belong to this item -> skip the item.
-        if (e?.response?.data?.error_code === 'INVALID_FIELD') return null;
-        throw e;
-      });
-      if (!resp) continue;
-      for (const t of resp.data.transactions) {
-        out.push({
-          transaction_id: t.transaction_id,
-          account_id: t.account_id,
-          date: t.date,
-          name: t.merchant_name || t.name,
-          amount: t.amount, // Plaid: positive = money out (a charge), negative = refund/payment
-          currency: t.iso_currency_code,
-          pending: t.pending,
-          category: t.personal_finance_category?.primary || (t.category && t.category[0]) || null,
-          logo_url: t.logo_url || (t.counterparties && t.counterparties[0]?.logo_url) || null,
-        });
-      }
+    const client = getClient();
+    if (client) {
+      const fresh = db.prepare('SELECT * FROM plaid_items WHERE transactions_synced_at IS NULL').all();
+      if (fresh.length) await syncItems(client, fresh);
     }
-    out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    res.json(out);
+    const rows = accountId
+      ? db.prepare('SELECT * FROM plaid_transactions WHERE account_id = ? AND date >= ? ORDER BY date DESC, transaction_id DESC').all(accountId, sinceStr)
+      : db.prepare('SELECT * FROM plaid_transactions WHERE date >= ? ORDER BY date DESC, transaction_id DESC').all(sinceStr);
+    res.json(rows.map(serializeTxn));
+  } catch (e) {
+    res.status(502).json({ error: plaidError(e) });
+  }
+});
+
+// Force a refresh of the cache from Plaid (pull deltas for every linked item).
+router.post('/transactions/sync', async (req, res) => {
+  const client = requireClient(res);
+  if (!client) return;
+  try {
+    const items = db.prepare('SELECT * FROM plaid_items').all();
+    const totals = await syncItems(client, items);
+    res.json({ ok: true, ...totals });
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });
   }
@@ -208,6 +271,7 @@ router.delete('/items/:id', async (req, res) => {
   if (client) {
     try { await client.itemRemove({ access_token: item.access_token }); } catch { /* ignore */ }
   }
+  db.prepare('DELETE FROM plaid_transactions WHERE item_id = ?').run(item.item_id);
   db.prepare('DELETE FROM plaid_items WHERE id = ?').run(req.params.id);
   res.status(204).end();
 });

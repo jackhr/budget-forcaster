@@ -20,6 +20,7 @@ export default function Transactions() {
   const [days, setDays] = useState(90);
   const [txns, setTxns] = useState<PlaidTransaction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load linked accounts once; default to the first credit card.
@@ -55,6 +56,19 @@ export default function Transactions() {
   }, [accountId, days]);
 
   useEffect(() => { loadTxns(); }, [loadTxns]);
+
+  const refresh = useCallback(async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      await plaidApi.syncTransactions();
+      await loadTxns();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not refresh from Plaid');
+    } finally {
+      setSyncing(false);
+    }
+  }, [loadTxns]);
 
   const { spend, refunds } = useMemo(() => {
     let spend = 0, refunds = 0;
@@ -113,6 +127,9 @@ export default function Transactions() {
           <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={selectStyle}>
             {DAY_OPTIONS.map((d) => <option key={d} value={d}>Last {d} days</option>)}
           </select>
+          <button onClick={refresh} disabled={syncing || loading} title="Pull the latest from Plaid" style={{ ...selectStyle, cursor: 'pointer' }}>
+            {syncing ? 'Refreshing…' : '↻ Refresh'}
+          </button>
         </div>
       </div>
 

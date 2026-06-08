@@ -85,7 +85,31 @@ db.exec(`
     institution_name TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS plaid_transactions (
+    transaction_id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    name TEXT,
+    amount REAL,
+    currency TEXT,
+    pending INTEGER NOT NULL DEFAULT 0,
+    category TEXT,
+    logo_url TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_plaid_txn_account_date ON plaid_transactions (account_id, date);
 `);
+
+// --- Migration: cursor on plaid_items for incremental transactionsSync ---
+const plaidItemCols = db.prepare('PRAGMA table_info(plaid_items)').all();
+if (!plaidItemCols.some((c) => c.name === 'cursor')) {
+  db.exec('ALTER TABLE plaid_items ADD COLUMN cursor TEXT');
+}
+if (!plaidItemCols.some((c) => c.name === 'transactions_synced_at')) {
+  db.exec('ALTER TABLE plaid_items ADD COLUMN transactions_synced_at TEXT');
+}
 
 // --- Migration: add sort_order to reorderable tables ---
 for (const table of ['income_sources', 'expenses', 'debts', 'line_item_groups']) {
