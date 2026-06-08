@@ -69,33 +69,102 @@ router.post('/exchange_public_token', async (req, res) => {
   }
 });
 
-// Live balances for every linked item.
-router.get('/accounts', async (req, res) => {
-  const client = requireClient(res);
-  if (!client) return;
-  const items = db.prepare('SELECT * FROM plaid_items').all();
+// Account balances are cached and refreshed from Plaid at most every 5 minutes,
+// in the background — the request serves the cache and never blocks on Plaid
+// (except the very first time, when there's nothing cached yet).
+const ACCOUNTS_TTL_MS = 5 * 60 * 1000;
+
+const upsertAccount = db.prepare(`
+  INSERT INTO plaid_accounts
+    (account_id, item_id, institution_name, name, official_name, mask, type, subtype, current, available, credit_limit, currency, updated_at)
+  VALUES (@account_id, @item_id, @institution_name, @name, @official_name, @mask, @type, @subtype, @current, @available, @credit_limit, @currency, datetime('now'))
+  ON CONFLICT(account_id) DO UPDATE SET
+    item_id = excluded.item_id, institution_name = excluded.institution_name, name = excluded.name,
+    official_name = excluded.official_name, mask = excluded.mask, type = excluded.type, subtype = excluded.subtype,
+    current = excluded.current, available = excluded.available, credit_limit = excluded.credit_limit,
+    currency = excluded.currency, updated_at = datetime('now')
+`);
+
+function serializeAccount(r) {
+  return {
+    item_id: r.item_id,
+    institution_name: r.institution_name,
+    account_id: r.account_id,
+    name: r.name,
+    official_name: r.official_name,
+    mask: r.mask,
+    type: r.type,
+    subtype: r.subtype,
+    current: r.current,
+    available: r.available,
+    limit: r.credit_limit,
+    currency: r.currency,
+  };
+}
+
+// Cache is stale if any linked item has never synced or is older than the TTL.
+function accountsStale() {
+  const items = db.prepare('SELECT accounts_synced_at FROM plaid_items').all();
+  if (items.length === 0) return false;
+  const now = Date.now();
+  return items.some((it) => {
+    if (!it.accounts_synced_at) return true;
+    const t = new Date(it.accounts_synced_at.replace(' ', 'T') + 'Z').getTime();
+    return now - t > ACCOUNTS_TTL_MS;
+  });
+}
+
+let accountsRefreshing = false;
+async function refreshAccountsCache(client) {
+  if (accountsRefreshing) return; // collapse concurrent refreshes
+  accountsRefreshing = true;
   try {
-    const all = [];
+    const items = db.prepare('SELECT * FROM plaid_items').all();
     for (const item of items) {
       const resp = await client.accountsBalanceGet({ access_token: item.access_token });
-      for (const a of resp.data.accounts) {
-        all.push({
-          item_id: item.item_id,
-          institution_name: item.institution_name,
-          account_id: a.account_id,
-          name: a.name,
-          official_name: a.official_name,
-          mask: a.mask,
-          type: a.type,
-          subtype: a.subtype,
-          current: a.balances.current,
-          available: a.balances.available,
-          limit: a.balances.limit,
-          currency: a.balances.iso_currency_code,
-        });
+      const apply = db.transaction(() => {
+        // Replace this item's rows so removed accounts drop out of the cache.
+        db.prepare('DELETE FROM plaid_accounts WHERE item_id = ?').run(item.item_id);
+        for (const a of resp.data.accounts) {
+          upsertAccount.run({
+            account_id: a.account_id,
+            item_id: item.item_id,
+            institution_name: item.institution_name,
+            name: a.name,
+            official_name: a.official_name ?? null,
+            mask: a.mask ?? null,
+            type: a.type ?? null,
+            subtype: a.subtype ?? null,
+            current: a.balances.current ?? null,
+            available: a.balances.available ?? null,
+            credit_limit: a.balances.limit ?? null,
+            currency: a.balances.iso_currency_code ?? null,
+          });
+        }
+      });
+      apply();
+      db.prepare("UPDATE plaid_items SET accounts_synced_at = datetime('now') WHERE id = ?").run(item.id);
+    }
+  } catch (e) {
+    console.error('Plaid accounts refresh failed:', plaidError(e));
+  } finally {
+    accountsRefreshing = false;
+  }
+}
+
+router.get('/accounts', async (req, res) => {
+  try {
+    const client = getClient();
+    const cached = db.prepare('SELECT COUNT(*) AS c FROM plaid_accounts').get().c;
+    if (client) {
+      if (cached === 0) {
+        await refreshAccountsCache(client); // nothing to show yet — populate once
+      } else if (accountsStale()) {
+        refreshAccountsCache(client); // serve cache now, refresh in the background
       }
     }
-    res.json(all);
+    const rows = db.prepare('SELECT * FROM plaid_accounts ORDER BY type, name').all();
+    res.json(rows.map(serializeAccount));
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });
   }
@@ -272,6 +341,7 @@ router.delete('/items/:id', async (req, res) => {
     try { await client.itemRemove({ access_token: item.access_token }); } catch { /* ignore */ }
   }
   db.prepare('DELETE FROM plaid_transactions WHERE item_id = ?').run(item.item_id);
+  db.prepare('DELETE FROM plaid_accounts WHERE item_id = ?').run(item.item_id);
   db.prepare('DELETE FROM plaid_items WHERE id = ?').run(req.params.id);
   res.status(204).end();
 });
