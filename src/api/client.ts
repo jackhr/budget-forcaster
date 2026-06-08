@@ -134,6 +134,18 @@ export interface PlaidAccount {
   currency: string | null;
 }
 
+export interface PlaidTransaction {
+  transaction_id: string;
+  account_id: string;
+  date: string; // YYYY-MM-DD
+  name: string;
+  amount: number; // positive = money out (a charge); negative = refund/payment
+  currency: string | null;
+  pending: boolean;
+  category: string | null;
+  logo_url: string | null;
+}
+
 export const plaidApi = {
   status: () => req<PlaidStatus>('/plaid/status'),
   createLinkToken: () => req<{ link_token: string }>('/plaid/create_link_token', { method: 'POST' }),
@@ -142,6 +154,8 @@ export const plaidApi = {
       method: 'POST', body: JSON.stringify({ public_token: publicToken }),
     }),
   accounts: () => req<PlaidAccount[]>('/plaid/accounts'),
+  transactions: (accountId: string | null, days = 90) =>
+    req<PlaidTransaction[]>(`/plaid/transactions?days=${days}${accountId ? `&account_id=${encodeURIComponent(accountId)}` : ''}`),
   importAccounts: (accounts: { name: string; balance: number; type: string; credit_limit?: number | null }[]) =>
     req<{ ok: boolean; created: number; accountsCreated: number; debtsCreated: number }>('/plaid/import_accounts', { method: 'POST', body: JSON.stringify({ accounts }) }),
   removeItem: (id: number) => req<void>(`/plaid/items/${id}`, { method: 'DELETE' }),

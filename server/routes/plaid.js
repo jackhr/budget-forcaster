@@ -101,6 +101,55 @@ router.get('/accounts', async (req, res) => {
   }
 });
 
+// Past transactions for a single linked account (or all accounts if none given).
+// Uses /transactions/get over a rolling date window; paginates per item.
+router.get('/transactions', async (req, res) => {
+  const client = requireClient(res);
+  if (!client) return;
+  const accountId = req.query.account_id ? String(req.query.account_id) : null;
+  const days = Math.min(730, Math.max(1, Number(req.query.days) || 90));
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+
+  const items = db.prepare('SELECT * FROM plaid_items').all();
+  try {
+    const out = [];
+    for (const item of items) {
+      // One page of 100 most-recent transactions per item is plenty for a local view.
+      const resp = await client.transactionsGet({
+        access_token: item.access_token,
+        start_date: fmt(start),
+        end_date: fmt(end),
+        options: { count: 100, offset: 0, ...(accountId ? { account_ids: [accountId] } : {}) },
+      }).catch((e) => {
+        // An account_id that doesn't belong to this item -> skip the item.
+        if (e?.response?.data?.error_code === 'INVALID_FIELD') return null;
+        throw e;
+      });
+      if (!resp) continue;
+      for (const t of resp.data.transactions) {
+        out.push({
+          transaction_id: t.transaction_id,
+          account_id: t.account_id,
+          date: t.date,
+          name: t.merchant_name || t.name,
+          amount: t.amount, // Plaid: positive = money out (a charge), negative = refund/payment
+          currency: t.iso_currency_code,
+          pending: t.pending,
+          category: t.personal_finance_category?.primary || (t.category && t.category[0]) || null,
+          logo_url: t.logo_url || (t.counterparties && t.counterparties[0]?.logo_url) || null,
+        });
+      }
+    }
+    out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    res.json(out);
+  } catch (e) {
+    res.status(502).json({ error: plaidError(e) });
+  }
+});
+
 // Where a Plaid account type lands in our model.
 //   credit / loan -> a debt (credit card vs installment loan)
 //   everything else (depository, investment, other) -> a cash account

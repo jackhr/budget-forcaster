@@ -26,8 +26,9 @@ const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
 const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
 const OverviewChart = lazy(() => import('./components/OverviewChart'));
 const AccountActivity = lazy(() => import('./components/AccountActivity'));
+const Transactions = lazy(() => import('./components/Transactions'));
 
-type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview' | 'account';
+type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview' | 'account' | 'transactions';
 type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
@@ -445,6 +446,7 @@ export default function App() {
             {tabBtn('breakdown', 'Breakdown')}
             {tabBtn('overview', 'Overview')}
             {tabBtn('account', 'Account')}
+            {tabBtn('transactions', 'Transactions')}
           </div>
         </div>
 
@@ -573,7 +575,14 @@ export default function App() {
             </Suspense>
           </>
         )}
+        {tab === 'transactions' && (
+          <Suspense fallback={<ChartFallback />}>
+            <Transactions />
+          </Suspense>
+        )}
 
+        {/* Budget data & editors — shown on every tab except the standalone Transactions page. */}
+        {tab !== 'transactions' && <>
         {/* This month's money out */}
         {m0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: '12px 18px', fontSize: 13 }}>
@@ -628,6 +637,7 @@ export default function App() {
           plan={plan} basePlan={basePlan} extra={debtExtra} strategy={debtStrategy}
           onExtraChange={changeDebtExtra} onStrategyChange={changeDebtStrategy}
         />
+        </>}
       </main>
     </div>
   );
