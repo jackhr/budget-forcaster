@@ -85,7 +85,7 @@ const upsertAccount = db.prepare(`
     currency = excluded.currency, updated_at = datetime('now')
 `);
 
-function serializeAccount(r) {
+function serializeAccount(r, imported = false) {
   return {
     item_id: r.item_id,
     institution_name: r.institution_name,
@@ -99,6 +99,25 @@ function serializeAccount(r) {
     available: r.available,
     limit: r.credit_limit,
     currency: r.currency,
+    imported,
+  };
+}
+
+// The local name we give an imported row, matching the client's import label.
+function importName(name, mask) {
+  return `${name || 'Account'}${mask ? ` ••${mask}` : ''}`.slice(0, 60);
+}
+
+// Sets of what's already imported: by Plaid account id (exact link) and by the
+// local row name (covers rows imported before the link column existed).
+function importedSets() {
+  const rows = [
+    ...db.prepare('SELECT plaid_account_id, name FROM accounts').all(),
+    ...db.prepare('SELECT plaid_account_id, name FROM debts').all(),
+  ];
+  return {
+    byId: new Set(rows.map((r) => r.plaid_account_id).filter(Boolean)),
+    byName: new Set(rows.map((r) => r.name)),
   };
 }
 
@@ -164,7 +183,9 @@ router.get('/accounts', async (req, res) => {
       }
     }
     const rows = db.prepare('SELECT * FROM plaid_accounts ORDER BY type, name').all();
-    res.json(rows.map(serializeAccount));
+    const { byId, byName } = importedSets();
+    const isImported = (pa) => byId.has(pa.account_id) || byName.has(importName(pa.name, pa.mask));
+    res.json(rows.map((r) => serializeAccount(r, isImported(r))));
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });
   }
@@ -300,21 +321,26 @@ router.post('/import_accounts', async (req, res) => {
   if (selections.length === 0) return res.status(400).json({ error: 'No accounts selected' });
   try {
     const hasPrimary = db.prepare('SELECT COUNT(*) AS c FROM accounts WHERE is_primary = 1').get().c > 0;
-    const insertAccount = db.prepare('INSERT INTO accounts (name, balance, is_primary) VALUES (?, ?, ?)');
+    const insertAccount = db.prepare('INSERT INTO accounts (name, balance, is_primary, plaid_account_id) VALUES (?, ?, ?, ?)');
     const insertDebt = db.prepare(
-      'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, debt_type, payment_day) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, debt_type, payment_day, plaid_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
+    const { byId, byName } = importedSets();
     let madePrimary = hasPrimary;
     let accountsCreated = 0;
     let debtsCreated = 0;
+    let skipped = 0;
     for (const s of selections) {
       const name = String(s.name || 'Account').slice(0, 60);
+      const plaidId = s.account_id ? String(s.account_id) : null;
+      // Never import the same Plaid account twice — resync updates it instead.
+      if ((plaidId && byId.has(plaidId)) || byName.has(name)) { skipped++; continue; }
       const dest = destinationFor(s.type);
       if (dest === 'account') {
         const balance = Number(s.balance) || 0;
         const primary = madePrimary ? 0 : 1;
         madePrimary = true;
-        insertAccount.run(name, balance, primary);
+        insertAccount.run(name, balance, primary, plaidId);
         accountsCreated++;
       } else {
         // Plaid reports the owed amount as a positive `current` for credit/loan.
@@ -322,13 +348,47 @@ router.post('/import_accounts', async (req, res) => {
         const limit = dest === 'credit_card' && Number.isFinite(Number(s.credit_limit)) ? Number(s.credit_limit) : null;
         // APR + minimum payment need the `liabilities` product; default to 0 so the
         // user can fill them in. Balance/limit are enough to track utilization.
-        insertDebt.run(name, balance, 0, limit, 0, dest, null);
+        insertDebt.run(name, balance, 0, limit, 0, dest, null, plaidId);
         debtsCreated++;
       }
     }
-    res.status(201).json({ ok: true, accountsCreated, debtsCreated, created: accountsCreated + debtsCreated });
+    res.status(201).json({ ok: true, accountsCreated, debtsCreated, skipped, created: accountsCreated + debtsCreated });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Resync: pull fresh balances and push them into the already-imported rows
+// (accounts get current balance; credit/loan debts get the owed amount + limit).
+router.post('/resync', async (req, res) => {
+  const client = requireClient(res);
+  if (!client) return;
+  try {
+    await refreshAccountsCache(client);
+    const cached = db.prepare('SELECT * FROM plaid_accounts').all();
+    const setAcctById = db.prepare('UPDATE accounts SET balance = ? WHERE plaid_account_id = ?');
+    const setAcctByName = db.prepare('UPDATE accounts SET balance = ?, plaid_account_id = ? WHERE plaid_account_id IS NULL AND name = ?');
+    const setDebtById = db.prepare('UPDATE debts SET balance = ?, credit_limit = COALESCE(?, credit_limit) WHERE plaid_account_id = ?');
+    const setDebtByName = db.prepare('UPDATE debts SET balance = ?, credit_limit = COALESCE(?, credit_limit), plaid_account_id = ? WHERE plaid_account_id IS NULL AND name = ?');
+    let updated = 0;
+    const tx = db.transaction(() => {
+      for (const pa of cached) {
+        const label = importName(pa.name, pa.mask);
+        const current = pa.current ?? 0;
+        const owed = Math.max(0, current);
+        // Try the linked row first, then fall back to a name match (legacy imports),
+        // backfilling the link so future resyncs are exact.
+        let n = setAcctById.run(current, pa.account_id).changes;
+        if (!n) n = setAcctByName.run(current, pa.account_id, label).changes;
+        let d = setDebtById.run(owed, pa.credit_limit, pa.account_id).changes;
+        if (!d) d = setDebtByName.run(owed, pa.credit_limit, pa.account_id, label).changes;
+        updated += n + d;
+      }
+    });
+    tx();
+    res.json({ ok: true, updated });
+  } catch (e) {
+    res.status(502).json({ error: plaidError(e) });
   }
 });
 

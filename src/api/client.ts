@@ -132,6 +132,7 @@ export interface PlaidAccount {
   available: number | null;
   limit: number | null;
   currency: string | null;
+  imported: boolean; // already imported as a local account/debt
 }
 
 export interface PlaidTransaction {
@@ -158,7 +159,8 @@ export const plaidApi = {
     req<PlaidTransaction[]>(`/plaid/transactions?days=${days}${accountId ? `&account_id=${encodeURIComponent(accountId)}` : ''}`),
   syncTransactions: () =>
     req<{ ok: boolean; added: number; modified: number; removed: number }>('/plaid/transactions/sync', { method: 'POST' }),
-  importAccounts: (accounts: { name: string; balance: number; type: string; credit_limit?: number | null }[]) =>
-    req<{ ok: boolean; created: number; accountsCreated: number; debtsCreated: number }>('/plaid/import_accounts', { method: 'POST', body: JSON.stringify({ accounts }) }),
+  importAccounts: (accounts: { account_id: string; name: string; balance: number; type: string; mask?: string | null; credit_limit?: number | null }[]) =>
+    req<{ ok: boolean; created: number; accountsCreated: number; debtsCreated: number; skipped: number }>('/plaid/import_accounts', { method: 'POST', body: JSON.stringify({ accounts }) }),
+  resync: () => req<{ ok: boolean; updated: number }>('/plaid/resync', { method: 'POST' }),
   removeItem: (id: number) => req<void>(`/plaid/items/${id}`, { method: 'DELETE' }),
 };

@@ -16,6 +16,10 @@ export default function PlaidConnect({ onImported }: Props) {
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  // Only not-yet-imported, selected accounts can be imported.
+  const importCount = accounts.filter((a) => selected.has(a.account_id) && !a.imported).length;
 
   const refreshStatus = useCallback(async () => {
     try { setStatus(await plaidApi.status()); } catch (e) { console.error(e); }
@@ -25,8 +29,8 @@ export default function PlaidConnect({ onImported }: Props) {
     try {
       const a = await plaidApi.accounts();
       setAccounts(a);
-      // Everything maps somewhere (cash or debt), so pre-select all by default.
-      setSelected(new Set(a.map((x) => x.account_id)));
+      // Pre-select everything that hasn't been imported yet (imported rows resync, not re-import).
+      setSelected(new Set(a.filter((x) => !x.imported).map((x) => x.account_id)));
     } catch (e) {
       toast.error(`Could not load Plaid balances: ${e instanceof Error ? e.message : 'error'}`);
     }
@@ -66,22 +70,40 @@ export default function PlaidConnect({ onImported }: Props) {
   }
 
   async function importSelected() {
-    const chosen = accounts.filter((a) => selected.has(a.account_id));
+    // Only ever import accounts that aren't already imported.
+    const chosen = accounts.filter((a) => selected.has(a.account_id) && !a.imported);
     if (chosen.length === 0) return;
     await toastGuard(toast, async () => {
       const r = await plaidApi.importAccounts(chosen.map((a) => ({
+        account_id: a.account_id,
         name: `${a.name}${a.mask ? ` ••${a.mask}` : ''}`,
         balance: a.current ?? 0,
         type: a.type,
+        mask: a.mask,
         credit_limit: a.limit,
       })));
       const parts = [
         r.accountsCreated ? `${r.accountsCreated} account${r.accountsCreated !== 1 ? 's' : ''}` : '',
         r.debtsCreated ? `${r.debtsCreated} debt${r.debtsCreated !== 1 ? 's' : ''}` : '',
       ].filter(Boolean);
-      toast.success(`Imported ${parts.join(' & ')}`);
+      toast.success(parts.length ? `Imported ${parts.join(' & ')}` : 'Nothing new to import');
       onImported();
+      await refreshAccounts(); // imported rows now show as imported
     });
+  }
+
+  async function resync() {
+    setSyncing(true);
+    try {
+      await toastGuard(toast, async () => {
+        const r = await plaidApi.resync();
+        toast.success(`Resynced ${r.updated} balance${r.updated !== 1 ? 's' : ''}`);
+        onImported();
+        await refreshAccounts();
+      });
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function removeItem(id: number) {
@@ -147,21 +169,26 @@ export default function PlaidConnect({ onImported }: Props) {
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {accounts.map((a) => (
-              <label key={a.account_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={selected.has(a.account_id)} onChange={() => toggle(a.account_id)} />
+              <label key={a.account_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: a.imported ? 'default' : 'pointer', opacity: a.imported ? 0.6 : 1 }}>
+                <input type="checkbox" checked={selected.has(a.account_id) && !a.imported} disabled={a.imported} onChange={() => toggle(a.account_id)} />
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ fontWeight: 500 }}>{a.name}</span>
                   {a.mask && <span style={{ color: 'var(--color-text-muted)' }}> ••{a.mask}</span>}
                   <span style={{ color: 'var(--color-text-muted)', fontSize: 12 }}> · {a.subtype ?? a.type}</span>
-                  <DestBadge type={a.type} />
+                  {a.imported ? <ImportedBadge /> : <DestBadge type={a.type} />}
                 </span>
                 <span style={{ fontWeight: 600, color: isDebtType(a.type) ? 'var(--color-net-neg)' : 'var(--color-net-pos)' }}>{formatMoney(a.current ?? 0)}</span>
               </label>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-            <button onClick={importSelected} disabled={selected.size === 0} style={{ background: 'var(--color-income)', color: '#04210f', padding: '8px 16px', fontSize: 13, fontWeight: 700 }}>
-              Import {selected.size} item{selected.size !== 1 ? 's' : ''}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+            {accounts.some((a) => a.imported) && (
+              <button onClick={resync} disabled={syncing} title="Update imported balances from Plaid" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 13, fontWeight: 600 }}>
+                {syncing ? 'Resyncing…' : '↻ Resync balances'}
+              </button>
+            )}
+            <button onClick={importSelected} disabled={importCount === 0} style={{ background: 'var(--color-income)', color: '#04210f', padding: '8px 16px', fontSize: 13, fontWeight: 700 }}>
+              Import {importCount} item{importCount !== 1 ? 's' : ''}
             </button>
           </div>
         </>
@@ -185,6 +212,17 @@ function DestBadge({ type }: { type: string }) {
       background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
     }}>
       {label}
+    </span>
+  );
+}
+
+function ImportedBadge() {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
+      color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+    }}>
+      ✓ Imported
     </span>
   );
 }

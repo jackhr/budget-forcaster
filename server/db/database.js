@@ -130,6 +130,14 @@ if (!plaidItemCols.some((c) => c.name === 'accounts_synced_at')) {
   db.exec('ALTER TABLE plaid_items ADD COLUMN accounts_synced_at TEXT');
 }
 
+// --- Migration: link imported rows back to their Plaid account (block re-import, enable resync) ---
+for (const table of ['accounts', 'debts']) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === 'plaid_account_id')) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN plaid_account_id TEXT`);
+  }
+}
+
 // --- Migration: add sort_order to reorderable tables ---
 for (const table of ['income_sources', 'expenses', 'debts', 'line_item_groups']) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
