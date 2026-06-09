@@ -161,6 +161,7 @@ export const plaidApi = {
     req<{ ok: boolean; added: number; modified: number; removed: number }>('/plaid/transactions/sync', { method: 'POST' }),
   importAccounts: (accounts: { account_id: string; name: string; balance: number; type: string; mask?: string | null; credit_limit?: number | null }[]) =>
     req<{ ok: boolean; created: number; accountsCreated: number; debtsCreated: number; skipped: number }>('/plaid/import_accounts', { method: 'POST', body: JSON.stringify({ accounts }) }),
-  resync: () => req<{ ok: boolean; updated: number }>('/plaid/resync', { method: 'POST' }),
+  resync: (itemId?: string) =>
+    req<{ ok: boolean; updated: number }>('/plaid/resync', { method: 'POST', body: JSON.stringify(itemId ? { item_id: itemId } : {}) }),
   removeItem: (id: number) => req<void>(`/plaid/items/${id}`, { method: 'DELETE' }),
 };

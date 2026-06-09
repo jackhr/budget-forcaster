@@ -134,11 +134,13 @@ function accountsStale() {
 }
 
 let accountsRefreshing = false;
-async function refreshAccountsCache(client) {
+async function refreshAccountsCache(client, itemId = null) {
   if (accountsRefreshing) return; // collapse concurrent refreshes
   accountsRefreshing = true;
   try {
-    const items = db.prepare('SELECT * FROM plaid_items').all();
+    const items = itemId
+      ? db.prepare('SELECT * FROM plaid_items WHERE item_id = ?').all(itemId)
+      : db.prepare('SELECT * FROM plaid_items').all();
     for (const item of items) {
       const resp = await client.accountsBalanceGet({ access_token: item.access_token });
       const apply = db.transaction(() => {
@@ -363,9 +365,12 @@ router.post('/import_accounts', async (req, res) => {
 router.post('/resync', async (req, res) => {
   const client = requireClient(res);
   if (!client) return;
+  const itemId = req.body?.item_id ? String(req.body.item_id) : null;
   try {
-    await refreshAccountsCache(client);
-    const cached = db.prepare('SELECT * FROM plaid_accounts').all();
+    await refreshAccountsCache(client, itemId);
+    const cached = itemId
+      ? db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ?').all(itemId)
+      : db.prepare('SELECT * FROM plaid_accounts').all();
     const setAcctById = db.prepare('UPDATE accounts SET balance = ? WHERE plaid_account_id = ?');
     const setAcctByName = db.prepare('UPDATE accounts SET balance = ?, plaid_account_id = ? WHERE plaid_account_id IS NULL AND name = ?');
     const setDebtById = db.prepare('UPDATE debts SET balance = ?, credit_limit = COALESCE(?, credit_limit) WHERE plaid_account_id = ?');
