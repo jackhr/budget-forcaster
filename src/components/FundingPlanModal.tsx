@@ -5,7 +5,7 @@ import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
-interface DebtOpt { id: number; name: string; group_id?: number | null }
+interface DebtOpt { id: number; name: string; group_id?: number | null; available?: number | null } // available credit (limit − balance); null = no limit
 
 interface Props {
   title: string;
@@ -80,6 +80,23 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
   const fixedSum = draft.filter((r) => r.alloc_type === 'fixed').reduce((s, r) => s + (r.value || 0), 0);
   const pctSum = draft.filter((r) => r.alloc_type === 'percent').reduce((s, r) => s + (r.value || 0), 0);
   const remainderAmt = Math.max(0, (amount || 0) - fixedSum - (amount || 0) * pctSum / 100);
+
+  // Available credit on the card a rule draws from (null = account, or no limit set).
+  function cardAvailable(rule: FundingRule): number | null {
+    if (rule.source_type !== 'debt' || rule.source_id == null) return null;
+    return debts.find((d) => d.id === rule.source_id)?.available ?? null;
+  }
+  // The dollar amount a rule charges per occurrence.
+  function ruleDollar(rule: FundingRule): number {
+    return rule.alloc_type === 'fixed' ? (rule.value || 0) : (amount || 0) * (rule.value || 0) / 100;
+  }
+  // A rule can't put more on a card than the card has left.
+  function overLimit(rule: FundingRule): boolean {
+    const av = cardAvailable(rule);
+    return av != null && ruleDollar(rule) > av + 0.005;
+  }
+  const limitInvalid = draft.some(overLimit);
+
   const dateInvalid = draft.some((r) => {
     const start = monthDraft(r.start_date);
     const end = monthDraft(r.end_date);
@@ -108,12 +125,21 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
   };
 
   function update(index: number, patch: Partial<FundingRule>) {
-    setDraft((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+    setDraft((prev) => prev.map((r, i) => {
+      if (i !== index) return r;
+      const next = { ...r, ...patch };
+      // Keep a fixed card charge within the card's available credit.
+      if (next.alloc_type === 'fixed' && next.source_type === 'debt' && next.source_id != null) {
+        const av = debts.find((d) => d.id === next.source_id)?.available ?? null;
+        if (av != null && (next.value || 0) > av) next.value = Math.round(av * 100) / 100;
+      }
+      return next;
+    }));
   }
 
   function save(e: React.FormEvent) {
     e.preventDefault();
-    if (dateInvalid) return;
+    if (dateInvalid || limitInvalid) return;
     setSaving(true);
     onSave(draft
       .filter((r) => r.source_id != null && r.value > 0)
@@ -147,7 +173,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
                     </optgroup>
                   )}
                   {allowDebt && debts.length > 0 && (
-                    <optgroup label="Cards / debts">
+                    <optgroup label="Credit cards">
                       {debts.map((d) => <option key={`d${d.id}`} value={encodeSource('debt', d.id)}>{d.name}</option>)}
                     </optgroup>
                   )}
@@ -162,10 +188,24 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={labelStyle}>Amount</span>
-                <input type="number" min={0} step="any" value={rule.value || ''} onChange={(e) => update(idx, { value: parseFloat(e.target.value) || 0 })} style={inputStyle} />
+                <input
+                  type="number" min={0} step="any"
+                  max={rule.alloc_type === 'fixed' && cardAvailable(rule) != null ? cardAvailable(rule)! : undefined}
+                  value={rule.value || ''}
+                  onChange={(e) => update(idx, { value: parseFloat(e.target.value) || 0 })}
+                  style={inputStyle}
+                />
               </label>
               <button type="button" onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', color: 'var(--color-expense)', padding: '8px 0' }}>x</button>
             </div>
+
+            {cardAvailable(rule) != null && (
+              <p style={{ fontSize: 12, color: overLimit(rule) ? 'var(--color-expense)' : 'var(--color-text-muted)', margin: 0 }}>
+                {overLimit(rule)
+                  ? `Over the card's available credit — ${formatMoney(ruleDollar(rule))} of ${formatMoney(cardAvailable(rule)!)} left.`
+                  : `${formatMoney(cardAvailable(rule)!)} available on this card.`}
+              </p>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -209,10 +249,11 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
           Remainder for uncovered periods is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
         </p>
         {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Use YYYY-MM, and make sure end is not before start.</p>}
+        {limitInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>A rule charges more than its card's available credit. Lower it to save.</p>}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" onClick={onCancel} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '9px 16px' }}>Cancel</button>
-          <button type="submit" disabled={saving || dateInvalid} style={{ background: 'var(--color-primary)', color: '#fff', padding: '9px 18px' }}>{saving ? 'Saving...' : 'Save Plan'}</button>
+          <button type="submit" disabled={saving || dateInvalid || limitInvalid} style={{ background: 'var(--color-primary)', color: '#fff', padding: '9px 18px' }}>{saving ? 'Saving...' : 'Save Plan'}</button>
         </div>
       </form>
     </Modal>

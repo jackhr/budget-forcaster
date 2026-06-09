@@ -6,7 +6,7 @@ import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
 
-interface NamedSource { id: number; name: string; group_id: number | null }
+interface NamedSource { id: number; name: string; group_id: number | null; available?: number | null }
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 
 interface PaymentInput {

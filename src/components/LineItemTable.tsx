@@ -9,7 +9,7 @@ import ConfirmButton from './ConfirmButton';
 
 type DragProps = React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
-interface NamedSource { id: number; name: string }
+interface NamedSource { id: number; name: string; available?: number | null }
 
 interface Props {
   title: string;

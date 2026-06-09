@@ -7,7 +7,7 @@ import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
-interface NamedSource { id: number; name: string }
+interface NamedSource { id: number; name: string; available?: number | null }
 
 interface Props {
   item: LineItem;

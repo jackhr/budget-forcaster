@@ -118,7 +118,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.months', String(months)); }, [months]);
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
-  useEffect(() => { if (!isNarrow) setMenuOpen(false); }, [isNarrow]);
 
   const load = useCallback(async () => {
     try {
@@ -643,7 +642,7 @@ export default function App() {
             items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
             kind="expense" groups={groups} showFrequency showEndDate showFunding
             accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-            debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name }))}
+            debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null }))}
             onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}
             onAddGroup={(name) => addGroup(name, 'expense')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
             onReorder={reorderExpenses} onReorderGroup={reorderGroups}
@@ -652,7 +651,7 @@ export default function App() {
         <ScheduledPayments
           payments={payments}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-          debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))}
+          debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null }))}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}
         />
         <Debts
