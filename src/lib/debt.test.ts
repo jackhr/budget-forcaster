@@ -86,6 +86,17 @@ describe('simulateDebtPlan', () => {
     // 1000 − 100 − 200 − 200 − 200 = 300 remaining after month 3
     expect(plan.remainingByDebt.get(1)![3]).toBeCloseTo(300, 5);
   });
+
+  it('an active funding plan prevents avalanche rollover from increasing its payment', () => {
+    const controlled = makeDebt({ id: 1, balance: 1000, apr: 30, monthly_payment: 100 });
+    const payoff = makeDebt({ id: 2, balance: 50, apr: 0, monthly_payment: 100 });
+    const schedule = new Map<number, (number | null)[]>([[1, [null, 200, 200]]]);
+    const plan = simulateDebtPlan([controlled, payoff], 0, 'avalanche', 3, [], schedule);
+
+    expect(plan.outflowByDebt.get(1)![0]).toBeCloseTo(150, 5); // no active plan: receives rollover
+    expect(plan.outflowByDebt.get(1)![1]).toBeCloseTo(200, 5); // active plan: exact amount
+    expect(plan.outflowByDebt.get(1)![2]).toBeCloseTo(200, 5);
+  });
 });
 
 describe('simulateDebtPlan charges & credit limits', () => {
@@ -108,6 +119,15 @@ describe('simulateDebtPlan charges & credit limits', () => {
     const card = makeDebt({ id: 1, balance: 1200, apr: 0, monthly_payment: 0, credit_limit: 1000, debt_type: 'credit_card' });
     const plan = simulateDebtPlan([card], 0, 'none', 1, []);
     expect(plan.overLimitByDebt.get(1)).toBe(0);
+  });
+
+  it('does not flag a pre-payment peak when the charted month-end balance is under the limit', () => {
+    const card = makeDebt({ id: 1, balance: 9800, apr: 29.99, monthly_payment: 100, credit_limit: 10000, debt_type: 'credit_card' });
+    const schedule = new Map<number, (number | null)[]>([[1, [200]]]);
+    const plan = simulateDebtPlan([card], 0, 'avalanche', 1, [], schedule);
+
+    expect(plan.remainingByDebt.get(1)![0]).toBeLessThan(10000);
+    expect(plan.overLimitByDebt.get(1)).toBeNull();
   });
 
   it('never charges a loan — the whole amount overflows to cash', () => {

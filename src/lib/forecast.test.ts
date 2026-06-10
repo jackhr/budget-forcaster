@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, monthOffset } from './forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
 import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
@@ -243,6 +243,65 @@ describe('split-funded future expenses', () => {
 });
 
 describe('debt pay-from account', () => {
+  it('uses percentage and mixed funding-plan amounts as payment overrides', () => {
+    const percentDebt: Debt = {
+      id: 1, name: 'Percent', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
+      group_id: null, account_id: null, funding_allocations: [], funding_rules: [
+        { source_type: 'account', source_id: 2, alloc_type: 'percent', value: 50, frequency: 'monthly', start_date: '2026-02-15', end_date: null },
+      ],
+      created_at: '', updated_at: '',
+    };
+    const mixedDebt: Debt = {
+      ...percentDebt, id: 2, name: 'Mixed', funding_rules: [
+        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 25, frequency: 'monthly', start_date: '2026-01-31', end_date: null },
+        { source_type: 'account', source_id: 2, alloc_type: 'percent', value: 50, frequency: 'monthly', start_date: '2026-01-31', end_date: null },
+      ],
+    };
+
+    const schedule = buildDebtPaymentSchedule([percentDebt, mixedDebt], 3, NOW);
+    expect(schedule.get(1)).toEqual([null, 50, 50]); // null = normal payment/strategy until the future plan starts
+    expect(schedule.get(2)).toEqual([75, 75, 75]); // later this month counts as active now
+  });
+
+  it('does not apply a percentage funding plan twice when attributing debt payments', () => {
+    const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
+    const debt: Debt = {
+      id: 1, name: 'Percent', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
+      group_id: null, account_id: null, funding_allocations: [], funding_rules: [
+        { source_type: 'account', source_id: 2, alloc_type: 'percent', value: 50, frequency: 'monthly', start_date: '2026-02-15', end_date: null },
+      ],
+      created_at: '', updated_at: '',
+    };
+    const schedule = buildDebtPaymentSchedule([debt], 2, NOW);
+    const plan = simulateDebtPlan([debt], 0, 'none', 2, [], schedule);
+    const map = buildDebtOutByAccount([debt], plan, accounts, NOW);
+
+    expect(plan.outflowByDebt.get(1)).toEqual([100, 50]);
+    expect(map.get(1)).toEqual([100, 0]);
+    expect(map.get(2)).toEqual([0, 50]);
+    expect(buildAccountActivity(2, accounts, [], [], [], [debt], plan, 2, 0, NOW).outByMonth).toEqual([0, 50]);
+  });
+
+  it('uses the existing pay-from account until a future funding plan starts', () => {
+    const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0), acct(3, 'Future', 0)];
+    const debt: Debt = {
+      id: 1, name: 'Future plan', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
+      group_id: null, account_id: 2,
+      funding_allocations: [{ source_type: 'account', source_id: 2, alloc_type: 'percent', value: 100 }],
+      funding_rules: [
+        { source_type: 'account', source_id: 3, alloc_type: 'fixed', value: 200, frequency: 'monthly', start_date: '2026-02-15', end_date: null },
+      ],
+      created_at: '', updated_at: '',
+    };
+    const schedule = buildDebtPaymentSchedule([debt], 2, NOW);
+    const plan = simulateDebtPlan([debt], 0, 'none', 2, [], schedule);
+    const map = buildDebtOutByAccount([debt], plan, accounts, NOW);
+
+    expect(map.get(1)).toEqual([0, 0]);
+    expect(map.get(2)).toEqual([100, 0]);
+    expect(map.get(3)).toEqual([0, 200]);
+  });
+
   it('attributes each debt payment to its pay-from account', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0)];
     const debts: Debt[] = [

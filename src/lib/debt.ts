@@ -88,7 +88,7 @@ export interface DebtPlan {
   remaining: number[]; // total remaining balance at each month-end (for net worth)
   remainingByDebt: Map<number, number[]>; // per-debt remaining balance each month (for breakdown)
   payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
-  overLimitByDebt: Map<number, number | null>; // debt id -> first month its balance exceeds its credit limit (null if never)
+  overLimitByDebt: Map<number, number | null>; // debt id -> first month-end balance above its credit limit (null if never)
   chargeOverflow: number[]; // per month, charge $ that didn't fit on a card (over limit) or hit a loan/unknown target -> left UNCOVERED (not paid from cash)
   totalInterest: number;
   debtFreeMonthIndex: number | null; // when the last debt clears
@@ -108,7 +108,7 @@ interface DebtState {
   bal: number;
   rate: number;
   min: number;
-  sched: number[] | null; // per-month payment override (from a funding plan); null = use min every month
+  sched: (number | null)[] | null; // active funding-plan payment per month; null entry = use min/strategy
   paidMonth: number | null;
   limit: number | null;   // credit limit (null = no cap)
   chargeable: boolean;    // credit cards can be charged; loans cannot
@@ -119,16 +119,16 @@ interface DebtState {
 // 'avalanche' = highest APR first; 'snowball' = smallest balance first. Both roll freed
 // payments forward and apply the global `extra` to the current target debt.
 //
-// paymentSchedule (optional) overrides a debt's monthly_payment per month — used when
-// a debt's funding plan sets a fixed amount, which trumps the monthly payment for the
-// months the plan is active (the monthly payment stands before it kicks in).
+// paymentSchedule (optional) overrides a debt's monthly_payment per month when a
+// funding plan sets an amount (fixed, percent, or mixed). The monthly payment stands
+// before a future plan kicks in.
 export function simulateDebtPlan(
   debts: Debt[],
   extra: number,
   strategy: DebtStrategy,
   months: number,
   charges: DebtCharge[] = [],
-  paymentSchedule?: Map<number, number[]>,
+  paymentSchedule?: Map<number, (number | null)[]>,
 ): DebtPlan {
   const outflow = new Array(months).fill(0);
   const remaining = new Array(months).fill(0);
@@ -144,8 +144,10 @@ export function simulateDebtPlan(
     limit: d.credit_limit ?? null,
     chargeable: d.debt_type !== 'loan', // default (undefined) treated as chargeable
   }));
-  // A debt's payment for a given month: its funding-plan override if present, else min.
-  const minOf = (d: DebtState, month: number) => (d.sched ? (d.sched[month] ?? d.min) : d.min);
+  // An active funding plan controls the exact payment and opts that debt out of
+  // avalanche/snowball rollover for the month.
+  const overrideOf = (d: DebtState, month: number) => d.sched?.[month] ?? null;
+  const minOf = (d: DebtState, month: number) => overrideOf(d, month) ?? d.min;
   const overLimitByDebt = new Map<number, number | null>();
   for (const d of debts) { payoffMonthByDebt.set(d.id, null); overLimitByDebt.set(d.id, null); }
   const stateById = new Map(states.map((s) => [s.id, s]));
@@ -189,14 +191,6 @@ export function simulateDebtPlan(
       }
     }
 
-    // Flag a card whose balance is over its limit (e.g. it started over, or interest
-    // pushed it past — charges themselves are capped above).
-    for (const d of states) {
-      if (d.chargeable && d.limit != null && d.bal > d.limit + 0.005 && overLimitByDebt.get(d.id) == null) {
-        overLimitByDebt.set(d.id, m);
-      }
-    }
-
     if (strategy === 'none') {
       for (const d of states) {
         if (d.bal > 0.005) {
@@ -207,12 +201,19 @@ export function simulateDebtPlan(
         }
       }
     } else {
-      // Budget = this month's minimums (per the funding-plan overrides) + the extra.
-      let budget = states.reduce((s, d) => s + minOf(d, m), 0) + extra;
-      // Pay minimums on every active debt.
+      // Active funding plans pay their exact amount and do not receive or contribute
+      // avalanche/snowball rollover. Unscheduled debts share their normal budget.
+      let budget = states.filter((d) => overrideOf(d, m) == null).reduce((s, d) => s + d.min, 0) + extra;
       for (const d of states) {
-        if (d.bal > 0.005 && budget > 0) {
-          const pay = Math.min(minOf(d, m), d.bal, budget);
+        if (d.bal <= 0.005) continue;
+        const override = overrideOf(d, m);
+        if (override != null) {
+          const pay = Math.min(override, d.bal);
+          d.bal -= pay;
+          outflow[m] += pay;
+          outflowByDebt.get(d.id)![m] += pay;
+        } else if (budget > 0) {
+          const pay = Math.min(d.min, d.bal, budget);
           d.bal -= pay;
           budget -= pay;
           outflow[m] += pay;
@@ -220,7 +221,7 @@ export function simulateDebtPlan(
         }
       }
       // Throw whatever's left at the target debt(s) in priority order.
-      const order = [...states].filter((d) => d.bal > 0.005).sort((a, b) =>
+      const order = [...states].filter((d) => d.bal > 0.005 && overrideOf(d, m) == null).sort((a, b) =>
         strategy === 'avalanche' ? b.rate - a.rate : a.bal - b.bal,
       );
       for (const d of order) {
@@ -235,6 +236,10 @@ export function simulateDebtPlan(
 
     // Record payoffs and remaining balance.
     for (const d of states) {
+      // Warnings use the same post-payment month-end balance shown by the chart.
+      if (d.chargeable && d.limit != null && d.bal > d.limit + 0.005 && overLimitByDebt.get(d.id) == null) {
+        overLimitByDebt.set(d.id, m);
+      }
       if (d.bal <= 0.005 && d.paidMonth === null) {
         d.paidMonth = m;
         payoffMonthByDebt.set(d.id, m);

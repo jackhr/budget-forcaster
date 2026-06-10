@@ -159,7 +159,7 @@ export default function App() {
   const expensePlan = buildExpensePlan(expenses, accounts, debts, months, inflation);
   // Future expenses charged to a card + expense card-portions both bill the debt over time.
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
-  // A debt's funding plan (fixed amount) overrides its monthly payment per month.
+  // Any active debt funding-plan amount overrides its monthly payment per month.
   const debtPayments = buildDebtPaymentSchedule(debts, months);
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges, debtPayments);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges, debtPayments);

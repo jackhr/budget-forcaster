@@ -230,9 +230,15 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
         <button type="button" onClick={() => setDraft((prev) => [...prev, defaultRule(accounts)])} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', alignSelf: 'flex-start' }}>
           + Add rule
         </button>
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Remainder for uncovered periods is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
-        </p>
+        {allowDebt ? (
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+            Remainder for uncovered periods is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
+          </p>
+        ) : (
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+            Active fixed and percentage amounts combine to replace the monthly payment. Until a future plan starts, the monthly payment remains in effect.
+          </p>
+        )}
         {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Use YYYY-MM, and make sure end is not before start.</p>}
         {cardSpill > 0.005 && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>
