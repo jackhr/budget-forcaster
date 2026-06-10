@@ -11,7 +11,7 @@ import { useToast } from './components/Toast';
 import SummaryCards from './components/SummaryCards';
 import LineItemTable from './components/LineItemTable';
 import SavingsSummary from './components/SavingsSummary';
-import ScheduledPayments from './components/ScheduledPayments';
+import ScheduledPayments, { fundingLabel } from './components/ScheduledPayments';
 import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import PlaidConnect from './components/PlaidConnect';
@@ -191,7 +191,19 @@ export default function App() {
   }
 
   // Combined overview series: monthly flows, balances, and future-expense totals.
-  const futureTotals = buildFutureExpenseBreakdown(payments, months).total;
+  const futureBd = buildFutureExpenseBreakdown(payments, months);
+  const futureTotals = futureBd.total;
+  // Per-month funding-source label for the Accounts-chart future-expense bars.
+  const futureFromByMonth = futureBd.labels.map((_, i) => {
+    const sources = futureBd.series
+      .filter((s) => (s.values[i] ?? 0) > 0)
+      .map((s) => {
+        const p = payments.find((pp) => pp.id === s.id);
+        return p ? fundingLabel(p, accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary })), debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))) : '';
+      })
+      .filter(Boolean);
+    return [...new Set(sources)].join(', ');
+  });
   const overviewData = savings.map((s, i) => ({
     label: s.label,
     income: s.income,
@@ -624,7 +636,7 @@ export default function App() {
             <Suspense fallback={<ChartFallback />}>
               <BreakdownChart
                 title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths}
-                futureBars={breakdownSection === 'account' ? savings.map((s) => ({ value: s.scheduledOut, label: s.scheduledLabel })) : undefined}
+                futureBars={breakdownSection === 'account' ? savings.map((s, i) => ({ value: s.scheduledOut, label: s.scheduledLabel, from: futureFromByMonth[i] ?? '' })) : undefined}
                 futureBarsActive={breakdownIncludeFuture}
               />
             </Suspense>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ExpenseAllocation, Frequency, FundingRule, FundingSourceType, ScheduledPayment } from '../types';
+import type { AllocationSourceType, ExpenseAllocation, Frequency, FundingRule, FundingSourceType, ScheduledPayment } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS, monthOffset } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
@@ -47,7 +47,7 @@ function legacyFundingFromAllocations(allocations: ExpenseAllocation[]): { type:
   return first ? { type: first.source_type, id: first.source_id } : { type: 'cash', id: null };
 }
 
-function fundingLabel(p: ScheduledPayment, accounts: AccountOpt[], debts: NamedSource[]): string {
+export function fundingLabel(p: ScheduledPayment, accounts: AccountOpt[], debts: NamedSource[]): string {
   if (p.funding_rules?.length) return `${p.funding_rules.length} scheduled rule${p.funding_rules.length !== 1 ? 's' : ''}`;
   const allocations = allocationsFromLegacy(p);
   if (allocations.length > 0) {
@@ -115,10 +115,18 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
   const [start, setStart] = useState(initial.start_date.slice(0, 7));
   const [end, setEnd] = useState(initial.end_date ? initial.end_date.slice(0, 7) : '');
-  const [allocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
+  const [allocations, setAllocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
   const [fundingRules, setFundingRules] = useState<FundingRule[]>(initial.funding_rules ?? []);
   const [editingFunding, setEditingFunding] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // "Paid from" is simple (one account/card, or primary cash) unless there's a
+  // scheduled plan or a split — then we show the funding-plan summary instead.
+  const advancedFunding = fundingRules.length > 0
+    || allocations.length > 1
+    || allocations.some((a) => a.alloc_type !== 'percent' || a.value !== 100);
+  const singleSource = allocations.length === 1 ? allocations[0] : null;
+  const payFromValue = singleSource && singleSource.source_id != null ? `${singleSource.source_type}:${singleSource.source_id}` : '';
 
   const recurring = frequency !== 'one-time';
   const amtNum = parseFloat(amount);
@@ -209,16 +217,47 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={labelStyle}>Paid from</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => setEditingFunding(true)}
-              style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
-            >
-              Edit funding plan
-            </button>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              {summarizeFundingPlan(fundingRules, allocations)}
-            </p>
+            {advancedFunding ? (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--color-text)' }}>{summarizeFundingPlan(fundingRules, allocations)}</p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                    Edit funding plan
+                  </button>
+                  <button type="button" onClick={() => { setFundingRules([]); setAllocations([]); }} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                    Use one source
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <select
+                  value={payFromValue}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) { setAllocations([]); return; }
+                    const [t, id] = v.split(':');
+                    setAllocations([{ source_type: t as AllocationSourceType, source_id: Number(id), alloc_type: 'percent', value: 100 }]);
+                  }}
+                  style={monthInputStyle}
+                >
+                  <option value="">Primary account (cash)</option>
+                  {accounts.length > 0 && (
+                    <optgroup label="Accounts">
+                      {accounts.map((a) => <option key={`a${a.id}`} value={`account:${a.id}`}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+                    </optgroup>
+                  )}
+                  {debts.length > 0 && (
+                    <optgroup label="Credit cards">
+                      {debts.map((d) => <option key={`d${d.id}`} value={`debt:${d.id}`}>{d.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}>
+                  Split or schedule…
+                </button>
+              </>
+            )}
           </div>
         </label>
         {debtFunded && (

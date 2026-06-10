@@ -6,7 +6,7 @@ import type { Breakdown } from '../lib/forecast';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
 
-interface FutureBar { value: number; label: string }
+interface FutureBar { value: number; label: string; from?: string }
 
 interface Props {
   title: string;
@@ -35,13 +35,17 @@ const TOTAL_COLOR = 'var(--color-text)';
 
 function CustomTooltip({ active, payload, label }: {
   active?: boolean;
-  payload?: { name: string; value: number; color: string; dataKey: string }[];
+  payload?: { name: string; value: number; color: string; dataKey: string; payload?: Record<string, unknown> }[];
   label?: string;
 }) {
   if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
   const rows = [...payload]
-    .filter((p) => !(p.dataKey === 'future' && p.value === 0)) // hide empty future-expense months
+    .filter((p) => p.dataKey !== 'future') // future expenses get their own block below
     .sort((a, b) => (a.dataKey === TOTAL_KEY ? -1 : b.dataKey === TOTAL_KEY ? 1 : b.value - a.value));
+  const futureVal = Number(row?.future) || 0;
+  const futureLabel = String(row?.futureLabel ?? '');
+  const futureFrom = String(row?.futureFrom ?? '');
   return (
     <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '12px 16px', fontSize: 13, maxWidth: 260 }}>
       <p style={{ fontWeight: 600, marginBottom: 8 }}>{label}</p>
@@ -50,6 +54,12 @@ function CustomTooltip({ active, payload, label }: {
           {p.name}: {formatMoney(p.value)}
         </p>
       ))}
+      {futureVal > 0 && (
+        <p style={{ color: 'var(--color-net-neg)', marginTop: 6 }}>
+          {futureLabel || 'Future expense'}: −{formatMoney(futureVal)}
+          {futureFrom && <span style={{ color: 'var(--color-text-muted)' }}> · from {futureFrom}</span>}
+        </p>
+      )}
     </div>
   );
 }
@@ -64,7 +74,11 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
   const data = labels.map((label, i) => {
     const row: Record<string, number | string> = { label, total: total[i] ?? 0 };
     series.forEach((s) => { row[`k${s.id}`] = s.values[i] ?? 0; });
-    if (futureBars) row.future = futureBars[i]?.value ?? 0;
+    if (futureBars) {
+      row.future = futureBars[i]?.value ?? 0;
+      row.futureLabel = futureBars[i]?.label ?? '';
+      row.futureFrom = futureBars[i]?.from ?? '';
+    }
     return row;
   });
 
