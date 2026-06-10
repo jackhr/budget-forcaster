@@ -48,6 +48,21 @@ interface Props {
 
 const ACCENT = 'var(--color-net-neg)';
 
+function OverLimitBadge({ label }: { label: string }) {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 5, whiteSpace: 'nowrap',
+      color: 'var(--color-expense)', background: 'var(--color-surface-2)', border: '1px solid var(--color-expense)',
+    }}>
+      ⚠ {label}
+    </span>
+  );
+}
+
+function isCurrentlyOverLimit(debt: Debt): boolean {
+  return debt.debt_type !== 'loan' && debt.credit_limit != null && debt.balance > debt.credit_limit + 0.005;
+}
+
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
@@ -131,6 +146,7 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
   // Loans have no credit line, so a limit only applies to cards.
   const limNum = isCard && limit ? parseFloat(limit) : null;
   const dayNum = payDay ? Math.trunc(parseFloat(payDay)) : null;
+  const overLimit = limNum != null && !isNaN(limNum) && balNum > limNum + 0.005;
 
   const preview = (balNum > 0 && payNum > 0 && aprNum >= 0)
     ? summarizeDebt({ id: 0, name, balance: balNum, apr: aprNum, credit_limit: limNum, monthly_payment: payNum, debt_type: debtType, payment_day: dayNum, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' })
@@ -229,6 +245,11 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
           ))}
           {!isCard && <div style={{ flex: 1 }} />}
         </div>
+        {overLimit && (
+          <p style={{ fontSize: 12, color: 'var(--color-expense)', margin: 0 }}>
+            ⚠ This card is {formatMoney(balNum - limNum!, { whole: true })} over its credit limit.
+          </p>
+        )}
         {field('Pay from', (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
             {advancedFunding ? (
@@ -302,10 +323,11 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
   );
 }
 
-function DebtRow({ debt, groups, accounts, onUpdate, onDelete, drag, dragging }: {
+function DebtRow({ debt, groups, accounts, overLimitMonth, onUpdate, onDelete, drag, dragging }: {
   debt: Debt;
   groups: LineItemGroup[];
   accounts: AccountOpt[];
+  overLimitMonth?: number | null; // first forecast month its balance exceeds the limit
   onUpdate: (id: number, data: DebtInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -314,6 +336,8 @@ function DebtRow({ debt, groups, accounts, onUpdate, onDelete, drag, dragging }:
   const [editing, setEditing] = useState(false);
   const s = summarizeDebt(debt);
   const payFrom = accountFundingLabel(debt, accounts);
+  const currentlyOver = isCurrentlyOverLimit(debt);
+  const forecastOver = !currentlyOver && overLimitMonth != null;
   return (
     <>
       <div {...drag} style={{
@@ -330,10 +354,14 @@ function DebtRow({ debt, groups, accounts, onUpdate, onDelete, drag, dragging }:
         outline: dragging ? '2px dashed var(--color-primary)' : undefined,
       }}>
         <div style={{ minWidth: 160 }}>
-          <div style={{ fontWeight: 600 }}>{debt.name}</div>
+          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {debt.name}
+            {currentlyOver && <OverLimitBadge label="Over limit" />}
+            {forecastOver && <OverLimitBadge label={`Over limit ${payoffDateLabel(overLimitMonth)}`} />}
+          </div>
           <div style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
             {debt.debt_type === 'loan' ? 'Loan' : 'Card'} · {formatMoney(debt.balance, { whole: true })} @ {debt.apr}% · {formatMoney(debt.monthly_payment, { whole: true })}/mo
-            {s.utilization != null && <> · {Math.round(s.utilization * 100)}% used</>}
+            {s.utilization != null && <> · <span style={{ color: currentlyOver ? 'var(--color-expense)' : 'inherit', fontWeight: currentlyOver ? 700 : 400 }}>{Math.round(s.utilization * 100)}% used</span></>}
             {debt.payment_day != null && <> · autopay {ordinal(debt.payment_day)}</>}
             {payFrom && <> · from {payFrom}</>}
           </div>
@@ -369,11 +397,12 @@ function DebtRow({ debt, groups, accounts, onUpdate, onDelete, drag, dragging }:
   );
 }
 
-function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, onAddInGroup, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: {
+function DebtGroupBlock({ group, debts, groups, accounts, overLimitFor, onUpdate, onDelete, onAddInGroup, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: {
   group: LineItemGroup;
   debts: Debt[];
   groups: LineItemGroup[];
   accounts: AccountOpt[];
+  overLimitFor: (id: number) => number | null;
   onUpdate: (id: number, data: DebtInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onAddInGroup: (groupId: number) => void;
@@ -387,6 +416,9 @@ function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, on
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
   const subtotal = debts.reduce((sum, d) => sum + d.balance, 0);
+  const overLimitCount = debts.filter((d) =>
+    isCurrentlyOverLimit(d) || overLimitFor(d.id) != null,
+  ).length;
 
   function commitRename() {
     const v = draft.trim();
@@ -417,6 +449,7 @@ function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, on
             </span>
           </button>
         )}
+        {overLimitCount > 0 && <OverLimitBadge label={`${overLimitCount} limit warning${overLimitCount !== 1 ? 's' : ''}`} />}
         <span style={{ fontWeight: 700, color: ACCENT, fontSize: 13 }}>{formatMoney(subtotal, { whole: true })}</span>
         <ConfirmButton onConfirm={() => onDeleteGroup(group.id)} title="Remove group (keeps debts, ungrouped)" confirmLabel="Ungroup?" triggerStyle={{ background: 'transparent', color: 'var(--color-text-muted)', padding: '4px 8px', border: '1px solid var(--color-border)', fontSize: 12 }}>
           Ungroup
@@ -425,7 +458,7 @@ function DebtGroupBlock({ group, debts, groups, accounts, onUpdate, onDelete, on
 
       {!collapsed && (
         <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {debts.map((d) => <DebtRow key={d.id} debt={d} groups={groups} accounts={accounts} onUpdate={onUpdate} onDelete={onDelete} drag={dragFor(d)} dragging={draggingId === d.id} />)}
+          {debts.map((d) => <DebtRow key={d.id} debt={d} groups={groups} accounts={accounts} overLimitMonth={overLimitFor(d.id)} onUpdate={onUpdate} onDelete={onDelete} drag={dragFor(d)} dragging={draggingId === d.id} />)}
           {debts.length === 0 && (
             <p style={{ padding: '6px 4px', color: 'var(--color-text-muted)', fontSize: 12.5 }}>Empty group — add a debt below.</p>
           )}
@@ -489,6 +522,8 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
   const totalMonthly = debts.reduce((sum, d) => sum + d.monthly_payment, 0);
 
   const hasDebts = debts.length > 0;
+  const overLimitFor = (id: number) => plan.overLimitByDebt.get(id) ?? null;
+  const overLimitCount = debts.filter((d) => isCurrentlyOverLimit(d) || overLimitFor(d.id) != null).length;
   const interestSaved = (basePlan.totalInterest || 0) - (plan.totalInterest || 0);
   const baseFree = basePlan.debtFreeMonthIndex;
   const planFree = plan.debtFreeMonthIndex;
@@ -506,7 +541,10 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
         <div onClick={toggle} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
           <CollapseToggle collapsed={collapsed} onToggle={toggle} label="Debts" />
           <div>
-            <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Debts</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Debts</h2>
+              {overLimitCount > 0 && <OverLimitBadge label={`${overLimitCount} limit warning${overLimitCount !== 1 ? 's' : ''}`} />}
+            </div>
             <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
               Loans &amp; credit cards — payments stop automatically at payoff and free up cash
             </p>
@@ -567,6 +605,7 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
           debts={debts.filter((d) => d.group_id === group.id)}
           groups={myGroups}
           accounts={accounts}
+          overLimitFor={overLimitFor}
           onUpdate={onUpdate}
           onDelete={onDelete}
           onAddInGroup={(groupId) => setAdding({ groupId })}
@@ -580,7 +619,7 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
 
       {/* Ungrouped debts */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {ungrouped.map((d) => <DebtRow key={d.id} debt={d} groups={myGroups} accounts={accounts} onUpdate={onUpdate} onDelete={onDelete} drag={dnd.handlers(d)} dragging={dnd.dragId === d.id} />)}
+        {ungrouped.map((d) => <DebtRow key={d.id} debt={d} groups={myGroups} accounts={accounts} overLimitMonth={overLimitFor(d.id)} onUpdate={onUpdate} onDelete={onDelete} drag={dnd.handlers(d)} dragging={dnd.dragId === d.id} />)}
         {debts.length === 0 && (
           <p style={{ padding: '20px 12px', color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 13 }}>
             No debts tracked. Add a loan or credit card to see when it’s paid off.

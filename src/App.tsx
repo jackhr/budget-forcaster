@@ -161,7 +161,7 @@ export default function App() {
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
-  // Charges that can't go on a card (over limit, or aimed at a loan) are paid in cash.
+  // Charges aimed at a loan or unknown debt are paid in cash.
   const debtCashOut = plan.outflow.map((v, i) => Math.round((v + plan.chargeOverflow[i]) * 100) / 100);
   const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months);
   const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months, totalCash);
@@ -183,7 +183,7 @@ export default function App() {
   const primaryAccountId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const scheduledOutByAccount = buildScheduledOutByAccount(payments, accounts, months);
   const debtOutByAccount = buildDebtOutByAccount(debts, plan, accounts);
-  // Over-limit / loan charge overflow is paid from primary cash; attribute it there
+  // Loan/unknown-target charge overflow is paid from primary cash; attribute it there
   // so the per-account series sum keeps matching total savings.
   if (primaryAccountId != null) {
     const arr = debtOutByAccount.get(primaryAccountId);
@@ -689,7 +689,7 @@ export default function App() {
             items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
             kind="expense" groups={groups} showFrequency showEndDate showFunding
             accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-            debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null }))}
+            debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null, overLimit: d.credit_limit != null && d.balance > d.credit_limit + 0.005 }))}
             onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}
             onAddGroup={(name) => addGroup(name, 'expense')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
             onReorder={reorderExpenses} onReorderGroup={reorderGroups}
@@ -698,7 +698,7 @@ export default function App() {
         <ScheduledPayments
           payments={payments}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-          debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null }))}
+          debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null, overLimit: d.credit_limit != null && d.balance > d.credit_limit + 0.005 }))}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}
         />
         <Debts
