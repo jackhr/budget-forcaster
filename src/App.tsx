@@ -4,7 +4,7 @@ import {
   accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -74,7 +74,7 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const accts = snap.accounts ?? [];
   const ep = buildExpensePlan(exp, accts, debts, months, infl);
   const charges = [...buildDebtCharges(pay, months), ...ep.charges];
-  const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges);
+  const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges, buildDebtPaymentSchedule(debts, months));
   const cashOut = plan.outflow.map((v) => Math.round(v * 100) / 100);
   const fc = buildForecast(inc, ep.ongoingCashOut, pay, cashOut, months);
   const sv = buildSavings(inc, ep.ongoingCashOut, pay, cashOut, months, start);
@@ -159,8 +159,10 @@ export default function App() {
   const expensePlan = buildExpensePlan(expenses, accounts, debts, months, inflation);
   // Future expenses charged to a card + expense card-portions both bill the debt over time.
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
-  const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
-  const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
+  // A debt's funding plan (fixed amount) overrides its monthly payment per month.
+  const debtPayments = buildDebtPaymentSchedule(debts, months);
+  const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges, debtPayments);
+  const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges, debtPayments);
   // Cash out for debts = the actual payments. Charge overflow (the part of a card
   // charge that exceeds its available credit, or a loan/unknown target) is NOT paid
   // from cash — it's left uncovered and flagged below.
@@ -226,7 +228,7 @@ export default function App() {
     if (!breakdownIncludeFuture) {
       // Re-run the cash pipeline with no future expenses (drops their cash draws
       // and any card charges they'd add to the debt plan).
-      const planNF = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, expensePlan.charges);
+      const planNF = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, expensePlan.charges, debtPayments);
       const debtCashOutNF = planNF.outflow.map((v) => Math.round(v * 100) / 100);
       sav = buildSavings(incomeSources, expensePlan.ongoingCashOut, [], debtCashOutNF, months, totalCash);
       sched = buildScheduledOutByAccount([], accounts, months);

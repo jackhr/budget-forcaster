@@ -75,6 +75,17 @@ describe('simulateDebtPlan', () => {
     // first month: 100 + 100 minimums + 150 extra = 350
     expect(aval.outflow[0]).toBeCloseTo(350, 5);
   });
+
+  it('a funding-plan payment schedule overrides the monthly payment per month', () => {
+    const card = makeDebt({ id: 1, balance: 1000, apr: 0, monthly_payment: 100 });
+    // monthly_payment 100 for month 0, then 200 once the plan kicks in
+    const schedule = new Map([[1, [100, 200, 200, 200]]]);
+    const plan = simulateDebtPlan([card], 0, 'none', 4, [], schedule);
+    expect(plan.outflowByDebt.get(1)![0]).toBeCloseTo(100, 5);
+    expect(plan.outflowByDebt.get(1)![1]).toBeCloseTo(200, 5);
+    // 1000 − 100 − 200 − 200 − 200 = 300 remaining after month 3
+    expect(plan.remainingByDebt.get(1)![3]).toBeCloseTo(300, 5);
+  });
 });
 
 describe('simulateDebtPlan charges & credit limits', () => {

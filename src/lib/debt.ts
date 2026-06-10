@@ -108,6 +108,7 @@ interface DebtState {
   bal: number;
   rate: number;
   min: number;
+  sched: number[] | null; // per-month payment override (from a funding plan); null = use min every month
   paidMonth: number | null;
   limit: number | null;   // credit limit (null = no cap)
   chargeable: boolean;    // credit cards can be charged; loans cannot
@@ -117,12 +118,17 @@ interface DebtState {
 // 'none' = each debt independent (no rollover, extra ignored).
 // 'avalanche' = highest APR first; 'snowball' = smallest balance first. Both roll freed
 // payments forward and apply the global `extra` to the current target debt.
+//
+// paymentSchedule (optional) overrides a debt's monthly_payment per month — used when
+// a debt's funding plan sets a fixed amount, which trumps the monthly payment for the
+// months the plan is active (the monthly payment stands before it kicks in).
 export function simulateDebtPlan(
   debts: Debt[],
   extra: number,
   strategy: DebtStrategy,
   months: number,
   charges: DebtCharge[] = [],
+  paymentSchedule?: Map<number, number[]>,
 ): DebtPlan {
   const outflow = new Array(months).fill(0);
   const remaining = new Array(months).fill(0);
@@ -133,10 +139,13 @@ export function simulateDebtPlan(
     bal: d.balance,
     rate: d.apr / 1200,
     min: d.monthly_payment,
+    sched: paymentSchedule?.get(d.id) ?? null,
     paidMonth: null,
     limit: d.credit_limit ?? null,
     chargeable: d.debt_type !== 'loan', // default (undefined) treated as chargeable
   }));
+  // A debt's payment for a given month: its funding-plan override if present, else min.
+  const minOf = (d: DebtState, month: number) => (d.sched ? (d.sched[month] ?? d.min) : d.min);
   const overLimitByDebt = new Map<number, number | null>();
   for (const d of debts) { payoffMonthByDebt.set(d.id, null); overLimitByDebt.set(d.id, null); }
   const stateById = new Map(states.map((s) => [s.id, s]));
@@ -150,7 +159,6 @@ export function simulateDebtPlan(
     chargesByMonth.get(c.monthIndex)!.push(c);
   }
 
-  const baseBudget = states.reduce((s, d) => s + d.min, 0) + (strategy === 'none' ? 0 : extra);
   let totalInterest = 0;
   let debtFreeMonthIndex: number | null = states.every((d) => d.bal <= 0.005) ? -1 : null;
 
@@ -192,18 +200,19 @@ export function simulateDebtPlan(
     if (strategy === 'none') {
       for (const d of states) {
         if (d.bal > 0.005) {
-          const pay = Math.min(d.min, d.bal);
+          const pay = Math.min(minOf(d, m), d.bal);
           d.bal -= pay;
           outflow[m] += pay;
           outflowByDebt.get(d.id)![m] += pay;
         }
       }
     } else {
-      let budget = baseBudget;
+      // Budget = this month's minimums (per the funding-plan overrides) + the extra.
+      let budget = states.reduce((s, d) => s + minOf(d, m), 0) + extra;
       // Pay minimums on every active debt.
       for (const d of states) {
         if (d.bal > 0.005 && budget > 0) {
-          const pay = Math.min(d.min, d.bal, budget);
+          const pay = Math.min(minOf(d, m), d.bal, budget);
           d.bal -= pay;
           budget -= pay;
           outflow[m] += pay;

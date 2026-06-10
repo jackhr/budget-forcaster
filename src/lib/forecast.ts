@@ -132,6 +132,36 @@ function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number,
   }
 }
 
+// Effective monthly payment per debt per month. A debt funding plan with a fixed
+// dollar amount overrides the debt's monthly_payment for the months its rules are
+// active; otherwise (no plan, or before a future plan kicks in) the monthly_payment
+// stands. A percent plan (e.g. 100% from an account) routes the payment without
+// changing the amount, so it resolves back to monthly_payment.
+export function buildDebtPaymentSchedule(debts: Debt[], months: number, now: Date = new Date()): Map<number, number[]> {
+  const map = new Map<number, number[]>();
+  for (const d of debts) {
+    const rules = d.funding_rules ?? [];
+    const allocs = d.funding_allocations ?? [];
+    const arr = new Array(months).fill(d.monthly_payment);
+    if (rules.length > 0) {
+      for (let m = 0; m < months; m++) {
+        let total = 0;
+        let active = false;
+        for (const r of rules) {
+          const v = fundingRuleValue(r, d.monthly_payment, m, now);
+          if (v > 0) { total += v; active = true; }
+        }
+        if (active) arr[m] = round2(total); // plan active this month -> trumps monthly_payment
+      }
+    } else if (allocs.length > 0) {
+      const total = allocs.reduce((s, a) => s + (a.alloc_type === 'fixed' ? a.value : d.monthly_payment * (a.value / 100)), 0);
+      if (total > 0) arr.fill(round2(total));
+    }
+    map.set(d.id, arr);
+  }
+  return map;
+}
+
 interface PaymentFundingPart {
   source_type: 'account' | 'debt';
   source_id: number | null;
