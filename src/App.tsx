@@ -107,6 +107,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'forecast');
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
+  const [breakdownIncludeFuture, setBreakdownIncludeFuture] = useState(() => localStorage.getItem('bf.breakdownFuture') !== '0');
   const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
   const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
   const [dupDismissed, setDupDismissed] = useState(false);
@@ -118,6 +119,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.months', String(months)); }, [months]);
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
+  useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
+  useEffect(() => { if (!isNarrow) setMenuOpen(false); }, [isNarrow]);
 
   const load = useCallback(async () => {
     try {
@@ -203,9 +206,25 @@ export default function App() {
   let breakdownTitle: string;
   let breakdownSubtitle: string;
   if (breakdownSection === 'account') {
-    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, scheduledOutByAccount, debtOutByAccount);
+    let sav = savings, sched = scheduledOutByAccount, debtOut = debtOutByAccount;
+    if (!breakdownIncludeFuture) {
+      // Re-run the cash pipeline with no future expenses (drops their cash draws
+      // and any card charges they'd add to the debt plan).
+      const planNF = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, expensePlan.charges);
+      const debtCashOutNF = planNF.outflow.map((v, i) => Math.round((v + planNF.chargeOverflow[i]) * 100) / 100);
+      sav = buildSavings(incomeSources, expensePlan.ongoingCashOut, [], debtCashOutNF, months, totalCash);
+      sched = buildScheduledOutByAccount([], accounts, months);
+      debtOut = buildDebtOutByAccount(debts, planNF, accounts);
+      if (primaryAccountId != null) {
+        const arr = debtOut.get(primaryAccountId);
+        if (arr) for (let i = 0; i < arr.length; i++) arr[i] = Math.round((arr[i] + planNF.chargeOverflow[i]) * 100) / 100;
+      }
+    }
+    breakdown = buildAccountSeries(accounts, incomeSources, sav, expensePlan.outByAccount, sched, debtOut);
     breakdownTitle = 'Accounts Over Time';
-    breakdownSubtitle = 'Balance of each account/savings pile over time, alongside total cash';
+    breakdownSubtitle = breakdownIncludeFuture
+      ? 'Balance of each account/savings pile over time, alongside total cash'
+      : 'Balance of each account/savings pile over time — future expenses excluded';
   } else if (breakdownSection === 'income') {
     breakdown = buildIncomeBreakdown(incomeSources, months);
     breakdownTitle = 'Income Breakdown';
@@ -596,6 +615,12 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {breakdownSection === 'account' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-muted)', cursor: 'pointer', width: 'fit-content' }}>
+                <input type="checkbox" checked={breakdownIncludeFuture} onChange={(e) => setBreakdownIncludeFuture(e.target.checked)} />
+                Include future expenses
+              </label>
+            )}
             <Suspense fallback={<ChartFallback />}>
               <BreakdownChart title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths} />
             </Suspense>
