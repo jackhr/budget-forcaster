@@ -113,12 +113,18 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
   const [debtType, setDebtType] = useState<DebtType>(initial.debt_type);
   const [payDay, setPayDay] = useState(initial.payment_day != null ? String(initial.payment_day) : '');
   const [groupId, setGroupId] = useState<number | null>(initial.group_id);
-  const [allocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
+  const [allocations, setAllocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
   const [fundingRules, setFundingRules] = useState<FundingRule[]>(initial.funding_rules ?? []);
   const [editingFunding, setEditingFunding] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const isCard = debtType === 'credit_card';
+  // "Pay from" is simple (one account) unless there's a scheduled plan or a split
+  // across accounts/percentages — then we show the funding-plan summary instead.
+  const advancedFunding = fundingRules.length > 0
+    || allocations.length > 1
+    || allocations.some((a) => a.source_type !== 'account' || a.alloc_type !== 'percent' || a.value !== 100);
+  const payAccountId = allocations.length === 1 && allocations[0].source_type === 'account' ? allocations[0].source_id : null;
   const balNum = parseFloat(balance);
   const aprNum = parseFloat(apr);
   const payNum = parseFloat(payment);
@@ -225,16 +231,37 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
         </div>
         {field('Pay from', (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-            <button
-              type="button"
-              onClick={() => setEditingFunding(true)}
-              style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
-            >
-              Edit funding plan
-            </button>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              {summarizeFundingPlan(fundingRules, allocations)}
-            </p>
+            {advancedFunding ? (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--color-text)' }}>{summarizeFundingPlan(fundingRules, allocations)}</p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                    Edit funding plan
+                  </button>
+                  <button type="button" onClick={() => { setFundingRules([]); setAllocations([]); }} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                    Use one account
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <select
+                  value={payAccountId ?? ''}
+                  onChange={(e) => setAllocations(e.target.value ? [{ source_type: 'account', source_id: Number(e.target.value), alloc_type: 'percent', value: 100 }] : [])}
+                  style={selectStyle}
+                >
+                  <option value="">Primary account</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setEditingFunding(true)}
+                  style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
+                >
+                  Split across accounts or schedule…
+                </button>
+              </>
+            )}
           </div>
         ))}
         {field('Group', (
