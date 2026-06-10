@@ -193,16 +193,22 @@ export default function App() {
   // Combined overview series: monthly flows, balances, and future-expense totals.
   const futureBd = buildFutureExpenseBreakdown(payments, months);
   const futureTotals = futureBd.total;
-  // Per-month funding-source label for the Accounts-chart future-expense bars.
-  const futureFromByMonth = futureBd.labels.map((_, i) => {
-    const sources = futureBd.series
-      .filter((s) => (s.values[i] ?? 0) > 0)
-      .map((s) => {
-        const p = payments.find((pp) => pp.id === s.id);
-        return p ? fundingLabel(p, accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary })), debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }))) : '';
-      })
-      .filter(Boolean);
-    return [...new Set(sources)].join(', ');
+  // Future-expense bars for the Accounts chart. Bars use the *total* expense
+  // amount (so card-funded ones still show, not just cash draws), with the
+  // names + funding source(s) shown in the tooltip.
+  const cardOpts = debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }));
+  const acctOpts = accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }));
+  const futureExpenseBars = futureBd.labels.map((_, i) => {
+    const active = futureBd.series.filter((s) => (s.values[i] ?? 0) > 0);
+    const froms = active.map((s) => {
+      const p = payments.find((pp) => pp.id === s.id);
+      return p ? fundingLabel(p, acctOpts, cardOpts) : '';
+    }).filter(Boolean);
+    return {
+      value: futureTotals[i] ?? 0,
+      label: active.map((s) => s.name).join(', '),
+      from: [...new Set(froms)].join(', '),
+    };
   });
   const overviewData = savings.map((s, i) => ({
     label: s.label,
@@ -636,7 +642,7 @@ export default function App() {
             <Suspense fallback={<ChartFallback />}>
               <BreakdownChart
                 title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths}
-                futureBars={breakdownSection === 'account' ? savings.map((s, i) => ({ value: s.scheduledOut, label: s.scheduledLabel, from: futureFromByMonth[i] ?? '' })) : undefined}
+                futureBars={breakdownSection === 'account' ? futureExpenseBars : undefined}
                 futureBarsActive={breakdownIncludeFuture}
               />
             </Suspense>
