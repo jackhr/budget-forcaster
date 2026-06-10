@@ -35,21 +35,6 @@ function defaultRule(accounts?: AccountOpt[]): FundingRule {
   };
 }
 
-const MONTH_PATTERN = /^\d{4}-\d{2}$/;
-
-function monthDraft(value: string | null): string {
-  if (!value) return '';
-  return value.length >= 7 ? value.slice(0, 7) : value;
-}
-
-function cleanMonthInput(value: string): string {
-  return value.replace(/[^\d-]/g, '').slice(0, 7);
-}
-
-function monthToDate(value: string | null): string | null {
-  const draft = monthDraft(value);
-  return draft ? `${draft}-01` : null;
-}
 
 export function rulesFromLegacy(allocations?: ExpenseAllocation[]): FundingRule[] {
   return (allocations ?? []).map((a) => ({
@@ -105,13 +90,9 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
     return av == null ? sum : sum + Math.max(0, ruleDollar(r) - av);
   }, 0);
 
-  const dateInvalid = draft.some((r) => {
-    const start = monthDraft(r.start_date);
-    const end = monthDraft(r.end_date);
-    return (!!start && !MONTH_PATTERN.test(start)) ||
-      (!!end && !MONTH_PATTERN.test(end)) ||
-      (!!start && !!end && MONTH_PATTERN.test(start) && MONTH_PATTERN.test(end) && end < start);
-  });
+  // Day-level dates (YYYY-MM-DD); native pickers guarantee the format, so we only
+  // guard that a recurring rule's end isn't before its start.
+  const dateInvalid = draft.some((r) => r.frequency !== 'one-time' && !!r.start_date && !!r.end_date && r.end_date < r.start_date);
 
   const labelStyle: React.CSSProperties = {
     fontSize: 12,
@@ -144,8 +125,8 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
       .filter((r) => r.source_id != null && r.value > 0)
       .map((r) => ({
         ...r,
-        start_date: monthToDate(r.start_date),
-        end_date: monthToDate(r.end_date),
+        start_date: r.start_date || null,
+        end_date: r.frequency === 'one-time' ? null : (r.end_date || null), // one-time has no end
       })));
   }
 
@@ -207,37 +188,41 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               </p>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: rule.frequency === 'one-time' ? '1fr 1fr' : '1fr 1fr 1fr', gap: 8 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={labelStyle}>Frequency</span>
-                <select value={rule.frequency} onChange={(e) => update(idx, { frequency: e.target.value as Frequency })} style={inputStyle}>
+                <select
+                  value={rule.frequency}
+                  onChange={(e) => {
+                    const f = e.target.value as Frequency;
+                    update(idx, f === 'one-time' ? { frequency: f, end_date: null } : { frequency: f });
+                  }}
+                  style={inputStyle}
+                >
                   {FREQUENCIES.map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
                 </select>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Starts <span style={{ textTransform: 'none', letterSpacing: 0, opacity: 0.75 }}>(YYYY-MM)</span></span>
+                <span style={labelStyle}>{rule.frequency === 'one-time' ? 'Payment date' : 'Starts'}</span>
                 <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="YYYY-MM"
-                  value={monthDraft(rule.start_date)}
-                  onChange={(e) => update(idx, { start_date: cleanMonthInput(e.target.value) || null })}
+                  type="date"
+                  value={rule.start_date ?? ''}
+                  onChange={(e) => update(idx, { start_date: e.target.value || null })}
                   style={inputStyle}
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Ends <span style={{ textTransform: 'none', letterSpacing: 0, opacity: 0.75 }}>(YYYY-MM)</span></span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="YYYY-MM"
-                  value={monthDraft(rule.end_date)}
-                  onChange={(e) => update(idx, { end_date: cleanMonthInput(e.target.value) || null })}
-                  style={inputStyle}
-                />
-              </label>
+              {rule.frequency !== 'one-time' && (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={labelStyle}>Ends <span style={{ textTransform: 'none', letterSpacing: 0, opacity: 0.75 }}>(optional)</span></span>
+                  <input
+                    type="date"
+                    value={rule.end_date ?? ''}
+                    min={rule.start_date ?? undefined}
+                    onChange={(e) => update(idx, { end_date: e.target.value || null })}
+                    style={inputStyle}
+                  />
+                </label>
+              )}
             </div>
           </div>
         ))}
