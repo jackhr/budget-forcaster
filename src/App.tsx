@@ -622,7 +622,11 @@ export default function App() {
               </label>
             )}
             <Suspense fallback={<ChartFallback />}>
-              <BreakdownChart title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths} />
+              <BreakdownChart
+                title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths}
+                futureBars={breakdownSection === 'account' ? savings.map((s) => ({ value: s.scheduledOut, label: s.scheduledLabel })) : undefined}
+                futureBarsActive={breakdownIncludeFuture}
+              />
             </Suspense>
           </>
         )}

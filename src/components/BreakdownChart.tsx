@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, Line, Bar, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import type { Breakdown } from '../lib/forecast';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
+
+interface FutureBar { value: number; label: string }
 
 interface Props {
   title: string;
@@ -12,6 +14,19 @@ interface Props {
   breakdown: Breakdown;
   months: number;
   onMonthsChange: (m: number) => void;
+  futureBars?: FutureBar[];      // optional overlay of future-expense bars (Accounts view)
+  futureBarsActive?: boolean;    // colored when active, greyed when off
+}
+
+// Renders the future-expense name above its bar (Savings-chart style).
+function FutureLabel(props: { x: number; y: number; width: number; index: number; bars: FutureBar[] }) {
+  const { x, y, width, index, bars } = props;
+  const bar = bars[index];
+  if (!bar || bar.value <= 0) return null;
+  const name = bar.label.length > 14 ? bar.label.slice(0, 13) + '…' : bar.label;
+  return (
+    <text x={x + width / 2} y={y - 4} fill="var(--color-net-neg)" fontSize={10} textAnchor="middle">{name}</text>
+  );
 }
 
 const PALETTE = ['#22c55e', '#f43f5e', '#38bdf8', '#a78bfa', '#fb923c', '#facc15', '#2dd4bf', '#f472b6', '#60a5fa', '#c084fc', '#4ade80', '#fca5a5'];
@@ -24,7 +39,9 @@ function CustomTooltip({ active, payload, label }: {
   label?: string;
 }) {
   if (!active || !payload?.length) return null;
-  const rows = [...payload].sort((a, b) => (a.dataKey === TOTAL_KEY ? -1 : b.dataKey === TOTAL_KEY ? 1 : b.value - a.value));
+  const rows = [...payload]
+    .filter((p) => !(p.dataKey === 'future' && p.value === 0)) // hide empty future-expense months
+    .sort((a, b) => (a.dataKey === TOTAL_KEY ? -1 : b.dataKey === TOTAL_KEY ? 1 : b.value - a.value));
   return (
     <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '12px 16px', fontSize: 13, maxWidth: 260 }}>
       <p style={{ fontWeight: 600, marginBottom: 8 }}>{label}</p>
@@ -37,7 +54,7 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function BreakdownChart({ title, subtitle, breakdown, months, onMonthsChange }: Props) {
+export default function BreakdownChart({ title, subtitle, breakdown, months, onMonthsChange, futureBars, futureBarsActive }: Props) {
   const { labels, total, series } = breakdown;
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
@@ -47,6 +64,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
   const data = labels.map((label, i) => {
     const row: Record<string, number | string> = { label, total: total[i] ?? 0 };
     series.forEach((s) => { row[`k${s.id}`] = s.values[i] ?? 0; });
+    if (futureBars) row.future = futureBars[i]?.value ?? 0;
     return row;
   });
 
@@ -111,16 +129,27 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
           </div>
 
           <ResponsiveContainer width="100%" height={360}>
-            <LineChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+            <ComposedChart data={data} margin={{ top: 16, right: 16, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey="label" tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} interval={Math.max(0, Math.floor(data.length / 8) - 1)} />
               <YAxis tickFormatter={formatCompactMoney} tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+              {futureBars && (
+                <Bar dataKey="future" name="Future Expense" barSize={12} radius={[3, 3, 0, 0]} isAnimationActive={false}
+                  fill={futureBarsActive ? 'var(--color-net-neg)' : 'var(--color-text-muted)'}
+                  opacity={futureBarsActive ? 1 : 0.35}>
+                  {futureBarsActive && (
+                    <LabelList dataKey="future" content={(props: { x?: string | number; y?: string | number; width?: string | number; index?: number }) => (
+                      <FutureLabel x={Number(props.x) || 0} y={Number(props.y) || 0} width={Number(props.width) || 0} index={props.index ?? 0} bars={futureBars} />
+                    )} />
+                  )}
+                </Bar>
+              )}
               {series.map((s, idx) => (
                 <Line key={s.id} type="monotone" dataKey={`k${s.id}`} name={s.name} stroke={colorOf(idx)} strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} hide={hidden.has(`k${s.id}`)} />
               ))}
               <Line type="monotone" dataKey="total" name="Total (all combined)" stroke="var(--color-text)" strokeWidth={3} dot={false} activeDot={{ r: 4 }} hide={hidden.has(TOTAL_KEY)} />
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </>
       )}
