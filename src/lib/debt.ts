@@ -99,6 +99,8 @@ export interface DebtCharge {
   debtId: number;
   monthIndex: number;
   amount: number;
+  label?: string;                    // source name (for the breakdown tooltip)
+  kind?: 'expense' | 'future';       // where the charge came from
 }
 
 interface DebtState {
@@ -162,20 +164,24 @@ export function simulateDebtPlan(
       }
     }
 
-    // Apply this month's charges (obligations billed to a card). Cards absorb the
-    // full charge even past their limit — we flag over-limit rather than cap it.
-    // A loan/unknown target has no credit line, so its charge spills to cash.
+    // Apply this month's charges (obligations billed to a card). Hard cap: a card
+    // only absorbs up to its available credit; the excess (and any loan/unknown
+    // target's charge) spills to cash so the card can't run away past its limit.
     for (const c of chargesByMonth.get(m) ?? []) {
       const st = stateById.get(c.debtId);
       if (!st || !st.chargeable) { chargeOverflow[m] += c.amount; continue; }
-      st.bal += c.amount;
-      if (st.paidMonth !== null && st.bal > 0.005) {
+      const available = st.limit == null ? Infinity : Math.max(0, st.limit - st.bal);
+      const applied = Math.min(c.amount, available);
+      st.bal += applied;
+      if (applied < c.amount) chargeOverflow[m] += (c.amount - applied);
+      if (applied > 0 && st.paidMonth !== null && st.bal > 0.005) {
         st.paidMonth = null; // reactivated by a new charge
         payoffMonthByDebt.set(st.id, null);
       }
     }
 
-    // Flag a card that's over its limit (peak is right after charges, before payments).
+    // Flag a card whose balance is over its limit (e.g. it started over, or interest
+    // pushed it past — charges themselves are capped above).
     for (const d of states) {
       if (d.chargeable && d.limit != null && d.bal > d.limit + 0.005 && overLimitByDebt.get(d.id) == null) {
         overLimitByDebt.set(d.id, m);

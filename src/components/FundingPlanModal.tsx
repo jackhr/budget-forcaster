@@ -99,7 +99,11 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
     const av = cardAvailable(rule);
     return cardAlreadyOverLimit(rule) || (av != null && ruleDollar(rule) > av + 0.005);
   }
-  const anyOverLimit = draft.some(overLimit);
+  // Per-occurrence dollars that exceed a card's available credit and fall to cash.
+  const cardSpill = draft.reduce((sum, r) => {
+    const av = cardAvailable(r);
+    return av == null ? sum : sum + Math.max(0, ruleDollar(r) - av);
+  }, 0);
 
   const dateInvalid = draft.some((r) => {
     const start = monthDraft(r.start_date);
@@ -197,8 +201,8 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               <p style={{ fontSize: 12, color: overLimit(rule) ? 'var(--color-expense)' : 'var(--color-text-muted)', margin: 0 }}>
                 {overLimit(rule)
                   ? cardAlreadyOverLimit(rule)
-                    ? `⚠ This card is already over its limit. This rule adds ${formatMoney(ruleDollar(rule))} per occurrence.`
-                    : `⚠ Puts this card over its limit — ${formatMoney(ruleDollar(rule))} charged, ${formatMoney(cardAvailable(rule)!)} available.`
+                    ? `⚠ Card is at its limit — this rule's ${formatMoney(ruleDollar(rule))} is paid from primary cash instead.`
+                    : `⚠ Card has ${formatMoney(cardAvailable(rule)!)} left — ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} of this ${formatMoney(ruleDollar(rule))} spills to primary cash.`
                   : `${formatMoney(cardAvailable(rule)!)} available on this card.`}
               </p>
             )}
@@ -245,7 +249,11 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
           Remainder for uncovered periods is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
         </p>
         {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Use YYYY-MM, and make sure end is not before start.</p>}
-        {anyOverLimit && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>⚠ A selected card is or will be over its limit. This is allowed, and the card will show a warning.</p>}
+        {cardSpill > 0.005 && (
+          <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>
+            ⚠ {formatMoney(cardSpill)} per occurrence exceeds the card's available credit and is paid from primary cash instead.
+          </p>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" onClick={onCancel} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '9px 16px' }}>Cancel</button>

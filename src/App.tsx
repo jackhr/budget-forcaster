@@ -161,7 +161,7 @@ export default function App() {
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
-  // Charges aimed at a loan or unknown debt are paid in cash.
+  // Charge overflow (over a card's limit, or aimed at a loan/unknown debt) is paid in cash.
   const debtCashOut = plan.outflow.map((v, i) => Math.round((v + plan.chargeOverflow[i]) * 100) / 100);
   const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months);
   const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months, totalCash);
@@ -183,8 +183,8 @@ export default function App() {
   const primaryAccountId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const scheduledOutByAccount = buildScheduledOutByAccount(payments, accounts, months);
   const debtOutByAccount = buildDebtOutByAccount(debts, plan, accounts);
-  // Loan/unknown-target charge overflow is paid from primary cash; attribute it there
-  // so the per-account series sum keeps matching total savings.
+  // Charge overflow (over-limit card excess, or loan/unknown targets) is paid from
+  // primary cash; attribute it there so the per-account series sum matches total savings.
   if (primaryAccountId != null) {
     const arr = debtOutByAccount.get(primaryAccountId);
     if (arr) for (let i = 0; i < arr.length; i++) arr[i] = Math.round((arr[i] + plan.chargeOverflow[i]) * 100) / 100;
@@ -263,6 +263,25 @@ export default function App() {
     };
     breakdownTitle = 'Debt Breakdown';
     breakdownSubtitle = 'Remaining balance of each debt over time, alongside total debt';
+  }
+
+  // Per-debt, per-month detail for the Debt Breakdown tooltip: which expenses /
+  // future expenses were charged that month, and the payment applied.
+  let debtMonthInfo: Map<number, { charges: { label: string; amount: number; kind: string }[]; payment: number }[]> | undefined;
+  if (breakdownSection === 'debt') {
+    debtMonthInfo = new Map();
+    for (const d of debts) {
+      const arr = Array.from({ length: months }, () => ({ charges: [] as { label: string; amount: number; kind: string }[], payment: 0 }));
+      const pay = plan.outflowByDebt.get(d.id);
+      if (pay) for (let m = 0; m < months; m++) arr[m].payment = pay[m] ?? 0;
+      debtMonthInfo.set(d.id, arr);
+    }
+    for (const c of debtCharges) {
+      const arr = debtMonthInfo.get(c.debtId);
+      if (arr && c.monthIndex >= 0 && c.monthIndex < months) {
+        arr[c.monthIndex].charges.push({ label: c.label ?? 'Charge', amount: c.amount, kind: c.kind ?? 'future' });
+      }
+    }
   }
 
   // Compare overlay from a saved scenario.
@@ -644,6 +663,7 @@ export default function App() {
                 title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths}
                 futureBars={breakdownSection === 'account' ? futureExpenseBars : undefined}
                 futureBarsActive={breakdownIncludeFuture}
+                debtMonthInfo={breakdownSection === 'debt' ? debtMonthInfo : undefined}
               />
             </Suspense>
           </>

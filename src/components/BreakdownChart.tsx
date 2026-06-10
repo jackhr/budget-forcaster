@@ -8,6 +8,9 @@ import RangeControl from './RangeControl';
 
 interface FutureBar { value: number; label: string; from?: string }
 
+interface DebtMonthDetail { charges: { label: string; amount: number; kind: string }[]; payment: number }
+type DebtMonthInfo = Map<number, DebtMonthDetail[]>;
+
 interface Props {
   title: string;
   subtitle: string;
@@ -16,6 +19,7 @@ interface Props {
   onMonthsChange: (m: number) => void;
   futureBars?: FutureBar[];      // optional overlay of future-expense bars (Accounts view)
   futureBarsActive?: boolean;    // colored when active, greyed when off
+  debtMonthInfo?: DebtMonthInfo; // per-debt charges + payment each month (Debt Breakdown tooltip)
 }
 
 // Renders the future-expense name above its bar (Savings-chart style).
@@ -33,10 +37,11 @@ const PALETTE = ['#22c55e', '#f43f5e', '#38bdf8', '#a78bfa', '#fb923c', '#facc15
 const TOTAL_KEY = 'total';
 const TOTAL_COLOR = 'var(--color-text)';
 
-function CustomTooltip({ active, payload, label }: {
+function CustomTooltip({ active, payload, label, debtMonthInfo }: {
   active?: boolean;
   payload?: { name: string; value: number; color: string; dataKey: string; payload?: Record<string, unknown> }[];
   label?: string;
+  debtMonthInfo?: DebtMonthInfo;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
@@ -46,14 +51,36 @@ function CustomTooltip({ active, payload, label }: {
   const futureVal = Number(row?.future) || 0;
   const futureLabel = String(row?.futureLabel ?? '');
   const futureFrom = String(row?.futureFrom ?? '');
+  const idx = Number(row?.idx ?? -1);
+
+  // Debt Breakdown: charges + payment applied to each visible debt this month.
+  const detail = (dataKey: string): DebtMonthDetail | null => {
+    if (!debtMonthInfo || !dataKey.startsWith('k') || idx < 0) return null;
+    const d = debtMonthInfo.get(Number(dataKey.slice(1)))?.[idx];
+    return d && (d.charges.length > 0 || d.payment > 0.005) ? d : null;
+  };
+
   return (
-    <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '12px 16px', fontSize: 13, maxWidth: 260 }}>
+    <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '12px 16px', fontSize: 13, maxWidth: 320 }}>
       <p style={{ fontWeight: 600, marginBottom: 8 }}>{label}</p>
-      {rows.map((p) => (
-        <p key={p.dataKey} style={{ color: p.dataKey === TOTAL_KEY ? 'var(--color-text)' : p.color, marginBottom: 3, fontWeight: p.dataKey === TOTAL_KEY ? 700 : 400 }}>
-          {p.name}: {formatMoney(p.value)}
-        </p>
-      ))}
+      {rows.map((p) => {
+        const d = detail(p.dataKey);
+        return (
+          <div key={p.dataKey} style={{ marginBottom: d ? 6 : 3 }}>
+            <p style={{ color: p.dataKey === TOTAL_KEY ? 'var(--color-text)' : p.color, fontWeight: p.dataKey === TOTAL_KEY ? 700 : 400 }}>
+              {p.name}: {formatMoney(p.value)}
+            </p>
+            {d && (
+              <div style={{ marginLeft: 12, fontSize: 12, color: 'var(--color-text-muted)' }}>
+                {d.charges.map((c, i) => (
+                  <p key={i}>+{formatMoney(c.amount)} {c.label} <span style={{ opacity: 0.7 }}>({c.kind === 'expense' ? 'expense' : 'future'})</span></p>
+                ))}
+                {d.payment > 0.005 && <p>−{formatMoney(d.payment)} payment</p>}
+              </div>
+            )}
+          </div>
+        );
+      })}
       {futureVal > 0 && (
         <p style={{ color: 'var(--color-net-neg)', marginTop: 6 }}>
           {futureLabel || 'Future expense'}: −{formatMoney(futureVal)}
@@ -64,7 +91,7 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function BreakdownChart({ title, subtitle, breakdown, months, onMonthsChange, futureBars, futureBarsActive }: Props) {
+export default function BreakdownChart({ title, subtitle, breakdown, months, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo }: Props) {
   const { labels, total, series } = breakdown;
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
@@ -72,7 +99,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
   useEffect(() => { setHidden(new Set()); }, [title]);
 
   const data = labels.map((label, i) => {
-    const row: Record<string, number | string> = { label, total: total[i] ?? 0 };
+    const row: Record<string, number | string> = { label, total: total[i] ?? 0, idx: i };
     series.forEach((s) => { row[`k${s.id}`] = s.values[i] ?? 0; });
     if (futureBars) {
       row.future = futureBars[i]?.value ?? 0;
@@ -147,7 +174,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey="label" tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} interval={Math.max(0, Math.floor(data.length / 8) - 1)} />
               <YAxis tickFormatter={formatCompactMoney} tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+              <Tooltip content={<CustomTooltip debtMonthInfo={debtMonthInfo} />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
               {futureBars && (
                 <Bar dataKey="future" name="Future Expense" barSize={12} radius={[3, 3, 0, 0]} isAnimationActive={false}
                   fill={futureBarsActive ? 'var(--color-net-neg)' : 'var(--color-text-muted)'}

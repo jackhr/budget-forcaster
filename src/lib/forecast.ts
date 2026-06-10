@@ -274,7 +274,7 @@ export function buildDebtCharges(
       const funding = paymentFundingAtAmount(p, c, m, now);
       for (const part of funding.parts) {
         if (part.source_type === 'debt' && part.source_id != null && part.amount > 0) {
-          charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount) });
+          charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount), label: p.name, kind: 'future' });
         }
       }
     }
@@ -315,7 +315,7 @@ export function buildExpensePlan(
       let allocatedCash = 0;
       for (const part of funding.parts) {
         if (part.source_type === 'debt' && part.source_id != null && debtIds.has(part.source_id)) {
-          charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount) });
+          charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount), label: e.name, kind: 'expense' });
         } else if (part.source_type === 'account' && part.source_id != null && accountIds.has(part.source_id)) {
           outByAccount.get(part.source_id)![m] += part.amount;
           ongoingCashOut[m] += part.amount;

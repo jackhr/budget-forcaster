@@ -76,7 +76,7 @@ describe('buildExpensePlan', () => {
     // fixed $200 to cash, then 50% ($500) to the card, remainder $300 to primary (cash).
     expect(ep.ongoingCashOut[0]).toBe(500);          // 200 + 300
     expect(ep.outByAccount.get(1)![0]).toBe(500);
-    expect(ep.charges).toEqual([{ debtId: 5, monthIndex: 0, amount: 500 }]);
+    expect(ep.charges).toMatchObject([{ debtId: 5, monthIndex: 0, amount: 500 }]);
   });
 
   it('charged portions feed the debt and lower cash outflow accordingly', () => {
@@ -123,7 +123,7 @@ describe('debt-funded future expenses', () => {
 
   it('adds the charge to the card balance via simulateDebtPlan', () => {
     const charges = buildDebtCharges([charged], 6, NOW);
-    expect(charges).toEqual([{ debtId: 9, monthIndex: 1, amount: 2000 }]);
+    expect(charges).toMatchObject([{ debtId: 9, monthIndex: 1, amount: 2000 }]);
     const plan = simulateDebtPlan([card], 0, 'none', 6, charges);
     expect(plan.remaining[0]).toBe(0);
     expect(plan.remaining[1]).toBeGreaterThan(1400);
@@ -208,7 +208,7 @@ describe('split-funded future expenses', () => {
     });
     const sv = buildSavings([], flat(0, 1), [payment], [], 1, 1000, NOW);
     expect(sv[0].scheduledOut).toBe(400); // $150 account + $250 remainder to primary.
-    expect(buildDebtCharges([payment], 1, NOW)).toEqual([{ debtId: 9, monthIndex: 0, amount: 600 }]);
+    expect(buildDebtCharges([payment], 1, NOW)).toMatchObject([{ debtId: 9, monthIndex: 0, amount: 600 }]);
   });
 
   it('attributes account-funded future expense portions by account and remainder to primary', () => {
