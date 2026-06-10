@@ -180,7 +180,7 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
             </p>
           )}
           <div style={{ padding: '0 12px 6px' }}>
-            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder="item" showFrequency={showFrequency} showAccount={showAccount} groupId={group.id} accounts={accounts} />
+            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder="item" showFrequency={showFrequency} showAccount={showAccount} showFunding={showFunding} groupId={group.id} accounts={accounts} debts={debts} />
           </div>
         </div>
       )}
@@ -337,7 +337,9 @@ export default function LineItemTable({ title, description, items, accentColor, 
         placeholder={title.replace(/s$/, '')}
         showFrequency={showFrequency}
         showAccount={showAccount}
+        showFunding={showFunding}
         accounts={accounts}
+        debts={debts}
       />
 
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

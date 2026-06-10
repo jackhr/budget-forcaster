@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ExpenseAllocation, Frequency, FundingRule, ItemFormData, LineItem, LineItemGroup } from '../types';
+import type { AllocationSourceType, ExpenseAllocation, Frequency, FundingRule, ItemFormData, LineItem, LineItemGroup } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
@@ -67,6 +67,14 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const amtNum = parseFloat(amount);
   const endBeforeStart = !!end && !!start && end < start;
   const valid = name.trim().length > 0 && amtNum > 0 && !endBeforeStart;
+
+  // "Paid from" is simple (one account/card, or the primary account) unless
+  // there's a scheduled plan or a split — then show the funding-plan summary.
+  const advancedFunding = fundingRules.length > 0
+    || allocations.length > 1
+    || allocations.some((a) => a.alloc_type !== 'percent' || a.value !== 100);
+  const singleSource = allocations.length === 1 ? allocations[0] : null;
+  const payFromValue = singleSource && singleSource.source_id != null ? `${singleSource.source_type}:${singleSource.source_id}` : '';
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -318,23 +326,54 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
               </label>
             )}
 
-            {showFunding && (accounts?.length || debts?.length) && (
+            {showFunding && (accounts?.length || debts?.length) ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Paid from
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setEditingFunding(true)}
-                  style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}
-                >
-                  Edit funding plan
-                </button>
-                <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  {summarizeFundingPlan(fundingRules, allocations)}
-                </p>
+                {advancedFunding ? (
+                  <>
+                    <p style={{ fontSize: 13, color: 'var(--color-text)' }}>{summarizeFundingPlan(fundingRules, allocations)}</p>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                        Edit funding plan
+                      </button>
+                      <button type="button" onClick={() => { setFundingRules([]); setAllocations([]); }} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                        Use one source
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <select
+                      value={payFromValue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) { setAllocations([]); return; }
+                        const [t, id] = v.split(':');
+                        setAllocations([{ source_type: t as AllocationSourceType, source_id: Number(id), alloc_type: 'percent', value: 100 }]);
+                      }}
+                      style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '8px 10px', fontSize: 13, fontFamily: 'inherit' }}
+                    >
+                      <option value="">Primary account</option>
+                      {accounts && accounts.length > 0 && (
+                        <optgroup label="Accounts">
+                          {accounts.map((a) => <option key={`a${a.id}`} value={`account:${a.id}`}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+                        </optgroup>
+                      )}
+                      {debts && debts.length > 0 && (
+                        <optgroup label="Credit cards">
+                          {debts.map((d) => <option key={`d${d.id}`} value={`debt:${d.id}`}>{d.name}</option>)}
+                        </optgroup>
+                      )}
+                    </select>
+                    <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}>
+                      Split or schedule…
+                    </button>
+                  </>
+                )}
               </div>
-            )}
+            ) : null}
 
             {!valid && (
               <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>

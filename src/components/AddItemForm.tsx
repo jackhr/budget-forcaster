@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { Frequency, ItemFormData } from '../types';
+import type { AllocationSourceType, Frequency, ItemFormData } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
+interface NamedSource { id: number; name: string }
 
 interface Props {
   onAdd: (data: ItemFormData) => Promise<void>;
@@ -10,17 +11,20 @@ interface Props {
   placeholder: string;
   showFrequency?: boolean;
   showAccount?: boolean;
+  showFunding?: boolean;     // "paid from" source picker (expenses)
   groupId?: number | null;
   accounts?: AccountOpt[];
+  debts?: NamedSource[];     // chargeable credit cards
 }
 
-export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, showAccount, groupId, accounts }: Props) {
+export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, showAccount, showFunding, groupId, accounts, debts }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('monthly');
   const [start, setStart] = useState('');
   const [account, setAccount] = useState<number | null>(null);
+  const [fundingSource, setFundingSource] = useState(''); // 'account:id' | 'debt:id' | '' (primary)
   const [saving, setSaving] = useState(false);
 
   const primaryId = accounts?.find((a) => a.is_primary)?.id ?? null;
@@ -30,11 +34,15 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     const amt = parseFloat(amount);
     if (!name.trim() || !(amt > 0)) return;
     setSaving(true);
+    const funding = showFunding && fundingSource
+      ? [{ source_type: fundingSource.split(':')[0] as AllocationSourceType, source_id: Number(fundingSource.split(':')[1]), alloc_type: 'percent' as const, value: 100 }]
+      : [];
     await onAdd({
       name: name.trim(),
       monthly_amount: amt,
       ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
       ...(showAccount ? { account_id: account } : {}),
+      ...(showFunding ? { funding_allocations: funding } : {}),
       ...(groupId != null ? { group_id: groupId } : {}),
     });
     setSaving(false);
@@ -43,6 +51,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     setFrequency('monthly');
     setStart('');
     setAccount(null);
+    setFundingSource('');
     setOpen(false);
   }
 
@@ -148,6 +157,31 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
           }}
         >
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+        </select>
+      )}
+      {showFunding && (accounts?.length || debts?.length) && (
+        <select
+          value={fundingSource}
+          onChange={(e) => setFundingSource(e.target.value)}
+          title="Paid from"
+          style={{
+            flex: '0 1 150px',
+            background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
+            padding: '6px 10px', fontSize: 13, fontFamily: 'inherit',
+          }}
+        >
+          <option value="">Primary account</option>
+          {accounts && accounts.length > 0 && (
+            <optgroup label="Accounts">
+              {accounts.map((a) => <option key={`a${a.id}`} value={`account:${a.id}`}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+            </optgroup>
+          )}
+          {debts && debts.length > 0 && (
+            <optgroup label="Credit cards">
+              {debts.map((d) => <option key={`d${d.id}`} value={`debt:${d.id}`}>{d.name}</option>)}
+            </optgroup>
+          )}
         </select>
       )}
       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
