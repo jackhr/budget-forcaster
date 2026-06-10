@@ -75,6 +75,10 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     || allocations.some((a) => a.alloc_type !== 'percent' || a.value !== 100);
   const singleSource = allocations.length === 1 ? allocations[0] : null;
   const payFromValue = singleSource && singleSource.source_id != null ? `${singleSource.source_type}:${singleSource.source_id}` : '';
+  // When paying from a card, show its available credit and any spill to cash.
+  const selectedCard = payFromValue.startsWith('debt:') ? debts?.find((d) => d.id === Number(payFromValue.slice(5))) : undefined;
+  const cardAvail = selectedCard?.available ?? null;
+  const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -367,6 +371,13 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                         </optgroup>
                       )}
                     </select>
+                    {selectedCard && cardAvail != null && (
+                      <p style={{ fontSize: 12, margin: 0, color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
+                        {cardSpill > 0.005
+                          ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} left — ${formatMoney(cardSpill)} of this ${formatMoney(amtNum || 0)} spills to primary cash.`
+                          : `${formatMoney(cardAvail)} available on this card.`}
+                      </p>
+                    )}
                     <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}>
                       Split or schedule…
                     </button>

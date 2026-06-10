@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { AllocationSourceType, Frequency, ItemFormData } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
+import { formatMoney } from '../lib/format';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
-interface NamedSource { id: number; name: string }
+interface NamedSource { id: number; name: string; available?: number | null }
 
 interface Props {
   onAdd: (data: ItemFormData) => Promise<void>;
@@ -28,6 +29,11 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const [saving, setSaving] = useState(false);
 
   const primaryId = accounts?.find((a) => a.is_primary)?.id ?? null;
+  // When funding from a card, warn if the amount exceeds its available credit.
+  const selectedCard = fundingSource.startsWith('debt:') ? debts?.find((d) => d.id === Number(fundingSource.slice(5))) : undefined;
+  const cardAvail = selectedCard?.available ?? null;
+  const amtNum = parseFloat(amount);
+  const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -200,6 +206,11 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
           ✕
         </button>
       </div>
+      {selectedCard && cardSpill > 0.005 && (
+        <p style={{ flexBasis: '100%', fontSize: 12, margin: 0, color: 'var(--color-expense)' }}>
+          ⚠ {selectedCard.name} has {formatMoney(cardAvail!)} left — {formatMoney(cardSpill)} of this {formatMoney(amtNum || 0)} spills to primary cash.
+        </p>
+      )}
     </form>
   );
 }

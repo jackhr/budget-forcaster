@@ -130,6 +130,10 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
 
   const recurring = frequency !== 'one-time';
   const amtNum = parseFloat(amount);
+  // When paying from a card, show its available credit and any spill to cash.
+  const selectedCard = payFromValue.startsWith('debt:') ? debts.find((d) => d.id === Number(payFromValue.slice(5))) : undefined;
+  const cardAvail = selectedCard?.available ?? null;
+  const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
   const endBeforeStart = recurring && !!end && end < start;
   const valid = name.trim().length > 0 && amtNum > 0 && !!start && !endBeforeStart;
   const debtFunded = [...allocations, ...fundingRules].some((a) => a.source_type === 'debt' && a.source_id != null && a.value > 0);
@@ -253,6 +257,13 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
                     </optgroup>
                   )}
                 </select>
+                {selectedCard && cardAvail != null && (
+                  <p style={{ fontSize: 12, margin: 0, color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
+                    {cardSpill > 0.005
+                      ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} left — ${formatMoney(cardSpill)} of this ${formatMoney(amtNum || 0)} spills to primary cash.`
+                      : `${formatMoney(cardAvail)} available on this card.`}
+                  </p>
+                )}
                 <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}>
                   Split or schedule…
                 </button>
