@@ -208,7 +208,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
       </div>
       {selectedCard && cardSpill > 0.005 && (
         <p style={{ flexBasis: '100%', fontSize: 12, margin: 0, color: 'var(--color-expense)' }}>
-          ⚠ {selectedCard.name} has {formatMoney(cardAvail!)} left — {formatMoney(cardSpill)} of this {formatMoney(amtNum || 0)} spills to primary cash.
+          ⚠ {selectedCard.name} has {formatMoney(cardAvail!)} left — {formatMoney(cardSpill)} of this {formatMoney(amtNum || 0)} is uncovered (no source).
         </p>
       )}
     </form>

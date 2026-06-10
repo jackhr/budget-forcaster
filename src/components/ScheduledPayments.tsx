@@ -260,7 +260,7 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
                 {selectedCard && cardAvail != null && (
                   <p style={{ fontSize: 12, margin: 0, color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
                     {cardSpill > 0.005
-                      ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} left — ${formatMoney(cardSpill)} of this ${formatMoney(amtNum || 0)} spills to primary cash.`
+                      ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} left — ${formatMoney(cardSpill)} of this ${formatMoney(amtNum || 0)} is uncovered (no source). Use “Split or schedule” to assign it.`
                       : `${formatMoney(cardAvail)} available on this card.`}
                   </p>
                 )}

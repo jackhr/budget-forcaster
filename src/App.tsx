@@ -75,7 +75,7 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const ep = buildExpensePlan(exp, accts, debts, months, infl);
   const charges = [...buildDebtCharges(pay, months), ...ep.charges];
   const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges);
-  const cashOut = plan.outflow.map((v, i) => Math.round((v + plan.chargeOverflow[i]) * 100) / 100);
+  const cashOut = plan.outflow.map((v) => Math.round(v * 100) / 100);
   const fc = buildForecast(inc, ep.ongoingCashOut, pay, cashOut, months);
   const sv = buildSavings(inc, ep.ongoingCashOut, pay, cashOut, months, start);
   const nw = buildNetWorth(sv, plan.remaining);
@@ -161,8 +161,10 @@ export default function App() {
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges);
-  // Charge overflow (over a card's limit, or aimed at a loan/unknown debt) is paid in cash.
-  const debtCashOut = plan.outflow.map((v, i) => Math.round((v + plan.chargeOverflow[i]) * 100) / 100);
+  // Cash out for debts = the actual payments. Charge overflow (the part of a card
+  // charge that exceeds its available credit, or a loan/unknown target) is NOT paid
+  // from cash — it's left uncovered and flagged below.
+  const debtCashOut = plan.outflow.map((v) => Math.round(v * 100) / 100);
   const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months);
   const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months, totalCash);
   const netWorth = buildNetWorth(savings, plan.remaining);
@@ -183,12 +185,8 @@ export default function App() {
   const primaryAccountId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const scheduledOutByAccount = buildScheduledOutByAccount(payments, accounts, months);
   const debtOutByAccount = buildDebtOutByAccount(debts, plan, accounts);
-  // Charge overflow (over-limit card excess, or loan/unknown targets) is paid from
-  // primary cash; attribute it there so the per-account series sum matches total savings.
-  if (primaryAccountId != null) {
-    const arr = debtOutByAccount.get(primaryAccountId);
-    if (arr) for (let i = 0; i < arr.length; i++) arr[i] = Math.round((arr[i] + plan.chargeOverflow[i]) * 100) / 100;
-  }
+  // Uncovered funding (the over-limit card excess) is not paid from any account, so
+  // nothing is attributed here — it shows up as a flag, not as cash leaving.
 
   // Combined overview series: monthly flows, balances, and future-expense totals.
   const futureBd = buildFutureExpenseBreakdown(payments, months);
@@ -229,14 +227,10 @@ export default function App() {
       // Re-run the cash pipeline with no future expenses (drops their cash draws
       // and any card charges they'd add to the debt plan).
       const planNF = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, expensePlan.charges);
-      const debtCashOutNF = planNF.outflow.map((v, i) => Math.round((v + planNF.chargeOverflow[i]) * 100) / 100);
+      const debtCashOutNF = planNF.outflow.map((v) => Math.round(v * 100) / 100);
       sav = buildSavings(incomeSources, expensePlan.ongoingCashOut, [], debtCashOutNF, months, totalCash);
       sched = buildScheduledOutByAccount([], accounts, months);
       debtOut = buildDebtOutByAccount(debts, planNF, accounts);
-      if (primaryAccountId != null) {
-        const arr = debtOut.get(primaryAccountId);
-        if (arr) for (let i = 0; i < arr.length; i++) arr[i] = Math.round((arr[i] + planNF.chargeOverflow[i]) * 100) / 100;
-      }
     }
     breakdown = buildAccountSeries(accounts, incomeSources, sav, expensePlan.outByAccount, sched, debtOut);
     breakdownTitle = 'Accounts Over Time';
@@ -291,6 +285,12 @@ export default function App() {
   // This month's outflow breakdown.
   const m0 = savings[0];
   const moneyOut = m0 ? m0.expenses + m0.scheduledOut + m0.debtOut : 0;
+
+  // Uncovered funding: card charges that exceed available credit aren't paid from
+  // anywhere — they're left floating until the user assigns a source.
+  const uncoveredThisMonth = plan.chargeOverflow[0] ?? 0;
+  const uncoveredMonths = plan.chargeOverflow.filter((v) => v > 0.005).length;
+  const uncoveredAny = uncoveredMonths > 0;
 
   // Duplicate-name detection across expense-like things.
   const nameCounts = new Map<string, number>();
@@ -550,6 +550,11 @@ export default function App() {
           <div style={{ background: '#3b2f12', border: '1px solid #854d0e', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#fde68a', flexBasis: '100%', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
             <span>⚠ Possible double-counting — the name{duplicates.length > 1 ? 's' : ''} “{duplicates.join('”, “')}” appear in more than one of Expenses / Future Expenses / Debts.</span>
             <button onClick={() => setDupDismissed(true)} style={{ background: 'transparent', color: '#fde68a' }}>dismiss</button>
+          </div>
+        )}
+        {!error && uncoveredAny && (
+          <div style={{ background: '#7f1d1d', border: '1px solid #991b1b', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#fca5a5', flexBasis: '100%' }}>
+            ⚠ Uncovered funding — {uncoveredThisMonth > 0.005 ? <><strong>{formatMoney(uncoveredThisMonth)}</strong> this month{uncoveredMonths > 1 ? ` (and ${uncoveredMonths - 1} more month${uncoveredMonths - 1 !== 1 ? 's' : ''})` : ''}</> : <><strong>{uncoveredMonths}</strong> month{uncoveredMonths !== 1 ? 's' : ''}</>} of card charges exceed available credit and aren't paid from anywhere. Lower the charge or assign another funding source.
           </div>
         )}
       </header>

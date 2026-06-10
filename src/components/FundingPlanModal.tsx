@@ -201,8 +201,8 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               <p style={{ fontSize: 12, color: overLimit(rule) ? 'var(--color-expense)' : 'var(--color-text-muted)', margin: 0 }}>
                 {overLimit(rule)
                   ? cardAlreadyOverLimit(rule)
-                    ? `⚠ Card is at its limit — this rule's ${formatMoney(ruleDollar(rule))} is paid from primary cash instead.`
-                    : `⚠ Card has ${formatMoney(cardAvailable(rule)!)} left — ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} of this ${formatMoney(ruleDollar(rule))} spills to primary cash.`
+                    ? `⚠ Card is at its limit — this rule's ${formatMoney(ruleDollar(rule))} is left uncovered (add another source).`
+                    : `⚠ Card has ${formatMoney(cardAvailable(rule)!)} left — ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} of this ${formatMoney(ruleDollar(rule))} is uncovered (add another source).`
                   : `${formatMoney(cardAvailable(rule)!)} available on this card.`}
               </p>
             )}
@@ -251,7 +251,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
         {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Use YYYY-MM, and make sure end is not before start.</p>}
         {cardSpill > 0.005 && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>
-            ⚠ {formatMoney(cardSpill)} per occurrence exceeds the card's available credit and is paid from primary cash instead.
+            ⚠ {formatMoney(cardSpill)} per occurrence exceeds the card's available credit and is left uncovered — add another rule to fund it.
           </p>
         )}
 

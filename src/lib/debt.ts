@@ -89,7 +89,7 @@ export interface DebtPlan {
   remainingByDebt: Map<number, number[]>; // per-debt remaining balance each month (for breakdown)
   payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
   overLimitByDebt: Map<number, number | null>; // debt id -> first month its balance exceeds its credit limit (null if never)
-  chargeOverflow: number[]; // charges that can't go on a card (a loan/unknown target) -> spill to cash
+  chargeOverflow: number[]; // per month, charge $ that didn't fit on a card (over limit) or hit a loan/unknown target -> left UNCOVERED (not paid from cash)
   totalInterest: number;
   debtFreeMonthIndex: number | null; // when the last debt clears
 }
@@ -166,7 +166,8 @@ export function simulateDebtPlan(
 
     // Apply this month's charges (obligations billed to a card). Hard cap: a card
     // only absorbs up to its available credit; the excess (and any loan/unknown
-    // target's charge) spills to cash so the card can't run away past its limit.
+    // target's charge) is left uncovered (chargeOverflow) — not paid from cash — so
+    // the card can't run away past its limit and the gap is surfaced as a flag.
     for (const c of chargesByMonth.get(m) ?? []) {
       const st = stateById.get(c.debtId);
       if (!st || !st.chargeable) { chargeOverflow[m] += c.amount; continue; }
