@@ -4,6 +4,8 @@ import { summarizeDebt, type DebtPlan, type DebtStrategy } from '../lib/debt';
 import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
 import { useCollapsedGroup } from '../lib/useCollapsedGroup';
+import { useCollapsed } from '../lib/useCollapsed';
+import CollapseToggle from './CollapseToggle';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
@@ -464,6 +466,7 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
   const baseFree = basePlan.debtFreeMonthIndex;
   const planFree = plan.debtFreeMonthIndex;
   const monthsSaved = baseFree != null && planFree != null ? baseFree - planFree : null;
+  const { collapsed, toggle } = useCollapsed('debts');
 
   return (
     <div style={{
@@ -472,12 +475,15 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
       borderRadius: 'var(--radius)',
       padding: '20px',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-        <div>
-          <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Debts</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
-            Loans &amp; credit cards — payments stop automatically at payoff and free up cash
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: collapsed ? 0 : 16, flexWrap: 'wrap', gap: 8 }}>
+        <div onClick={toggle} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggle} label="Debts" />
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Debts</h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
+              Loans &amp; credit cards — payments stop automatically at payoff and free up cash
+            </p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 20, textAlign: 'right' }}>
           <div>
@@ -491,6 +497,7 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
         </div>
       </div>
 
+      {!collapsed && (<>
       {/* Payoff plan */}
       {hasDebts && (
         <div style={{
@@ -564,6 +571,7 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <AddGroupInline onAddGroup={onAddGroup} />
       </div>
+      </>)}
 
       {adding && (
         <DebtEditor

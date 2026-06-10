@@ -3,6 +3,8 @@ import type { GroupKind, ItemFormData, LineItem, LineItemGroup } from '../types'
 import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
 import { useCollapsedGroup } from '../lib/useCollapsedGroup';
+import { useCollapsed } from '../lib/useCollapsed';
+import CollapseToggle from './CollapseToggle';
 import LineItemRow from './LineItemRow';
 import AddItemForm from './AddItemForm';
 import ConfirmButton from './ConfirmButton';
@@ -243,6 +245,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
 
   const dnd = useDnd<LineItem>(items, onReorder, (a, b) => a.group_id === b.group_id);
   const groupDnd = useDnd<LineItemGroup>(myGroups, onReorderGroup);
+  const { collapsed, toggle } = useCollapsed(`section-${kind}`);
 
   return (
     <div style={{
@@ -253,16 +256,19 @@ export default function LineItemTable({ title, description, items, accentColor, 
       display: 'flex',
       flexDirection: 'column',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: '16px', fontWeight: 600 }}>{title}</h2>
-          {description && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>{description}</p>
-          )}
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
-            {items.length} item{items.length !== 1 ? 's' : ''}
-            {myGroups.length > 0 ? ` · ${myGroups.length} group${myGroups.length !== 1 ? 's' : ''}` : ''}
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: collapsed ? 0 : 16 }}>
+        <div onClick={toggle} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggle} label={title} />
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: 600 }}>{title}</h2>
+            {description && (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>{description}</p>
+            )}
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
+              {items.length} item{items.length !== 1 ? 's' : ''}
+              {myGroups.length > 0 ? ` · ${myGroups.length} group${myGroups.length !== 1 ? 's' : ''}` : ''}
+            </p>
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{totalLabel}</div>
@@ -270,6 +276,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
         </div>
       </div>
 
+      {!collapsed && (<>
       <ColumnHeader amountLabel={amountLabel} />
 
       {/* Grouped sections */}
@@ -336,6 +343,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <AddGroup accentColor={accentColor} onAddGroup={onAddGroup} />
       </div>
+      </>)}
     </div>
   );
 }

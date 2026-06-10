@@ -5,6 +5,8 @@ import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
+import { useCollapsed } from '../lib/useCollapsed';
+import CollapseToggle from './CollapseToggle';
 
 interface NamedSource { id: number; name: string; group_id: number | null; available?: number | null }
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
@@ -255,6 +257,7 @@ export default function ScheduledPayments({ payments, accounts, debts, onAdd, on
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const editingPayment = payments.find((p) => p.id === editingId) ?? null;
+  const { collapsed, toggle } = useCollapsed('future-expenses');
 
   return (
     <div style={{
@@ -263,12 +266,15 @@ export default function ScheduledPayments({ payments, accounts, debts, onAdd, on
       borderRadius: 'var(--radius)',
       padding: '20px',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Future Expenses</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
-            Costs that start on a future date — one-off or recurring. Unlike Expenses (which run now), these kick in later.
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: collapsed ? 0 : 16 }}>
+        <div onClick={toggle} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggle} label="Future Expenses" />
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Future Expenses</h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
+              Costs that start on a future date — one-off or recurring. Unlike Expenses (which run now), these kick in later.
+            </p>
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Items</div>
@@ -276,6 +282,7 @@ export default function ScheduledPayments({ payments, accounts, debts, onAdd, on
         </div>
       </div>
 
+      {!collapsed && (<>
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 110px 1.2fr 96px',
@@ -348,6 +355,7 @@ export default function ScheduledPayments({ payments, accounts, debts, onAdd, on
       >
         + Add Future Expense
       </button>
+      </>)}
 
       {adding && (
         <PaymentEditor

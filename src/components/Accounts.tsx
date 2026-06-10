@@ -2,8 +2,10 @@ import { useState } from 'react';
 import type { Account } from '../types';
 import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
+import { useCollapsed } from '../lib/useCollapsed';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
+import CollapseToggle from './CollapseToggle';
 
 interface AccountInput { name: string; balance: number; is_primary?: 0 | 1 }
 
@@ -71,15 +73,19 @@ export default function Accounts({ accounts, onAdd, onUpdate, onDelete, onMakePr
   const editing = accounts.find((a) => a.id === editingId) ?? null;
   const dnd = useDnd<Account>(accounts, onReorder);
   const total = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const { collapsed, toggle } = useCollapsed('accounts');
 
   return (
     <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Accounts</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
-            Cash &amp; savings piles. Income lands in its account; the ★ primary account pays the bills.
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: collapsed ? 0 : 16, flexWrap: 'wrap', gap: 8 }}>
+        <div onClick={toggle} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggle} label="Accounts" />
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 600 }}>Accounts</h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
+              Cash &amp; savings piles. Income lands in its account; the ★ primary account pays the bills.
+            </p>
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Cash</div>
@@ -87,6 +93,7 @@ export default function Accounts({ accounts, onAdd, onUpdate, onDelete, onMakePr
         </div>
       </div>
 
+      {!collapsed && (<>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {accounts.map((a) => (
           <div
@@ -121,6 +128,7 @@ export default function Accounts({ accounts, onAdd, onUpdate, onDelete, onMakePr
       >
         + Add Account
       </button>
+      </>)}
 
       {adding && (
         <AccountEditor

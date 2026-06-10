@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
-import { plaidApi, type PlaidAccount, type PlaidStatus } from '../api/client';
+import { plaidApi, type PlaidAccount, type PlaidItem, type PlaidStatus } from '../api/client';
 import { formatMoney } from '../lib/format';
+import { useCollapsed } from '../lib/useCollapsed';
 import { useToast } from './Toast';
 import ConfirmButton from './ConfirmButton';
+import CollapseToggle from './CollapseToggle';
 
 interface Props {
   onImported: () => void; // reload app accounts after import
@@ -18,6 +20,7 @@ export default function PlaidConnect({ onImported }: Props) {
   const [busy, setBusy] = useState(false);
   // null = idle, '__all__' = syncing everything, otherwise the item_id being synced.
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const { collapsed: sectionCollapsed, toggle: toggleSection } = useCollapsed('connect-bank');
 
   // Only not-yet-imported, selected accounts can be imported.
   const importCount = accounts.filter((a) => selected.has(a.account_id) && !a.imported).length;
@@ -141,50 +144,39 @@ export default function PlaidConnect({ onImported }: Props) {
 
   return (
     <div style={card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Connect a bank <Badge>Plaid {env}</Badge></h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
-            {isProd
-              ? 'Pull live balances from your real bank and import them as accounts.'
-              : <>Pull real (sandbox) balances and import them as accounts. Use Plaid’s test login (e.g. <code>user_good</code> / <code>pass_good</code>).</>}
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: sectionCollapsed ? 0 : 12 }}>
+        <div onClick={toggleSection} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+          <CollapseToggle collapsed={sectionCollapsed} onToggle={toggleSection} label="Connect a bank" />
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 600 }}>Connect a bank <Badge>Plaid {env}</Badge></h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
+              {isProd
+                ? 'Pull live balances from your real bank and import them as accounts.'
+                : <>Pull real (sandbox) balances and import them as accounts. Use Plaid’s test login (e.g. <code>user_good</code> / <code>pass_good</code>).</>}
+            </p>
+          </div>
         </div>
         <button onClick={connect} disabled={busy} style={{ background: 'var(--color-primary)', color: '#fff', padding: '8px 16px', fontSize: 13, fontWeight: 600 }}>
           {busy ? '…' : '+ Connect bank'}
         </button>
       </div>
 
+      {!sectionCollapsed && (<>
       {status?.items.length ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {status.items.map((it) => {
-            const itemAccounts = accounts.filter((a) => a.item_id === it.item_id);
-            const hasImported = itemAccounts.some((a) => a.imported);
-            return (
-              <div key={it.id} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 13, background: 'var(--color-surface-2)', padding: '8px 12px' }}>
-                  <span style={{ fontWeight: 600 }}>🏦 {it.institution_name ?? 'Linked institution'}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {hasImported && (
-                      <button onClick={() => resync(it.item_id)} disabled={syncingId != null} title="Update this bank's imported balances" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
-                        {syncingId === it.item_id ? 'Syncing…' : '↻ Sync'}
-                      </button>
-                    )}
-                    <ConfirmButton onConfirm={() => removeItem(it.id)} title={`Unlink ${it.institution_name ?? 'institution'}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px', fontSize: 12 }}>Unlink</ConfirmButton>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 8 }}>
-                  {itemAccounts.length === 0 ? (
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: 12.5, padding: '4px 6px' }}>No accounts found for this login.</p>
-                  ) : (
-                    itemAccounts.map((a) => (
-                      <AccountRow key={a.account_id} a={a} selected={selected.has(a.account_id)} onToggle={() => toggle(a.account_id)} />
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {status.items.map((it) => (
+            <InstitutionBlock
+              key={it.id}
+              item={it}
+              itemAccounts={accounts.filter((a) => a.item_id === it.item_id)}
+              selected={selected}
+              onToggleSelect={toggle}
+              onResync={() => resync(it.item_id)}
+              onUnlink={() => removeItem(it.id)}
+              syncing={syncingId === it.item_id}
+              syncingAny={syncingId != null}
+            />
+          ))}
         </div>
       ) : null}
 
@@ -198,6 +190,51 @@ export default function PlaidConnect({ onImported }: Props) {
           <button onClick={importSelected} disabled={importCount === 0} style={{ background: 'var(--color-income)', color: '#04210f', padding: '8px 16px', fontSize: 13, fontWeight: 700 }}>
             Import {importCount} item{importCount !== 1 ? 's' : ''}
           </button>
+        </div>
+      )}
+      </>)}
+    </div>
+  );
+}
+
+function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResync, onUnlink, syncing, syncingAny }: {
+  item: PlaidItem;
+  itemAccounts: PlaidAccount[];
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onResync: () => void;
+  onUnlink: () => void;
+  syncing: boolean;
+  syncingAny: boolean;
+}) {
+  const { collapsed, toggle } = useCollapsed(`plaid-item-${item.item_id}`);
+  const hasImported = itemAccounts.some((a) => a.imported);
+  return (
+    <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 13, background: 'var(--color-surface-2)', padding: '8px 12px' }}>
+        <div onClick={toggle} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', minWidth: 0 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggle} label={item.institution_name ?? 'institution'} />
+          <span style={{ fontWeight: 600 }}>🏦 {item.institution_name ?? 'Linked institution'}</span>
+          <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>· {itemAccounts.length} account{itemAccounts.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {hasImported && (
+            <button onClick={onResync} disabled={syncingAny} title="Update this bank's imported balances" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
+              {syncing ? 'Syncing…' : '↻ Sync'}
+            </button>
+          )}
+          <ConfirmButton onConfirm={onUnlink} title={`Unlink ${item.institution_name ?? 'institution'}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px', fontSize: 12 }}>Unlink</ConfirmButton>
+        </div>
+      </div>
+      {!collapsed && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 8 }}>
+          {itemAccounts.length === 0 ? (
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 12.5, padding: '4px 6px' }}>No accounts found for this login.</p>
+          ) : (
+            itemAccounts.map((a) => (
+              <AccountRow key={a.account_id} a={a} selected={selected.has(a.account_id)} onToggle={() => onToggleSelect(a.account_id)} />
+            ))
+          )}
         </div>
       )}
     </div>
