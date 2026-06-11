@@ -11,8 +11,7 @@ interface Props {
   children?: React.ReactNode; // extra actions (Toolbar) shown below the nav
 }
 
-// Hamburger button + slide-in drawer for narrow screens. Holds the page nav
-// and any extra actions passed as children.
+// Hamburger button + slide-in drawer. Holds the page nav and extra actions.
 export default function NavMenu({ tabs, current, onSelect, open, onOpenChange, children }: Props) {
   useEffect(() => {
     if (!open) return;

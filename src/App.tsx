@@ -18,7 +18,6 @@ import PlaidConnect from './components/PlaidConnect';
 import HeaderControls from './components/HeaderControls';
 import Toolbar from './components/Toolbar';
 import NavMenu from './components/NavMenu';
-import { useMediaQuery } from './lib/useMediaQuery';
 import type { PayoffMarker } from './components/NetWorthChart';
 
 // Charts pull in Recharts (~the bulk of the bundle) — load them on demand.
@@ -117,7 +116,6 @@ export default function App() {
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const isNarrow = useMediaQuery('(max-width: 760px)');
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => { localStorage.setItem('bf.months', String(months)); }, [months]);
@@ -126,7 +124,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
   useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
   useEffect(() => { localStorage.setItem('bf.activityMonth', String(activityMonth)); }, [activityMonth]);
-  useEffect(() => { if (!isNarrow) setMenuOpen(false); }, [isNarrow]);
   useEffect(() => { if (startMonth >= months) setStartMonth(Math.max(0, months - 1)); }, [startMonth, months]);
 
   const changeStartMonth = (value: number) => setStartMonth(Math.max(0, Math.min(value, months - 1)));
@@ -502,22 +499,7 @@ export default function App() {
     );
   }
 
-  const tabBtn = (id: Tab, label: string) => (
-    <button
-      onClick={() => setTab(id)}
-      style={{
-        background: tab === id ? 'var(--color-surface-2)' : 'transparent',
-        color: tab === id ? 'var(--color-text)' : 'var(--color-text-muted)',
-        border: `1px solid ${tab === id ? 'var(--color-border)' : 'transparent'}`,
-        padding: '7px 14px', fontWeight: 600, fontSize: 13,
-      }}
-    >
-      {label}
-    </button>
-  );
-
-  // Scenarios + export/import. Lives in the toolbar on wide screens, and inside
-  // the hamburger menu on narrow ones.
+  // Scenarios + export/import live inside the navigation drawer.
   const toolbar = (
     <Toolbar
       scenarios={scenarios}
@@ -535,7 +517,7 @@ export default function App() {
     <div style={{ minHeight: '100vh', padding: '0 0 60px' }}>
       <header style={{
         background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)',
-        padding: '10px 24px', minHeight: 60, display: 'flex', alignItems: 'center',
+        padding: '10px 84px 10px 24px', minHeight: 60, display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -554,21 +536,17 @@ export default function App() {
             inflation={inflation}
             onInflationChange={changeInflation}
           />
-          {isNarrow ? (
-            <NavMenu
-              tabs={TABS.map(([id, label]) => ({ id, label }))}
-              current={tab}
-              onSelect={(id) => setTab(id as Tab)}
-              open={menuOpen}
-              onOpenChange={setMenuOpen}
-            >
-              {toolbar}
-            </NavMenu>
-          ) : (
-            <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
-              {TABS.map(([id, label]) => tabBtn(id, label))}
-            </div>
-          )}
+        </div>
+        <div style={{ position: 'absolute', top: 12, right: 24 }}>
+          <NavMenu
+            tabs={TABS.map(([id, label]) => ({ id, label }))}
+            current={tab}
+            onSelect={(id) => setTab(id as Tab)}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+          >
+            {toolbar}
+          </NavMenu>
         </div>
 
         {error && (
@@ -590,8 +568,6 @@ export default function App() {
       </header>
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: 'clamp(16px, 3vw, 28px)', display: 'flex', flexDirection: 'column', gap: 24 }}>
-        {!isNarrow && toolbar}
-
         {tab === 'forecast' && (
           <>
             <SummaryCards data={forecast} />
