@@ -666,6 +666,7 @@ export default function App() {
           const shared = {
             entities, selected: sel, onSelect: setActiveEntity,
             month: activityMonth, onMonthChange: (value: number) => setActivityMonth(Math.max(0, Math.min(119, value))),
+            paidIds: paidThisMonth,
           };
           if (kind === 'debt') {
             const debt = debts.find((d) => d.id === id)!;
@@ -673,7 +674,7 @@ export default function App() {
             const sub = `${debt.apr}% APR${debt.credit_limit != null ? ` · ${formatMoney(debt.credit_limit, { whole: true })} limit` : ''}`;
             return (
               <Suspense fallback={<ChartFallback />}>
-                <AccountActivity {...shared} entityKind="debt" balance={debt.balance} balanceSub={sub} activity={activity} />
+                <AccountActivity {...shared} entityKind="debt" balance={debt.balance} balanceSub={sub} activity={activity} paid={isPaidThisMonth(debt)} onTogglePaid={() => togglePaid(debt)} />
               </Suspense>
             );
           }
@@ -719,6 +720,7 @@ export default function App() {
                 creditLimits={breakdownSection === 'debt'
                   ? new Map(debts.filter((d) => d.debt_type !== 'loan' && d.credit_limit != null).map((d) => [d.id, d.credit_limit as number]))
                   : undefined}
+                paidIds={breakdownSection === 'debt' ? paidThisMonth : undefined}
               />
             </Suspense>
           </>

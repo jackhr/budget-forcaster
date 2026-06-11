@@ -23,6 +23,7 @@ interface Props {
   futureBarsActive?: boolean;    // colored when active, greyed when off
   debtMonthInfo?: DebtMonthInfo; // per-debt charges + payment each month (Debt Breakdown tooltip)
   creditLimits?: Map<number, number>; // debt id -> credit limit (Debt Breakdown — toggleable lines)
+  paidIds?: Set<number>;         // debt ids paid this month (Debt Breakdown — mark the chips)
 }
 
 // Renders the future-expense name above its bar (Savings-chart style).
@@ -94,7 +95,7 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
   );
 }
 
-export default function BreakdownChart({ title, subtitle, breakdown, startMonth, months, onStartMonthChange, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo, creditLimits }: Props) {
+export default function BreakdownChart({ title, subtitle, breakdown, startMonth, months, onStartMonthChange, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo, creditLimits, paidIds }: Props) {
   const { labels, total, series } = breakdown;
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [showLimits, setShowLimits] = useState(false);
@@ -121,9 +122,9 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
     return next;
   });
 
-  const chips: { key: string; name: string; color: string }[] = [
+  const chips: { key: string; name: string; color: string; paid?: boolean }[] = [
     { key: TOTAL_KEY, name: 'Total', color: TOTAL_COLOR },
-    ...series.map((s, i) => ({ key: `k${s.id}`, name: s.name, color: colorOf(i) })),
+    ...series.map((s, i) => ({ key: `k${s.id}`, name: s.name, color: colorOf(i), paid: paidIds?.has(s.id) })),
   ];
   const anyHidden = hidden.size > 0;
 
@@ -163,6 +164,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
                 >
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color === TOTAL_COLOR ? 'var(--color-text)' : c.color, flexShrink: 0 }} />
                   {c.name}
+                  {c.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', fontWeight: 700 }}>✓</span>}
                 </button>
               );
             })}

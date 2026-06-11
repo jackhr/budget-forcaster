@@ -15,6 +15,9 @@ interface Props {
   activity: AccountActivity;
   month: number;
   onMonthChange: (m: number) => void;
+  paid?: boolean;              // selected debt: paid this month?
+  onTogglePaid?: () => void;
+  paidIds?: Set<number>;       // debt ids paid this month (to mark the dropdown)
 }
 
 const KIND_META: Record<AccountActivityItem['kind'], { label: string; color: string }> = {
@@ -75,7 +78,7 @@ function Section({ items, cost, empty }: { items: AccountActivityItem[]; cost: b
   );
 }
 
-export default function AccountActivity({ entities, selected, onSelect, entityKind, balance, balanceSub, activity, month, onMonthChange }: Props) {
+export default function AccountActivity({ entities, selected, onSelect, entityKind, balance, balanceSub, activity, month, onMonthChange, paid, onTogglePaid, paidIds }: Props) {
   const isDebt = entityKind === 'debt';
   const monthlyIn = activity.inByMonth[0] ?? 0;
   const monthlyOut = activity.outByMonth[0] ?? 0;
@@ -118,10 +121,24 @@ export default function AccountActivity({ entities, selected, onSelect, entityKi
               )}
               {debts.length > 0 && (
                 <optgroup label="Debts">
-                  {debts.map((d) => <option key={`d${d.id}`} value={`debt:${d.id}`}>{d.name}</option>)}
+                  {debts.map((d) => <option key={`d${d.id}`} value={`debt:${d.id}`}>{d.name}{paidIds?.has(d.id) ? ' ✓ paid' : ''}</option>)}
                 </optgroup>
               )}
             </select>
+            {isDebt && onTogglePaid && (
+              <button
+                onClick={onTogglePaid}
+                title={paid ? 'Paid this month — this month’s payment is excluded from the forecast. Click to mark unpaid.' : 'Not paid this month — click to mark paid (skips this month’s payment).'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 'var(--radius-sm)', whiteSpace: 'nowrap',
+                  background: paid ? 'var(--color-surface-2)' : 'transparent',
+                  color: paid ? 'var(--color-income)' : 'var(--color-text-muted)',
+                  border: `1px solid ${paid ? 'var(--color-income)' : 'var(--color-border)'}`,
+                }}
+              >
+                {paid ? '✓ Paid this month' : 'Mark paid'}
+              </button>
+            )}
           </div>
           <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 4 }}>
             {isDebt ? 'What grows this debt (charges + interest) and what pays it down' : 'What flows in and out of this account, when, and how it’s funded'}
