@@ -83,6 +83,13 @@ export interface Debt {
   account_id: number | null; // account that pays this debt; null = primary
   funding_allocations: ExpenseAllocation[]; // split account funding for debt payments; empty = legacy account_id
   funding_rules: FundingRule[]; // scheduled account funding plan; empty = use funding_allocations/account_id
+  last_statement_balance?: number | null;
+  last_statement_issue_date?: string | null;
+  next_payment_due_date?: string | null;
+  last_payment_amount?: number | null;
+  last_payment_date?: string | null;
+  is_overdue?: 0 | 1 | null;
+  plaid_aprs?: string;
   created_at: string;
   updated_at: string;
 }

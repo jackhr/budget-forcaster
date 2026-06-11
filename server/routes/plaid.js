@@ -15,7 +15,9 @@ function requireClient(res) {
 
 // Whether Plaid is configured + which institutions are linked (no secrets exposed).
 router.get('/status', (req, res) => {
-  const items = db.prepare('SELECT id, item_id, institution_name, created_at FROM plaid_items ORDER BY created_at ASC').all();
+  const items = db.prepare(
+    'SELECT id, item_id, institution_name, liabilities_synced_at, liabilities_consent_required, created_at FROM plaid_items ORDER BY created_at ASC'
+  ).all();
   res.json({ configured: isConfigured(), env: PLAID_ENV, items });
 });
 
@@ -28,6 +30,7 @@ router.post('/create_link_token', async (req, res) => {
       user: { client_user_id: 'local-user' },
       client_name: 'Budget Forecaster',
       products: ['transactions'],
+      additional_consented_products: ['liabilities'],
       country_codes: ['US'],
       language: 'en',
     });
@@ -69,21 +72,128 @@ router.post('/exchange_public_token', async (req, res) => {
   }
 });
 
+// Existing Items need a Link update flow to collect consent for Liabilities.
+router.post('/items/:id/liabilities_link_token', async (req, res) => {
+  const client = requireClient(res);
+  if (!client) return;
+  const item = db.prepare('SELECT * FROM plaid_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  try {
+    const resp = await client.linkTokenCreate({
+      user: { client_user_id: 'local-user' },
+      client_name: 'Budget Forecaster',
+      access_token: item.access_token,
+      additional_consented_products: ['liabilities'],
+      country_codes: ['US'],
+      language: 'en',
+    });
+    res.json({ link_token: resp.data.link_token });
+  } catch (e) {
+    res.status(502).json({ error: plaidError(e) });
+  }
+});
+
 // Account balances are cached and refreshed from Plaid at most every 5 minutes,
 // in the background — the request serves the cache and never blocks on Plaid
 // (except the very first time, when there's nothing cached yet).
 const ACCOUNTS_TTL_MS = 5 * 60 * 1000;
+const LIABILITIES_TTL_MS = 24 * 60 * 60 * 1000;
 
 const upsertAccount = db.prepare(`
   INSERT INTO plaid_accounts
-    (account_id, item_id, institution_name, name, official_name, mask, type, subtype, current, available, credit_limit, currency, updated_at)
-  VALUES (@account_id, @item_id, @institution_name, @name, @official_name, @mask, @type, @subtype, @current, @available, @credit_limit, @currency, datetime('now'))
+    (account_id, item_id, institution_name, name, official_name, mask, type, subtype, current, available, credit_limit, currency,
+     apr, minimum_payment_amount, last_statement_balance, last_statement_issue_date, next_payment_due_date,
+     last_payment_amount, last_payment_date, is_overdue, aprs, updated_at)
+  VALUES (@account_id, @item_id, @institution_name, @name, @official_name, @mask, @type, @subtype, @current, @available, @credit_limit, @currency,
+          @apr, @minimum_payment_amount, @last_statement_balance, @last_statement_issue_date, @next_payment_due_date,
+          @last_payment_amount, @last_payment_date, @is_overdue, @aprs, datetime('now'))
   ON CONFLICT(account_id) DO UPDATE SET
     item_id = excluded.item_id, institution_name = excluded.institution_name, name = excluded.name,
     official_name = excluded.official_name, mask = excluded.mask, type = excluded.type, subtype = excluded.subtype,
     current = excluded.current, available = excluded.available, credit_limit = excluded.credit_limit,
-    currency = excluded.currency, updated_at = datetime('now')
+    currency = excluded.currency, apr = excluded.apr, minimum_payment_amount = excluded.minimum_payment_amount,
+    last_statement_balance = excluded.last_statement_balance, last_statement_issue_date = excluded.last_statement_issue_date,
+    next_payment_due_date = excluded.next_payment_due_date, last_payment_amount = excluded.last_payment_amount,
+    last_payment_date = excluded.last_payment_date, is_overdue = excluded.is_overdue, aprs = excluded.aprs,
+    updated_at = datetime('now')
 `);
+
+function numberOrNull(value) {
+  if (value == null || value === '') return null;
+  return Number.isFinite(Number(value)) ? Number(value) : null;
+}
+
+function preferredApr(aprs) {
+  if (!Array.isArray(aprs) || aprs.length === 0) return null;
+  const purchase = aprs.find((a) => a.apr_type === 'purchase_apr');
+  return numberOrNull((purchase ?? aprs[0]).apr_percentage);
+}
+
+function liabilityDetails(data) {
+  const map = new Map();
+  const put = (accountId, details) => { if (accountId) map.set(accountId, { ...emptyLiability(), ...details }); };
+  for (const c of data?.liabilities?.credit ?? []) {
+    put(c.account_id, {
+      apr: preferredApr(c.aprs),
+      minimum_payment_amount: numberOrNull(c.minimum_payment_amount),
+      last_statement_balance: numberOrNull(c.last_statement_balance),
+      last_statement_issue_date: c.last_statement_issue_date ?? null,
+      next_payment_due_date: c.next_payment_due_date ?? null,
+      last_payment_amount: numberOrNull(c.last_payment_amount),
+      last_payment_date: c.last_payment_date ?? null,
+      is_overdue: c.is_overdue == null ? null : (c.is_overdue ? 1 : 0),
+      aprs: JSON.stringify(c.aprs ?? []),
+    });
+  }
+  for (const s of data?.liabilities?.student ?? []) {
+    put(s.account_id, {
+      apr: numberOrNull(s.interest_rate_percentage),
+      minimum_payment_amount: numberOrNull(s.minimum_payment_amount),
+      next_payment_due_date: s.next_payment_due_date ?? null,
+      last_payment_amount: numberOrNull(s.last_payment_amount),
+      last_payment_date: s.last_payment_date ?? null,
+      last_statement_issue_date: s.last_statement_issue_date ?? null,
+      is_overdue: s.is_overdue == null ? null : (s.is_overdue ? 1 : 0),
+      aprs: '[]',
+    });
+  }
+  for (const m of data?.liabilities?.mortgage ?? []) {
+    put(m.account_id, {
+      apr: numberOrNull(m.interest_rate?.percentage),
+      minimum_payment_amount: numberOrNull(m.next_monthly_payment),
+      next_payment_due_date: m.next_payment_due_date ?? null,
+      last_payment_amount: numberOrNull(m.last_payment_amount),
+      last_payment_date: m.last_payment_date ?? null,
+      aprs: '[]',
+    });
+  }
+  return map;
+}
+
+function emptyLiability() {
+  return {
+    apr: null, minimum_payment_amount: null, last_statement_balance: null, last_statement_issue_date: null,
+    next_payment_due_date: null, last_payment_amount: null, last_payment_date: null, is_overdue: null, aprs: '[]',
+  };
+}
+
+async function fetchLiabilities(client, item) {
+  try {
+    const resp = await client.liabilitiesGet({ access_token: item.access_token });
+    db.prepare(
+      "UPDATE plaid_items SET liabilities_synced_at = datetime('now'), liabilities_consent_required = 0 WHERE id = ?"
+    ).run(item.id);
+    return liabilityDetails(resp.data);
+  } catch (e) {
+    const code = e?.response?.data?.error_code;
+    if (code === 'ADDITIONAL_CONSENT_REQUIRED') {
+      db.prepare('UPDATE plaid_items SET liabilities_consent_required = 1 WHERE id = ?').run(item.id);
+    } else if (!['PRODUCT_NOT_ENABLED', 'PRODUCTS_NOT_SUPPORTED', 'PRODUCT_NOT_READY'].includes(code)) {
+      console.error(`Plaid liabilities refresh failed for ${item.item_id}:`, plaidError(e));
+    }
+    return null;
+  }
+}
 
 function serializeAccount(r, imported = false) {
   return {
@@ -99,6 +209,9 @@ function serializeAccount(r, imported = false) {
     available: r.available,
     limit: r.credit_limit,
     currency: r.currency,
+    apr: r.apr,
+    minimum_payment_amount: r.minimum_payment_amount,
+    next_payment_due_date: r.next_payment_due_date,
     imported,
   };
 }
@@ -133,8 +246,14 @@ function accountsStale() {
   });
 }
 
+function liabilitiesStale(item) {
+  if (!item.liabilities_synced_at) return true;
+  const t = new Date(item.liabilities_synced_at.replace(' ', 'T') + 'Z').getTime();
+  return Date.now() - t > LIABILITIES_TTL_MS;
+}
+
 let accountsRefreshing = false;
-async function refreshAccountsCache(client, itemId = null) {
+async function refreshAccountsCache(client, itemId = null, forceLiabilities = false) {
   if (accountsRefreshing) return; // collapse concurrent refreshes
   accountsRefreshing = true;
   try {
@@ -143,10 +262,29 @@ async function refreshAccountsCache(client, itemId = null) {
       : db.prepare('SELECT * FROM plaid_items').all();
     for (const item of items) {
       const resp = await client.accountsBalanceGet({ access_token: item.access_token });
+      const shouldFetchLiabilities = liabilitiesStale(item)
+        && (forceLiabilities || !item.liabilities_consent_required);
+      const liabilities = shouldFetchLiabilities ? await fetchLiabilities(client, item) : null;
+      const existingLiabilities = new Map(
+        db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ?').all(item.item_id).map((a) => [a.account_id, {
+          apr: a.apr,
+          minimum_payment_amount: a.minimum_payment_amount,
+          last_statement_balance: a.last_statement_balance,
+          last_statement_issue_date: a.last_statement_issue_date,
+          next_payment_due_date: a.next_payment_due_date,
+          last_payment_amount: a.last_payment_amount,
+          last_payment_date: a.last_payment_date,
+          is_overdue: a.is_overdue,
+          aprs: a.aprs ?? '[]',
+        }]),
+      );
       const apply = db.transaction(() => {
         // Replace this item's rows so removed accounts drop out of the cache.
         db.prepare('DELETE FROM plaid_accounts WHERE item_id = ?').run(item.item_id);
         for (const a of resp.data.accounts) {
+          const liability = liabilities
+            ? (liabilities.get(a.account_id) ?? emptyLiability())
+            : (existingLiabilities.get(a.account_id) ?? emptyLiability());
           upsertAccount.run({
             account_id: a.account_id,
             item_id: item.item_id,
@@ -160,6 +298,7 @@ async function refreshAccountsCache(client, itemId = null) {
             available: a.balances.available ?? null,
             credit_limit: a.balances.limit ?? null,
             currency: a.balances.iso_currency_code ?? null,
+            ...liability,
           });
         }
       });
@@ -314,6 +453,12 @@ function destinationFor(type) {
   return 'account';
 }
 
+function dueDay(date) {
+  if (!date) return null;
+  const day = Number(String(date).slice(8, 10));
+  return Number.isInteger(day) && day >= 1 && day <= 31 ? day : null;
+}
+
 // Import selected Plaid accounts, routing each by its type:
 // depository/investment -> accounts (cash); credit/loan -> debts.
 router.post('/import_accounts', async (req, res) => {
@@ -325,7 +470,11 @@ router.post('/import_accounts', async (req, res) => {
     const hasPrimary = db.prepare('SELECT COUNT(*) AS c FROM accounts WHERE is_primary = 1').get().c > 0;
     const insertAccount = db.prepare('INSERT INTO accounts (name, balance, is_primary, plaid_account_id) VALUES (?, ?, ?, ?)');
     const insertDebt = db.prepare(
-      'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, debt_type, payment_day, plaid_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      `INSERT INTO debts
+       (name, balance, apr, credit_limit, monthly_payment, debt_type, payment_day, plaid_account_id,
+        last_statement_balance, last_statement_issue_date, next_payment_due_date, last_payment_amount,
+        last_payment_date, is_overdue, plaid_aprs)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const { byId, byName } = importedSets();
     let madePrimary = hasPrimary;
@@ -348,9 +497,14 @@ router.post('/import_accounts', async (req, res) => {
         // Plaid reports the owed amount as a positive `current` for credit/loan.
         const balance = Math.max(0, Number(s.balance) || 0);
         const limit = dest === 'credit_card' && Number.isFinite(Number(s.credit_limit)) ? Number(s.credit_limit) : null;
-        // APR + minimum payment need the `liabilities` product; default to 0 so the
-        // user can fill them in. Balance/limit are enough to track utilization.
-        insertDebt.run(name, balance, 0, limit, 0, dest, null, plaidId);
+        const liability = plaidId ? db.prepare('SELECT * FROM plaid_accounts WHERE account_id = ?').get(plaidId) : null;
+        insertDebt.run(
+          name, balance, liability?.apr ?? 0, limit, liability?.minimum_payment_amount ?? 0, dest,
+          dueDay(liability?.next_payment_due_date), plaidId,
+          liability?.last_statement_balance ?? null, liability?.last_statement_issue_date ?? null,
+          liability?.next_payment_due_date ?? null, liability?.last_payment_amount ?? null,
+          liability?.last_payment_date ?? null, liability?.is_overdue ?? null, liability?.aprs ?? '[]',
+        );
         debtsCreated++;
       }
     }
@@ -360,21 +514,35 @@ router.post('/import_accounts', async (req, res) => {
   }
 });
 
-// Resync: pull fresh balances and push them into the already-imported rows
-// (accounts get current balance; credit/loan debts get the owed amount + limit).
+// Resync: pull fresh balances and Liabilities data into already-imported rows.
 router.post('/resync', async (req, res) => {
   const client = requireClient(res);
   if (!client) return;
   const itemId = req.body?.item_id ? String(req.body.item_id) : null;
+  const forceLiabilities = req.body?.force_liabilities === true;
   try {
-    await refreshAccountsCache(client, itemId);
+    await refreshAccountsCache(client, itemId, forceLiabilities);
     const cached = itemId
       ? db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ?').all(itemId)
       : db.prepare('SELECT * FROM plaid_accounts').all();
     const setAcctById = db.prepare('UPDATE accounts SET balance = ? WHERE plaid_account_id = ?');
     const setAcctByName = db.prepare('UPDATE accounts SET balance = ?, plaid_account_id = ? WHERE plaid_account_id IS NULL AND name = ?');
-    const setDebtById = db.prepare('UPDATE debts SET balance = ?, credit_limit = COALESCE(?, credit_limit) WHERE plaid_account_id = ?');
-    const setDebtByName = db.prepare('UPDATE debts SET balance = ?, credit_limit = COALESCE(?, credit_limit), plaid_account_id = ? WHERE plaid_account_id IS NULL AND name = ?');
+    const setDebtById = db.prepare(
+      `UPDATE debts SET
+       balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
+       monthly_payment = COALESCE(?, monthly_payment), payment_day = COALESCE(?, payment_day),
+       last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
+       last_payment_amount = ?, last_payment_date = ?, is_overdue = ?, plaid_aprs = ?
+       WHERE plaid_account_id = ?`
+    );
+    const setDebtByName = db.prepare(
+      `UPDATE debts SET
+       balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
+       monthly_payment = COALESCE(?, monthly_payment), payment_day = COALESCE(?, payment_day),
+       last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
+       last_payment_amount = ?, last_payment_date = ?, is_overdue = ?, plaid_aprs = ?, plaid_account_id = ?
+       WHERE plaid_account_id IS NULL AND name = ?`
+    );
     let updated = 0;
     const tx = db.transaction(() => {
       for (const pa of cached) {
@@ -385,8 +553,13 @@ router.post('/resync', async (req, res) => {
         // backfilling the link so future resyncs are exact.
         let n = setAcctById.run(current, pa.account_id).changes;
         if (!n) n = setAcctByName.run(current, pa.account_id, label).changes;
-        let d = setDebtById.run(owed, pa.credit_limit, pa.account_id).changes;
-        if (!d) d = setDebtByName.run(owed, pa.credit_limit, pa.account_id, label).changes;
+        const liabilityArgs = [
+          owed, pa.credit_limit, pa.apr, pa.minimum_payment_amount, dueDay(pa.next_payment_due_date),
+          pa.last_statement_balance, pa.last_statement_issue_date, pa.next_payment_due_date,
+          pa.last_payment_amount, pa.last_payment_date, pa.is_overdue, pa.aprs ?? '[]',
+        ];
+        let d = setDebtById.run(...liabilityArgs, pa.account_id).changes;
+        if (!d) d = setDebtByName.run(...liabilityArgs, pa.account_id, label).changes;
         updated += n + d;
       }
     });

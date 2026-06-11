@@ -117,7 +117,14 @@ export const settingsApi = {
 };
 
 // ---- Plaid (sandbox) ----
-export interface PlaidItem { id: number; item_id: string; institution_name: string | null; created_at: string }
+export interface PlaidItem {
+  id: number;
+  item_id: string;
+  institution_name: string | null;
+  liabilities_synced_at: string | null;
+  liabilities_consent_required: 0 | 1;
+  created_at: string;
+}
 export interface PlaidStatus { configured: boolean; env: string; items: PlaidItem[] }
 export interface PlaidAccount {
   item_id: string;
@@ -132,6 +139,9 @@ export interface PlaidAccount {
   available: number | null;
   limit: number | null;
   currency: string | null;
+  apr: number | null;
+  minimum_payment_amount: number | null;
+  next_payment_due_date: string | null;
   imported: boolean; // already imported as a local account/debt
 }
 
@@ -150,6 +160,8 @@ export interface PlaidTransaction {
 export const plaidApi = {
   status: () => req<PlaidStatus>('/plaid/status'),
   createLinkToken: () => req<{ link_token: string }>('/plaid/create_link_token', { method: 'POST' }),
+  createLiabilitiesLinkToken: (id: number) =>
+    req<{ link_token: string }>(`/plaid/items/${id}/liabilities_link_token`, { method: 'POST' }),
   exchange: (publicToken: string) =>
     req<{ ok: boolean; item_id: string; institution_name: string | null }>('/plaid/exchange_public_token', {
       method: 'POST', body: JSON.stringify({ public_token: publicToken }),
@@ -161,7 +173,10 @@ export const plaidApi = {
     req<{ ok: boolean; added: number; modified: number; removed: number }>('/plaid/transactions/sync', { method: 'POST' }),
   importAccounts: (accounts: { account_id: string; name: string; balance: number; type: string; mask?: string | null; credit_limit?: number | null }[]) =>
     req<{ ok: boolean; created: number; accountsCreated: number; debtsCreated: number; skipped: number }>('/plaid/import_accounts', { method: 'POST', body: JSON.stringify({ accounts }) }),
-  resync: (itemId?: string) =>
-    req<{ ok: boolean; updated: number }>('/plaid/resync', { method: 'POST', body: JSON.stringify(itemId ? { item_id: itemId } : {}) }),
+  resync: (itemId?: string, forceLiabilities = false) =>
+    req<{ ok: boolean; updated: number }>('/plaid/resync', {
+      method: 'POST',
+      body: JSON.stringify({ ...(itemId ? { item_id: itemId } : {}), ...(forceLiabilities ? { force_liabilities: true } : {}) }),
+    }),
   removeItem: (id: number) => req<void>(`/plaid/items/${id}`, { method: 'DELETE' }),
 };

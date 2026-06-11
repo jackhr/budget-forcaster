@@ -15,6 +15,7 @@ export default function PlaidConnect({ onImported }: Props) {
   const toast = useToast();
   const [status, setStatus] = useState<PlaidStatus | null>(null);
   const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [liabilitiesItemId, setLiabilitiesItemId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -46,28 +47,57 @@ export default function PlaidConnect({ onImported }: Props) {
   const onSuccess = useCallback(async (publicToken: string) => {
     setBusy(true);
     try {
-      const r = await plaidApi.exchange(publicToken);
-      toast.success(`Linked ${r.institution_name ?? 'bank'}`);
+      if (liabilitiesItemId) {
+        const r = await plaidApi.resync(liabilitiesItemId, true);
+        toast.success(`Enabled card details and resynced ${r.updated} balance${r.updated !== 1 ? 's' : ''}`);
+        onImported();
+        await refreshAccounts();
+      } else {
+        const r = await plaidApi.exchange(publicToken);
+        toast.success(`Linked ${r.institution_name ?? 'bank'}`);
+      }
       await refreshStatus();
     } catch (e) {
       toast.error(`Link failed: ${e instanceof Error ? e.message : 'error'}`);
     } finally {
       setBusy(false);
       setLinkToken(null);
+      setLiabilitiesItemId(null);
     }
-  }, [toast, refreshStatus]);
+  }, [liabilitiesItemId, onImported, refreshAccounts, refreshStatus, toast]);
 
-  const { open, ready } = usePlaidLink({ token: linkToken, onSuccess });
+  const onExit = useCallback(() => {
+    setLinkToken(null);
+    setLiabilitiesItemId(null);
+    setBusy(false);
+  }, []);
+
+  const { open, ready } = usePlaidLink({ token: linkToken, onSuccess, onExit });
 
   useEffect(() => { if (linkToken && ready) open(); }, [linkToken, ready, open]);
 
   async function connect() {
     setBusy(true);
     try {
+      setLiabilitiesItemId(null);
       const { link_token } = await plaidApi.createLinkToken();
       setLinkToken(link_token);
     } catch (e) {
       toast.error(`Could not start Plaid: ${e instanceof Error ? e.message : 'error'}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function enableLiabilities(item: PlaidItem) {
+    setBusy(true);
+    try {
+      setLiabilitiesItemId(item.item_id);
+      const { link_token } = await plaidApi.createLiabilitiesLinkToken(item.id);
+      setLinkToken(link_token);
+    } catch (e) {
+      setLiabilitiesItemId(null);
+      toast.error(`Could not enable card details: ${e instanceof Error ? e.message : 'error'}`);
     } finally {
       setBusy(false);
     }
@@ -104,6 +134,7 @@ export default function PlaidConnect({ onImported }: Props) {
         toast.success(`Resynced ${r.updated} balance${r.updated !== 1 ? 's' : ''}`);
         onImported();
         await refreshAccounts();
+        await refreshStatus();
       });
     } finally {
       setSyncingId(null);
@@ -172,9 +203,11 @@ export default function PlaidConnect({ onImported }: Props) {
               selected={selected}
               onToggleSelect={toggle}
               onResync={() => resync(it.item_id)}
+              onEnableLiabilities={() => enableLiabilities(it)}
               onUnlink={() => removeItem(it.id)}
               syncing={syncingId === it.item_id}
               syncingAny={syncingId != null}
+              enabling={liabilitiesItemId === it.item_id}
             />
           ))}
         </div>
@@ -197,15 +230,17 @@ export default function PlaidConnect({ onImported }: Props) {
   );
 }
 
-function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResync, onUnlink, syncing, syncingAny }: {
+function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResync, onEnableLiabilities, onUnlink, syncing, syncingAny, enabling }: {
   item: PlaidItem;
   itemAccounts: PlaidAccount[];
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
   onResync: () => void;
+  onEnableLiabilities: () => void;
   onUnlink: () => void;
   syncing: boolean;
   syncingAny: boolean;
+  enabling: boolean;
 }) {
   const { collapsed, toggle } = useCollapsed(`plaid-item-${item.item_id}`);
   const hasImported = itemAccounts.some((a) => a.imported);
@@ -218,6 +253,11 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
           <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>· {itemAccounts.length} account{itemAccounts.length !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {(!item.liabilities_synced_at || item.liabilities_consent_required === 1) && (
+            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title="Authorize minimum payment, APR, statement, and due-date details" style={{ background: 'transparent', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
+              {enabling ? 'Opening…' : 'Enable liabilities'}
+            </button>
+          )}
           {hasImported && (
             <button onClick={onResync} disabled={syncingAny} title="Update this bank's imported balances" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
               {syncing ? 'Syncing…' : '↻ Sync'}
@@ -246,10 +286,21 @@ function AccountRow({ a, selected, onToggle }: { a: PlaidAccount; selected: bool
     <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: a.imported ? 'default' : 'pointer', opacity: a.imported ? 0.6 : 1 }}>
       <input type="checkbox" checked={selected && !a.imported} disabled={a.imported} onChange={onToggle} />
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontWeight: 500 }}>{a.name}</span>
-        {a.mask && <span style={{ color: 'var(--color-text-muted)' }}> ••{a.mask}</span>}
-        <span style={{ color: 'var(--color-text-muted)', fontSize: 12 }}> · {a.subtype ?? a.type}</span>
-        {a.imported ? <ImportedBadge /> : <DestBadge type={a.type} />}
+        <span>
+          <span style={{ fontWeight: 500 }}>{a.name}</span>
+          {a.mask && <span style={{ color: 'var(--color-text-muted)' }}> ••{a.mask}</span>}
+          <span style={{ color: 'var(--color-text-muted)', fontSize: 12 }}> · {a.subtype ?? a.type}</span>
+          {a.imported ? <ImportedBadge /> : <DestBadge type={a.type} />}
+        </span>
+        {(a.apr != null || a.minimum_payment_amount != null || a.next_payment_due_date) && (
+          <span style={{ display: 'block', color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+            {a.apr != null ? `${a.apr}% APR` : ''}
+            {a.apr != null && a.minimum_payment_amount != null ? ' · ' : ''}
+            {a.minimum_payment_amount != null ? `${formatMoney(a.minimum_payment_amount)} minimum` : ''}
+            {(a.apr != null || a.minimum_payment_amount != null) && a.next_payment_due_date ? ' · ' : ''}
+            {a.next_payment_due_date ? `due ${a.next_payment_due_date}` : ''}
+          </span>
+        )}
       </span>
       <span style={{ fontWeight: 600, color: isDebtType(a.type) ? 'var(--color-net-neg)' : 'var(--color-net-pos)' }}>{formatMoney(a.current ?? 0)}</span>
     </label>

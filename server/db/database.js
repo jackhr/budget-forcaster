@@ -129,6 +129,12 @@ if (!plaidItemCols.some((c) => c.name === 'transactions_synced_at')) {
 if (!plaidItemCols.some((c) => c.name === 'accounts_synced_at')) {
   db.exec('ALTER TABLE plaid_items ADD COLUMN accounts_synced_at TEXT');
 }
+if (!plaidItemCols.some((c) => c.name === 'liabilities_synced_at')) {
+  db.exec('ALTER TABLE plaid_items ADD COLUMN liabilities_synced_at TEXT');
+}
+if (!plaidItemCols.some((c) => c.name === 'liabilities_consent_required')) {
+  db.exec('ALTER TABLE plaid_items ADD COLUMN liabilities_consent_required INTEGER NOT NULL DEFAULT 0');
+}
 
 // --- Migration: link imported rows back to their Plaid account (block re-import, enable resync) ---
 for (const table of ['accounts', 'debts']) {
@@ -177,6 +183,37 @@ if (!debtColsForGroup.some((c) => c.name === 'debt_type')) {
 // Optional autopay day-of-month (1-31) for the debt's payment.
 if (!debtColsForGroup.some((c) => c.name === 'payment_day')) {
   db.exec('ALTER TABLE debts ADD COLUMN payment_day INTEGER');
+}
+for (const [column, definition] of [
+  ['last_statement_balance', 'REAL'],
+  ['last_statement_issue_date', 'TEXT'],
+  ['next_payment_due_date', 'TEXT'],
+  ['last_payment_amount', 'REAL'],
+  ['last_payment_date', 'TEXT'],
+  ['is_overdue', 'INTEGER'],
+  ['plaid_aprs', "TEXT NOT NULL DEFAULT '[]'"],
+]) {
+  if (!debtColsForGroup.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE debts ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+// Cached Plaid Liabilities fields, joined to imported debts by plaid_account_id.
+const plaidAccountCols = db.prepare('PRAGMA table_info(plaid_accounts)').all();
+for (const [column, definition] of [
+  ['apr', 'REAL'],
+  ['minimum_payment_amount', 'REAL'],
+  ['last_statement_balance', 'REAL'],
+  ['last_statement_issue_date', 'TEXT'],
+  ['next_payment_due_date', 'TEXT'],
+  ['last_payment_amount', 'REAL'],
+  ['last_payment_date', 'TEXT'],
+  ['is_overdue', 'INTEGER'],
+  ['aprs', "TEXT NOT NULL DEFAULT '[]'"],
+]) {
+  if (!plaidAccountCols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE plaid_accounts ADD COLUMN ${column} ${definition}`);
+  }
 }
 // Split funding for expenses (JSON array of allocations).
 const expenseFundingCols = db.prepare('PRAGMA table_info(expenses)').all();
