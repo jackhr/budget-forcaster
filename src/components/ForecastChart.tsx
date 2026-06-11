@@ -8,7 +8,9 @@ import RangeControl from './RangeControl';
 
 interface Props {
   data: ForecastPoint[];
+  startMonth: number;
   months: number;
+  onStartMonthChange: (m: number) => void;
   onMonthsChange: (m: number) => void;
   compareData?: number[];
   compareName?: string;
@@ -38,7 +40,8 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function ForecastChart({ data, months, onMonthsChange, compareData, compareName }: Props) {
+export default function ForecastChart({ data, startMonth, months, onStartMonthChange, onMonthsChange, compareData, compareName }: Props) {
+  const duration = months - startMonth;
   const merged = compareData ? data.map((d, i) => ({ ...d, compare: compareData[i] })) : data;
   return (
     <div style={{
@@ -51,10 +54,10 @@ export default function ForecastChart({ data, months, onMonthsChange, compareDat
         <div>
           <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Cash Flow Forecast</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginTop: 2 }}>
-            Actual monthly in/out over {months} month{months !== 1 ? 's' : ''} — includes future expenses
+            Actual monthly in/out over {duration} month{duration !== 1 ? 's' : ''} — includes future expenses
           </p>
         </div>
-        <RangeControl months={months} onMonthsChange={onMonthsChange} />
+        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
       </div>
 
       <ResponsiveContainer width="100%" height={320}>

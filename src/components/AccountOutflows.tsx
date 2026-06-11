@@ -13,7 +13,9 @@ interface Props {
   expenseOut: Map<number, number[]>;
   scheduledOut: Map<number, number[]>;
   debtOut: Map<number, number[]>;
+  startMonth: number;
   months: number;
+  onStartMonthChange: (m: number) => void;
   onMonthsChange: (m: number) => void;
 }
 
@@ -39,7 +41,8 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function AccountOutflows({ accounts, labels, expenseOut, scheduledOut, debtOut, months, onMonthsChange }: Props) {
+export default function AccountOutflows({ accounts, labels, expenseOut, scheduledOut, debtOut, startMonth, months, onStartMonthChange, onMonthsChange }: Props) {
+  const duration = months - startMonth;
   const [view, setView] = useState<'graph' | 'list'>('graph');
 
   const colorOf = (i: number) => PALETTE[i % PALETTE.length];
@@ -99,19 +102,19 @@ export default function AccountOutflows({ accounts, labels, expenseOut, schedule
               </button>
             ))}
           </div>
-          <RangeControl months={months} onMonthsChange={onMonthsChange} />
+          <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
         </div>
       </div>
 
       {/* Summary */}
       <div style={{ display: 'flex', gap: 24, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total out · {months} mo</div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total out · {duration} mo</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-expense)' }}>{formatMoney(grandTotal, { whole: true })}</div>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Avg / month</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text)' }}>{formatMoney(months ? grandTotal / months : 0, { whole: true })}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text)' }}>{formatMoney(duration ? grandTotal / duration : 0, { whole: true })}</div>
         </div>
       </div>
 

@@ -15,7 +15,9 @@ interface Props {
   title: string;
   subtitle: string;
   breakdown: Breakdown;
+  startMonth: number;
   months: number;
+  onStartMonthChange: (m: number) => void;
   onMonthsChange: (m: number) => void;
   futureBars?: FutureBar[];      // optional overlay of future-expense bars (Accounts view)
   futureBarsActive?: boolean;    // colored when active, greyed when off
@@ -92,7 +94,7 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
   );
 }
 
-export default function BreakdownChart({ title, subtitle, breakdown, months, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo, creditLimits }: Props) {
+export default function BreakdownChart({ title, subtitle, breakdown, startMonth, months, onStartMonthChange, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo, creditLimits }: Props) {
   const { labels, total, series } = breakdown;
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [showLimits, setShowLimits] = useState(false);
@@ -132,7 +134,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>{title}</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 2 }}>{subtitle}</p>
         </div>
-        <RangeControl months={months} onMonthsChange={onMonthsChange} />
+        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
       </div>
 
       {series.length === 0 ? (

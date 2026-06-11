@@ -10,7 +10,9 @@ export interface PayoffMarker { label: string; name: string }
 
 interface Props {
   data: NetWorthPoint[];
+  startMonth: number;
   months: number;
+  onStartMonthChange: (m: number) => void;
   onMonthsChange: (m: number) => void;
   payoffMarkers: PayoffMarker[];
   compareData?: number[];
@@ -34,7 +36,8 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function NetWorthChart({ data, months, onMonthsChange, payoffMarkers, compareData, compareName }: Props) {
+export default function NetWorthChart({ data, startMonth, months, onStartMonthChange, onMonthsChange, payoffMarkers, compareData, compareName }: Props) {
+  const duration = months - startMonth;
   const merged = compareData ? data.map((d, i) => ({ ...d, compare: compareData[i] })) : data;
   return (
     <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24 }}>
@@ -42,10 +45,10 @@ export default function NetWorthChart({ data, months, onMonthsChange, payoffMark
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>Net Worth</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 2 }}>
-            Cash minus remaining debt over {months} month{months !== 1 ? 's' : ''} — flags mark each debt payoff
+            Cash minus remaining debt over {duration} month{duration !== 1 ? 's' : ''} — flags mark each debt payoff
           </p>
         </div>
-        <RangeControl months={months} onMonthsChange={onMonthsChange} />
+        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
       </div>
 
       <ResponsiveContainer width="100%" height={360}>

@@ -10,7 +10,9 @@ interface PayoffMarker { label: string; name: string }
 
 interface Props {
   data: SavingsPoint[];
+  startMonth: number;
   months: number;
+  onStartMonthChange: (m: number) => void;
   onMonthsChange: (m: number) => void;
   payoffMarkers?: PayoffMarker[];
   compareData?: number[];
@@ -71,8 +73,9 @@ function PaymentLabel(props: { x: number; y: number; width: number; index: numbe
   );
 }
 
-export default function SavingsChart({ data, months, onMonthsChange, payoffMarkers = [], compareData, compareName }: Props) {
-  const todayLabel = data[0]?.label;
+export default function SavingsChart({ data, startMonth, months, onStartMonthChange, onMonthsChange, payoffMarkers = [], compareData, compareName }: Props) {
+  const duration = months - startMonth;
+  const todayLabel = startMonth === 0 ? data[0]?.label : undefined;
   const merged = compareData ? data.map((d, i) => ({ ...d, compare: compareData[i] })) : data;
   return (
     <div style={{
@@ -85,10 +88,10 @@ export default function SavingsChart({ data, months, onMonthsChange, payoffMarke
         <div>
           <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Accumulated Savings</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginTop: 2 }}>
-            Running balance over {months} month{months !== 1 ? 's' : ''} — green bars are lump income, red bars are future expenses
+            Running balance over {duration} month{duration !== 1 ? 's' : ''} — green bars are lump income, red bars are future expenses
           </p>
         </div>
-        <RangeControl months={months} onMonthsChange={onMonthsChange} />
+        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
       </div>
 
       <ResponsiveContainer width="100%" height={360}>

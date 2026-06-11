@@ -23,7 +23,7 @@ export default function SavingsSummary({ data, startingBalance }: Props) {
       label: 'Net Change',
       value: formatSignedMoney(change, { whole: true }),
       color: change >= 0 ? 'var(--color-income)' : 'var(--color-expense)',
-      sub: 'from current cash',
+      sub: 'over selected period',
     },
     {
       label: 'Lowest Balance',

@@ -19,7 +19,9 @@ interface PayoffMarker { label: string; name: string }
 
 interface Props {
   data: OverviewPoint[];
+  startMonth: number;
   months: number;
+  onStartMonthChange: (m: number) => void;
   onMonthsChange: (m: number) => void;
   payoffMarkers: PayoffMarker[];
 }
@@ -65,7 +67,7 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function OverviewChart({ data, months, onMonthsChange, payoffMarkers }: Props) {
+export default function OverviewChart({ data, startMonth, months, onStartMonthChange, onMonthsChange, payoffMarkers }: Props) {
   const [hidden, setHidden] = useState<Set<SeriesKey>>(new Set());
 
   const toggle = (key: SeriesKey) => setHidden((prev) => {
@@ -84,7 +86,7 @@ export default function OverviewChart({ data, months, onMonthsChange, payoffMark
             Everything together — monthly flows (left axis), balances (right axis), and debt-payoff markers
           </p>
         </div>
-        <RangeControl months={months} onMonthsChange={onMonthsChange} />
+        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
       </div>
 
       {/* Toggle chips — payoff markers are always shown */}

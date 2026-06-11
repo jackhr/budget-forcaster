@@ -106,6 +106,7 @@ export default function App() {
   const [debtExtra, setDebtExtra] = useState(0);
   const [debtStrategy, setDebtStrategy] = useState<DebtStrategy>('none');
   const [months, setMonths] = useState(() => Number(localStorage.getItem('bf.months')) || 12);
+  const [startMonth, setStartMonth] = useState(() => Number(localStorage.getItem('bf.startMonth')) || 0);
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'forecast');
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
@@ -119,10 +120,15 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => { localStorage.setItem('bf.months', String(months)); }, [months]);
+  useEffect(() => { localStorage.setItem('bf.startMonth', String(startMonth)); }, [startMonth]);
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
   useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
   useEffect(() => { if (!isNarrow) setMenuOpen(false); }, [isNarrow]);
+  useEffect(() => { if (startMonth >= months) setStartMonth(Math.max(0, months - 1)); }, [startMonth, months]);
+
+  const changeStartMonth = (value: number) => setStartMonth(Math.max(0, Math.min(value, months - 1)));
+  const changeEndMonth = (value: number) => setMonths(Math.max(startMonth + 1, Math.min(120, value)));
 
   const load = useCallback(async () => {
     try {
@@ -285,6 +291,24 @@ export default function App() {
   // Compare overlay from a saved scenario.
   const compareScenario = scenarios.find((s) => s.id === compareId) ?? null;
   const compareSeries = compareScenario ? scenarioSeries(compareScenario.snapshot as Snapshot, months) : null;
+  const visible = <T,>(values: T[]) => values.slice(startMonth, months);
+  const visibleBreakdown: Breakdown = {
+    labels: visible(breakdown.labels),
+    total: visible(breakdown.total),
+    series: breakdown.series.map((s) => ({ ...s, values: visible(s.values) })),
+  };
+  const visibleDebtMonthInfo = debtMonthInfo
+    ? new Map([...debtMonthInfo].map(([id, values]) => [id, visible(values)]))
+    : undefined;
+  const visibleCompare = compareSeries
+    ? {
+        forecast: visible(compareSeries.forecast),
+        savings: visible(compareSeries.savings),
+        networth: visible(compareSeries.networth),
+      }
+    : null;
+  const visibleMap = (map: Map<number, number[]>) =>
+    new Map([...map].map(([id, values]) => [id, visible(values)]));
 
   // This month's outflow breakdown.
   const m0 = savings[0];
@@ -570,17 +594,19 @@ export default function App() {
           <>
             <SummaryCards data={forecast} />
             <Suspense fallback={<ChartFallback />}>
-              <ForecastChart data={forecast} months={months} onMonthsChange={setMonths} compareData={compareSeries?.forecast} compareName={compareScenario?.name} />
+              <ForecastChart data={visible(forecast)} startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth} compareData={visibleCompare?.forecast} compareName={compareScenario?.name} />
             </Suspense>
           </>
         )}
         {tab === 'savings' && (() => {
           const selectedId = (savingsAccountId != null && accounts.some((a) => a.id === savingsAccountId)) ? savingsAccountId : null;
           const acct = selectedId != null ? accounts.find((a) => a.id === selectedId) : undefined;
-          const data = selectedId != null
+          const fullData = selectedId != null
             ? buildAccountSavings(selectedId, accounts, incomeSources, payments, expensePlan.outByAccount, scheduledOutByAccount, debtOutByAccount, months)
             : savings;
-          const startBal = selectedId != null ? (acct?.balance ?? 0) : totalCash;
+          const data = visible(fullData);
+          const currentBalance = selectedId != null ? (acct?.balance ?? 0) : totalCash;
+          const startBal = startMonth > 0 ? (fullData[startMonth - 1]?.balance ?? currentBalance) : currentBalance;
           // Payoff markers only for debts paid from the selected account.
           const markers = selectedId == null ? payoffMarkers : (() => {
             const byM = new Map<number, string[]>();
@@ -607,19 +633,19 @@ export default function App() {
               </div>
               <SavingsSummary data={data} startingBalance={startBal} />
               <Suspense fallback={<ChartFallback />}>
-                <SavingsChart data={data} months={months} onMonthsChange={setMonths} payoffMarkers={markers} compareData={selectedId == null ? compareSeries?.savings : undefined} compareName={selectedId == null ? compareScenario?.name : undefined} />
+                <SavingsChart data={data} startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth} payoffMarkers={markers} compareData={selectedId == null ? visibleCompare?.savings : undefined} compareName={selectedId == null ? compareScenario?.name : undefined} />
               </Suspense>
             </>
           );
         })()}
         {tab === 'networth' && (
           <Suspense fallback={<ChartFallback />}>
-            <NetWorthChart data={netWorth} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} compareData={compareSeries?.networth} compareName={compareScenario?.name} />
+            <NetWorthChart data={visible(netWorth)} startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth} payoffMarkers={payoffMarkers} compareData={visibleCompare?.networth} compareName={compareScenario?.name} />
           </Suspense>
         )}
         {tab === 'overview' && (
           <Suspense fallback={<ChartFallback />}>
-            <OverviewChart data={overviewData} months={months} onMonthsChange={setMonths} payoffMarkers={payoffMarkers} />
+            <OverviewChart data={visible(overviewData)} startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth} payoffMarkers={payoffMarkers} />
           </Suspense>
         )}
         {tab === 'account' && (() => {
@@ -640,10 +666,11 @@ export default function App() {
             : (primary ? `account:${primary.id}` : `debt:${debts[0].id}`);
           const [kind, idS] = sel.split(':');
           const id = Number(idS);
-          const shared = { entities, selected: sel, onSelect: setActiveEntity, months, onMonthsChange: setMonths };
+          const shared = { entities, selected: sel, onSelect: setActiveEntity, startMonth, months, onStartMonthChange: changeStartMonth, onMonthsChange: changeEndMonth };
           if (kind === 'debt') {
             const debt = debts.find((d) => d.id === id)!;
-            const activity = buildDebtActivity(debt, plan, debtCharges, accounts, months);
+            const fullActivity = buildDebtActivity(debt, plan, debtCharges, accounts, months);
+            const activity = { ...fullActivity, inByMonth: visible(fullActivity.inByMonth), outByMonth: visible(fullActivity.outByMonth) };
             const sub = `${debt.apr}% APR${debt.credit_limit != null ? ` · ${formatMoney(debt.credit_limit, { whole: true })} limit` : ''}`;
             return (
               <Suspense fallback={<ChartFallback />}>
@@ -652,7 +679,8 @@ export default function App() {
             );
           }
           const acct = accounts.find((a) => a.id === id)!;
-          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, plan, months, inflation);
+          const fullActivity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, plan, months, inflation);
+          const activity = { ...fullActivity, inByMonth: visible(fullActivity.inByMonth), outByMonth: visible(fullActivity.outByMonth) };
           return (
             <Suspense fallback={<ChartFallback />}>
               <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? '★ primary — pays the bills' : 'savings pile'} activity={activity} />
@@ -685,10 +713,11 @@ export default function App() {
             )}
             <Suspense fallback={<ChartFallback />}>
               <BreakdownChart
-                title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={breakdown} months={months} onMonthsChange={setMonths}
-                futureBars={breakdownSection === 'account' ? futureExpenseBars : undefined}
+                title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={visibleBreakdown}
+                startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth}
+                futureBars={breakdownSection === 'account' ? visible(futureExpenseBars) : undefined}
                 futureBarsActive={breakdownIncludeFuture}
-                debtMonthInfo={breakdownSection === 'debt' ? debtMonthInfo : undefined}
+                debtMonthInfo={breakdownSection === 'debt' ? visibleDebtMonthInfo : undefined}
                 creditLimits={breakdownSection === 'debt'
                   ? new Map(debts.filter((d) => d.debt_type !== 'loan' && d.credit_limit != null).map((d) => [d.id, d.credit_limit as number]))
                   : undefined}
@@ -700,12 +729,14 @@ export default function App() {
           <Suspense fallback={<ChartFallback />}>
             <AccountOutflows
               accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-              labels={savings.map((s) => s.label)}
-              expenseOut={expensePlan.outByAccount}
-              scheduledOut={scheduledOutByAccount}
-              debtOut={debtOutByAccount}
+              labels={visible(savings.map((s) => s.label))}
+              expenseOut={visibleMap(expensePlan.outByAccount)}
+              scheduledOut={visibleMap(scheduledOutByAccount)}
+              debtOut={visibleMap(debtOutByAccount)}
+              startMonth={startMonth}
               months={months}
-              onMonthsChange={setMonths}
+              onStartMonthChange={changeStartMonth}
+              onMonthsChange={changeEndMonth}
             />
           </Suspense>
         )}

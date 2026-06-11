@@ -13,7 +13,9 @@ interface Props {
   balance: number;             // account balance, or debt balance owed
   balanceSub: string;
   activity: AccountActivity;
+  startMonth: number;
   months: number;
+  onStartMonthChange: (m: number) => void;
   onMonthsChange: (m: number) => void;
 }
 
@@ -76,10 +78,11 @@ function Section({ items, cost, empty }: { items: AccountActivityItem[]; cost: b
   );
 }
 
-export default function AccountActivity({ entities, selected, onSelect, entityKind, balance, balanceSub, activity, months, onMonthsChange }: Props) {
+export default function AccountActivity({ entities, selected, onSelect, entityKind, balance, balanceSub, activity, startMonth, months, onStartMonthChange, onMonthsChange }: Props) {
+  const duration = months - startMonth;
   const isDebt = entityKind === 'debt';
-  const monthlyIn = activity.inByMonth.reduce((s, v) => s + v, 0) / Math.max(1, months);
-  const monthlyOut = activity.outByMonth.reduce((s, v) => s + v, 0) / Math.max(1, months);
+  const monthlyIn = activity.inByMonth.reduce((s, v) => s + v, 0) / Math.max(1, duration);
+  const monthlyOut = activity.outByMonth.reduce((s, v) => s + v, 0) / Math.max(1, duration);
   const net = monthlyIn - monthlyOut;
   const inItems = activity.items.filter((i) => i.direction === 'in');
   const outItems = activity.items.filter((i) => i.direction === 'out');
@@ -128,7 +131,7 @@ export default function AccountActivity({ entities, selected, onSelect, entityKi
             {isDebt ? 'What grows this debt (charges + interest) and what pays it down' : 'What flows in and out of this account, when, and how it’s funded'}
           </p>
         </div>
-        <RangeControl months={months} onMonthsChange={onMonthsChange} />
+        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
