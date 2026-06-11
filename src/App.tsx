@@ -671,6 +671,9 @@ export default function App() {
                 futureBars={breakdownSection === 'account' ? futureExpenseBars : undefined}
                 futureBarsActive={breakdownIncludeFuture}
                 debtMonthInfo={breakdownSection === 'debt' ? debtMonthInfo : undefined}
+                creditLimits={breakdownSection === 'debt'
+                  ? new Map(debts.filter((d) => d.debt_type !== 'loan' && d.credit_limit != null).map((d) => [d.id, d.credit_limit as number]))
+                  : undefined}
               />
             </Suspense>
           </>

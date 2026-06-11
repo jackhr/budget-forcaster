@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  ComposedChart, Line, Bar, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, Line, Bar, LabelList, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import type { Breakdown } from '../lib/forecast';
 import { formatCompactMoney, formatMoney } from '../lib/format';
@@ -20,6 +20,7 @@ interface Props {
   futureBars?: FutureBar[];      // optional overlay of future-expense bars (Accounts view)
   futureBarsActive?: boolean;    // colored when active, greyed when off
   debtMonthInfo?: DebtMonthInfo; // per-debt charges + payment each month (Debt Breakdown tooltip)
+  creditLimits?: Map<number, number>; // debt id -> credit limit (Debt Breakdown — toggleable lines)
 }
 
 // Renders the future-expense name above its bar (Savings-chart style).
@@ -91,9 +92,11 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
   );
 }
 
-export default function BreakdownChart({ title, subtitle, breakdown, months, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo }: Props) {
+export default function BreakdownChart({ title, subtitle, breakdown, months, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo, creditLimits }: Props) {
   const { labels, total, series } = breakdown;
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [showLimits, setShowLimits] = useState(false);
+  const hasLimits = !!creditLimits && creditLimits.size > 0;
 
   // Reset visibility when switching sections (each section has a distinct title).
   useEffect(() => { setHidden(new Set()); }, [title]);
@@ -167,6 +170,18 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
             >
               {anyHidden ? 'Show all' : 'Hide all'}
             </button>
+            {hasLimits && (
+              <button
+                onClick={() => setShowLimits((v) => !v)}
+                title="Show each card's credit limit as a dashed line"
+                style={{
+                  background: showLimits ? 'var(--color-surface-2)' : 'transparent', color: showLimits ? 'var(--color-text)' : 'var(--color-text-muted)',
+                  border: '1px solid var(--color-border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, marginLeft: 4,
+                }}
+              >
+                {showLimits ? '✓ ' : ''}Credit limits
+              </button>
+            )}
           </div>
 
           <ResponsiveContainer width="100%" height={360}>
@@ -186,6 +201,21 @@ export default function BreakdownChart({ title, subtitle, breakdown, months, onM
                   )}
                 </Bar>
               )}
+              {showLimits && creditLimits && series.map((s, idx) => {
+                const limit = creditLimits.get(s.id);
+                if (limit == null || hidden.has(`k${s.id}`)) return null;
+                return (
+                  <ReferenceLine
+                    key={`lim${s.id}`}
+                    y={limit}
+                    stroke={colorOf(idx)}
+                    strokeDasharray="5 4"
+                    strokeOpacity={0.7}
+                    ifOverflow="extendDomain"
+                    label={{ value: `${formatCompactMoney(limit)} limit`, position: 'insideTopRight', fill: colorOf(idx), fontSize: 10 }}
+                  />
+                );
+              })}
               {series.map((s, idx) => (
                 <Line key={s.id} type="monotone" dataKey={`k${s.id}`} name={s.name} stroke={colorOf(idx)} strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} hide={hidden.has(`k${s.id}`)} />
               ))}
