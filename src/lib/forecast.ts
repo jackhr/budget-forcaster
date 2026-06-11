@@ -691,13 +691,15 @@ export function buildAccountActivity(
   months: number,
   inflation = 0,
   now: Date = new Date(),
+  startMonth = 0,
 ): AccountActivity {
   const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const isPrimary = accountId === primaryId;
   const accountIds = new Set(accounts.map((a) => a.id));
   const labels = labelsFor(months, now);
-  const inByMonth = new Array(months).fill(0);
-  const outByMonth = new Array(months).fill(0);
+  const windowMonths = Math.max(0, months - startMonth);
+  const inByMonth = new Array(windowMonths).fill(0);
+  const outByMonth = new Array(windowMonths).fill(0);
   const items: AccountActivityItem[] = [];
 
   const finalize = (
@@ -706,17 +708,17 @@ export function buildAccountActivity(
   ) => {
     let total = 0;
     let nextIndex = -1;
-    for (let m = 0; m < months; m++) {
+    for (let m = startMonth; m < months; m++) {
       const v = series[m];
       total += v;
-      if (direction === 'in') inByMonth[m] += v; else outByMonth[m] += v;
+      if (direction === 'in') inByMonth[m - startMonth] += v; else outByMonth[m - startMonth] += v;
       if (v > 0.005 && nextIndex < 0) nextIndex = m;
     }
     if (total <= 0.005) return;
     items.push({
       key, name, kind, direction, frequency, detail,
       perOccurrence: nextIndex >= 0 ? round2(series[nextIndex]) : 0,
-      monthlyAvg: round2(total / months),
+      monthlyAvg: round2(total / Math.max(1, windowMonths)),
       total: round2(total),
       nextLabel: nextIndex >= 0 ? labels[nextIndex] : null,
       rangeLabel: rangeLabelOf(start, end, now),
@@ -778,7 +780,7 @@ export function buildAccountActivity(
   }
 
   items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));
-  return { labels, inByMonth, outByMonth, items };
+  return { labels: labels.slice(startMonth), inByMonth, outByMonth, items };
 }
 
 // Which account(s) a debt's payment is drawn from, as a short label.
@@ -802,10 +804,12 @@ export function buildDebtActivity(
   accounts: Account[],
   months: number,
   now: Date = new Date(),
+  startMonth = 0,
 ): AccountActivity {
   const labels = labelsFor(months, now);
-  const inByMonth = new Array(months).fill(0);
-  const outByMonth = new Array(months).fill(0);
+  const windowMonths = Math.max(0, months - startMonth);
+  const inByMonth = new Array(windowMonths).fill(0);
+  const outByMonth = new Array(windowMonths).fill(0);
   const items: AccountActivityItem[] = [];
 
   const push = (
@@ -814,17 +818,17 @@ export function buildDebtActivity(
   ) => {
     let total = 0;
     let nextIndex = -1;
-    for (let m = 0; m < months; m++) {
+    for (let m = startMonth; m < months; m++) {
       const v = series[m] ?? 0;
       total += v;
-      if (direction === 'in') inByMonth[m] += v; else outByMonth[m] += v;
+      if (direction === 'in') inByMonth[m - startMonth] += v; else outByMonth[m - startMonth] += v;
       if (v > 0.005 && nextIndex < 0) nextIndex = m;
     }
     if (total <= 0.005) return;
     items.push({
       key, name, kind, direction, frequency, detail,
       perOccurrence: nextIndex >= 0 ? round2(series[nextIndex]) : 0,
-      monthlyAvg: round2(total / months),
+      monthlyAvg: round2(total / Math.max(1, windowMonths)),
       total: round2(total),
       nextLabel: nextIndex >= 0 ? labels[nextIndex] : null,
       rangeLabel: null,
@@ -853,7 +857,7 @@ export function buildDebtActivity(
   if (pay) push(`pay${debt.id}`, 'Payments', 'debt', 'out', 'monthly', debtPaymentSource(debt, accounts), pay);
 
   items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));
-  return { labels, inByMonth, outByMonth, items };
+  return { labels: labels.slice(startMonth), inByMonth, outByMonth, items };
 }
 
 // One account's savings balance over time (for the Savings view's account switcher).

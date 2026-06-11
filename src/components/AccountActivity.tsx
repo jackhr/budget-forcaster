@@ -1,7 +1,7 @@
 import type { AccountActivity, AccountActivityItem } from '../lib/forecast';
 import { FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney, formatSignedMoney } from '../lib/format';
-import RangeControl from './RangeControl';
+import MonthControl from './MonthControl';
 
 interface Entity { id: number; name: string; kind: 'account' | 'debt'; isPrimary?: boolean }
 
@@ -13,10 +13,8 @@ interface Props {
   balance: number;             // account balance, or debt balance owed
   balanceSub: string;
   activity: AccountActivity;
-  startMonth: number;
-  months: number;
-  onStartMonthChange: (m: number) => void;
-  onMonthsChange: (m: number) => void;
+  month: number;
+  onMonthChange: (m: number) => void;
 }
 
 const KIND_META: Record<AccountActivityItem['kind'], { label: string; color: string }> = {
@@ -40,7 +38,7 @@ function Row({ item, cost }: { item: AccountActivityItem; cost: boolean }) {
   const color = cost ? 'var(--color-expense)' : 'var(--color-income)';
   const sign = item.direction === 'in' ? '+' : '−'; // relative to the entity's balance
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.9fr 0.9fr', gap: 8, alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-sm)', transition: 'background 0.1s' }}
+    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.9fr', gap: 8, alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-sm)', transition: 'background 0.1s' }}
       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
@@ -53,7 +51,6 @@ function Row({ item, cost }: { item: AccountActivityItem; cost: boolean }) {
       <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
         {item.detail}{item.rangeLabel ? ` · ${item.rangeLabel}` : ''}
       </span>
-      <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>{item.nextLabel ?? '—'}</span>
       <span style={{ textAlign: 'right' }}>
         <div style={{ fontWeight: 600, color }}>{sign}{formatMoney(item.perOccurrence)}</div>
         <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>≈{formatMoney(item.monthlyAvg, { whole: true })}/mo</div>
@@ -68,9 +65,9 @@ function Section({ items, cost, empty }: { items: AccountActivityItem[]; cost: b
   }
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.9fr 0.9fr', gap: 8, padding: '0 12px 6px', borderBottom: '1px solid var(--color-border)' }}>
-        {['Item', 'Frequency', 'How / when', 'Next', 'Per occurrence'].map((h, i) => (
-          <span key={i} style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 4 ? 'right' : 'left' }}>{h}</span>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.9fr', gap: 8, padding: '0 12px 6px', borderBottom: '1px solid var(--color-border)' }}>
+        {['Item', 'Frequency', 'How / when', 'Per occurrence'].map((h, i) => (
+          <span key={i} style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 3 ? 'right' : 'left' }}>{h}</span>
         ))}
       </div>
       {items.map((it) => <Row key={it.key} item={it} cost={cost} />)}
@@ -78,11 +75,10 @@ function Section({ items, cost, empty }: { items: AccountActivityItem[]; cost: b
   );
 }
 
-export default function AccountActivity({ entities, selected, onSelect, entityKind, balance, balanceSub, activity, startMonth, months, onStartMonthChange, onMonthsChange }: Props) {
-  const duration = months - startMonth;
+export default function AccountActivity({ entities, selected, onSelect, entityKind, balance, balanceSub, activity, month, onMonthChange }: Props) {
   const isDebt = entityKind === 'debt';
-  const monthlyIn = activity.inByMonth.reduce((s, v) => s + v, 0) / Math.max(1, duration);
-  const monthlyOut = activity.outByMonth.reduce((s, v) => s + v, 0) / Math.max(1, duration);
+  const monthlyIn = activity.inByMonth[0] ?? 0;
+  const monthlyOut = activity.outByMonth[0] ?? 0;
   const net = monthlyIn - monthlyOut;
   const inItems = activity.items.filter((i) => i.direction === 'in');
   const outItems = activity.items.filter((i) => i.direction === 'out');
@@ -131,7 +127,7 @@ export default function AccountActivity({ entities, selected, onSelect, entityKi
             {isDebt ? 'What grows this debt (charges + interest) and what pays it down' : 'What flows in and out of this account, when, and how it’s funded'}
           </p>
         </div>
-        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
+        <MonthControl month={month} onMonthChange={onMonthChange} />
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
@@ -139,15 +135,15 @@ export default function AccountActivity({ entities, selected, onSelect, entityKi
           <>
             {card('Balance Owed', formatMoney(balance, { whole: true }), 'var(--color-expense)', balanceSub)}
             {card('Added', formatMoney(monthlyIn, { whole: true }), 'var(--color-expense)', 'charges + interest / mo')}
-            {card('Paid', formatMoney(monthlyOut, { whole: true }), 'var(--color-income)', 'avg / month')}
-            {card('Net Change', formatSignedMoney(net, { whole: true }), netColor, monthlyIn > monthlyOut ? 'growing / mo' : 'shrinking / mo')}
+            {card('Paid', formatMoney(monthlyOut, { whole: true }), 'var(--color-income)', 'selected month')}
+            {card('Net Change', formatSignedMoney(net, { whole: true }), netColor, monthlyIn > monthlyOut ? 'growing this month' : 'shrinking this month')}
           </>
         ) : (
           <>
             {card('Current Balance', formatMoney(balance, { whole: true }), 'var(--color-net-pos)', balanceSub)}
-            {card('Money In', formatMoney(monthlyIn, { whole: true }), 'var(--color-income)', 'avg / month')}
-            {card('Money Out', formatMoney(monthlyOut, { whole: true }), 'var(--color-expense)', 'avg / month')}
-            {card('Net', formatSignedMoney(net, { whole: true }), netColor, 'avg / month')}
+            {card('Money In', formatMoney(monthlyIn, { whole: true }), 'var(--color-income)', 'selected month')}
+            {card('Money Out', formatMoney(monthlyOut, { whole: true }), 'var(--color-expense)', 'selected month')}
+            {card('Net', formatSignedMoney(net, { whole: true }), netColor, 'selected month')}
           </>
         )}
       </div>

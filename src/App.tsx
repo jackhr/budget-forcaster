@@ -112,6 +112,7 @@ export default function App() {
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
   const [breakdownIncludeFuture, setBreakdownIncludeFuture] = useState(() => localStorage.getItem('bf.breakdownFuture') !== '0');
   const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
+  const [activityMonth, setActivityMonth] = useState(() => Number(localStorage.getItem('bf.activityMonth')) || 0);
   const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -124,6 +125,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
   useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
+  useEffect(() => { localStorage.setItem('bf.activityMonth', String(activityMonth)); }, [activityMonth]);
   useEffect(() => { if (!isNarrow) setMenuOpen(false); }, [isNarrow]);
   useEffect(() => { if (startMonth >= months) setStartMonth(Math.max(0, months - 1)); }, [startMonth, months]);
 
@@ -666,11 +668,18 @@ export default function App() {
             : (primary ? `account:${primary.id}` : `debt:${debts[0].id}`);
           const [kind, idS] = sel.split(':');
           const id = Number(idS);
-          const shared = { entities, selected: sel, onSelect: setActiveEntity, startMonth, months, onStartMonthChange: changeStartMonth, onMonthsChange: changeEndMonth };
+          const activityHorizon = activityMonth + 1;
+          const activityExpensePlan = buildExpensePlan(expenses, accounts, debts, activityHorizon, inflation);
+          const activityCharges = [...buildDebtCharges(payments, activityHorizon), ...activityExpensePlan.charges];
+          const activityPayments = buildDebtPaymentSchedule(debts, activityHorizon);
+          const activityPlan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, activityHorizon, activityCharges, activityPayments);
+          const shared = {
+            entities, selected: sel, onSelect: setActiveEntity,
+            month: activityMonth, onMonthChange: (value: number) => setActivityMonth(Math.max(0, Math.min(119, value))),
+          };
           if (kind === 'debt') {
             const debt = debts.find((d) => d.id === id)!;
-            const fullActivity = buildDebtActivity(debt, plan, debtCharges, accounts, months);
-            const activity = { ...fullActivity, inByMonth: visible(fullActivity.inByMonth), outByMonth: visible(fullActivity.outByMonth) };
+            const activity = buildDebtActivity(debt, activityPlan, activityCharges, accounts, activityHorizon, new Date(), activityMonth);
             const sub = `${debt.apr}% APR${debt.credit_limit != null ? ` · ${formatMoney(debt.credit_limit, { whole: true })} limit` : ''}`;
             return (
               <Suspense fallback={<ChartFallback />}>
@@ -679,8 +688,7 @@ export default function App() {
             );
           }
           const acct = accounts.find((a) => a.id === id)!;
-          const fullActivity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, plan, months, inflation);
-          const activity = { ...fullActivity, inByMonth: visible(fullActivity.inByMonth), outByMonth: visible(fullActivity.outByMonth) };
+          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth);
           return (
             <Suspense fallback={<ChartFallback />}>
               <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? '★ primary — pays the bills' : 'savings pile'} activity={activity} />

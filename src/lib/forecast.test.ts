@@ -411,4 +411,15 @@ describe('buildDebtActivity', () => {
     expect(pay?.direction).toBe('out');
     expect(pay?.detail).toBe('from Checking');
   });
+
+  it('limits activity rows and totals to the selected month window', () => {
+    const charges = [{ debtId: 1, monthIndex: 0, amount: 300, label: 'New TV', kind: 'expense' as const }];
+    const plan = simulateDebtPlan([debt], 0, 'none', 2, charges);
+    const act = buildDebtActivity(debt, plan, charges, accounts, 2, NOW, 1);
+
+    expect(act.labels).toEqual(['Feb 26']);
+    expect(act.inByMonth).toHaveLength(1);
+    expect(act.outByMonth).toHaveLength(1);
+    expect(act.items.some((i) => i.name === 'New TV')).toBe(false);
+  });
 });
