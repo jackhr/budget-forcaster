@@ -28,9 +28,10 @@ const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
 const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
 const OverviewChart = lazy(() => import('./components/OverviewChart'));
 const AccountActivity = lazy(() => import('./components/AccountActivity'));
+const AccountOutflows = lazy(() => import('./components/AccountOutflows'));
 const Transactions = lazy(() => import('./components/Transactions'));
 
-type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview' | 'account' | 'transactions';
+type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview' | 'account' | 'outflows' | 'transactions';
 
 const TABS: [Tab, string][] = [
   ['forecast', 'Forecast'],
@@ -39,6 +40,7 @@ const TABS: [Tab, string][] = [
   ['breakdown', 'Breakdown'],
   ['overview', 'Overview'],
   ['account', 'Account'],
+  ['outflows', 'Outflows'],
   ['transactions', 'Transactions'],
 ];
 type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
@@ -677,6 +679,19 @@ export default function App() {
               />
             </Suspense>
           </>
+        )}
+        {tab === 'outflows' && (
+          <Suspense fallback={<ChartFallback />}>
+            <AccountOutflows
+              accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
+              labels={savings.map((s) => s.label)}
+              expenseOut={expensePlan.outByAccount}
+              scheduledOut={scheduledOutByAccount}
+              debtOut={debtOutByAccount}
+              months={months}
+              onMonthsChange={setMonths}
+            />
+          </Suspense>
         )}
         {tab === 'transactions' && (
           <Suspense fallback={<ChartFallback />}>
