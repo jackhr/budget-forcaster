@@ -61,6 +61,13 @@ export function summarizeDebt(debt: Debt): DebtSummary {
   };
 }
 
+// Default "paid this month" for a debt: paid if its autopay day has already arrived
+// this month (day <= today); unpaid if it's still upcoming, or no autopay day is set.
+export function debtPaidDefault(debt: Debt, now: Date = new Date()): boolean {
+  if (debt.payment_day == null) return false;
+  return debt.payment_day <= now.getDate();
+}
+
 // Combined debt outflow per month across the forecast horizon (payments stop at payoff).
 export function debtOutflowTotals(debts: Debt[], months: number): number[] {
   const totals = new Array(months).fill(0);
@@ -123,6 +130,9 @@ interface DebtState {
 // paymentSchedule (optional) overrides a debt's monthly_payment per month when a
 // funding plan sets an amount (fixed, percent, or mixed). The monthly payment stands
 // before a future plan kicks in.
+//
+// paidThisMonth (optional) = debt ids already paid this month: they make no payment
+// in month 0 (the current balance already reflects it), then resume normally.
 export function simulateDebtPlan(
   debts: Debt[],
   extra: number,
@@ -130,6 +140,7 @@ export function simulateDebtPlan(
   months: number,
   charges: DebtCharge[] = [],
   paymentSchedule?: Map<number, (number | null)[]>,
+  paidThisMonth?: Set<number>,
 ): DebtPlan {
   const outflow = new Array(months).fill(0);
   const remaining = new Array(months).fill(0);
@@ -148,7 +159,10 @@ export function simulateDebtPlan(
   // An active funding plan controls the exact payment and opts that debt out of
   // avalanche/snowball rollover for the month.
   const overrideOf = (d: DebtState, month: number) => d.sched?.[month] ?? null;
-  const minOf = (d: DebtState, month: number) => overrideOf(d, month) ?? d.min;
+  const minOf = (d: DebtState, month: number) => {
+    if (month === 0 && paidThisMonth?.has(d.id)) return 0; // already paid this month
+    return overrideOf(d, month) ?? d.min;
+  };
   const overLimitByDebt = new Map<number, number | null>();
   for (const d of debts) { payoffMonthByDebt.set(d.id, null); overLimitByDebt.set(d.id, null); }
   const stateById = new Map(states.map((s) => [s.id, s]));

@@ -5,7 +5,7 @@ import {
   type Scenario,
 } from './api/client';
 import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
-import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
+import { simulateDebtPlan, debtPaidDefault, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
 import SummaryCards from './components/SummaryCards';
@@ -113,6 +113,10 @@ export default function App() {
   const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
   const [activityMonth, setActivityMonth] = useState(() => Number(localStorage.getItem('bf.activityMonth')) || 0);
   const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
+  // Per-debt "paid this month" overrides, keyed by debt id -> "YYYY-MM:1" | "YYYY-MM:0".
+  const [paidOverrides, setPaidOverrides] = useState<Record<number, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('bf.debtPaid') || '{}'); } catch { return {}; }
+  });
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +128,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
   useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
   useEffect(() => { localStorage.setItem('bf.activityMonth', String(activityMonth)); }, [activityMonth]);
+  useEffect(() => { localStorage.setItem('bf.debtPaid', JSON.stringify(paidOverrides)); }, [paidOverrides]);
   useEffect(() => { if (startMonth >= months) setStartMonth(Math.max(0, months - 1)); }, [startMonth, months]);
 
   const changeStartMonth = (value: number) => setStartMonth(Math.max(0, Math.min(value, months - 1)));
@@ -168,8 +173,17 @@ export default function App() {
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   // Any active debt funding-plan amount overrides its monthly payment per month.
   const debtPayments = buildDebtPaymentSchedule(debts, months);
-  const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges, debtPayments);
-  const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges, debtPayments);
+  // "Paid this month": user override for the current month, else the autopay-day default.
+  const monthKey = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+  const isPaidThisMonth = (d: Debt): boolean => {
+    const ov = paidOverrides[d.id];
+    if (ov && ov.startsWith(`${monthKey}:`)) return ov.endsWith(':1');
+    return debtPaidDefault(d);
+  };
+  const togglePaid = (d: Debt) => setPaidOverrides((prev) => ({ ...prev, [d.id]: `${monthKey}:${isPaidThisMonth(d) ? 0 : 1}` }));
+  const paidThisMonth = new Set(debts.filter(isPaidThisMonth).map((d) => d.id));
+  const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges, debtPayments, paidThisMonth);
+  const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges, debtPayments, paidThisMonth);
   // Cash out for debts = the actual payments. Charge overflow (the part of a card
   // charge that exceeds its available credit, or a loan/unknown target) is NOT paid
   // from cash — it's left uncovered and flagged below.
@@ -235,7 +249,7 @@ export default function App() {
     if (!breakdownIncludeFuture) {
       // Re-run the cash pipeline with no future expenses (drops their cash draws
       // and any card charges they'd add to the debt plan).
-      const planNF = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, expensePlan.charges, debtPayments);
+      const planNF = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, expensePlan.charges, debtPayments, paidThisMonth);
       const debtCashOutNF = planNF.outflow.map((v) => Math.round(v * 100) / 100);
       sav = buildSavings(incomeSources, expensePlan.ongoingCashOut, [], debtCashOutNF, months, totalCash);
       sched = buildScheduledOutByAccount([], accounts, months);
@@ -785,6 +799,7 @@ export default function App() {
           onReorder={reorderDebts} onReorderGroup={reorderGroups}
           plan={plan} basePlan={basePlan} extra={debtExtra} strategy={debtStrategy}
           onExtraChange={changeDebtExtra} onStrategyChange={changeDebtStrategy}
+          isPaidThisMonth={isPaidThisMonth} onTogglePaid={togglePaid}
         />
         </>}
       </main>

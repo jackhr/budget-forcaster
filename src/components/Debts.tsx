@@ -44,6 +44,8 @@ interface Props {
   strategy: DebtStrategy;
   onExtraChange: (v: number) => void;
   onStrategyChange: (s: DebtStrategy) => void;
+  isPaidThisMonth: (d: Debt) => boolean;
+  onTogglePaid: (d: Debt) => void;
 }
 
 const ACCENT = 'var(--color-net-neg)';
@@ -325,11 +327,13 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
   );
 }
 
-function DebtRow({ debt, groups, accounts, overLimitMonth, onUpdate, onDelete, drag, dragging }: {
+function DebtRow({ debt, groups, accounts, overLimitMonth, paid, onTogglePaid, onUpdate, onDelete, drag, dragging }: {
   debt: Debt;
   groups: LineItemGroup[];
   accounts: AccountOpt[];
   overLimitMonth?: number | null; // first forecast month its balance exceeds the limit
+  paid: boolean;
+  onTogglePaid: () => void;
   onUpdate: (id: number, data: DebtInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -380,7 +384,19 @@ function DebtRow({ debt, groups, accounts, overLimitMonth, onUpdate, onDelete, d
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            onClick={onTogglePaid}
+            title={paid ? 'Paid this month — this month’s payment is excluded from the forecast. Click to mark unpaid.' : 'Not paid this month — click to mark paid (skips this month’s payment in the forecast).'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 'var(--radius-sm)', whiteSpace: 'nowrap',
+              background: paid ? 'var(--color-surface-2)' : 'transparent',
+              color: paid ? 'var(--color-income)' : 'var(--color-text-muted)',
+              border: `1px solid ${paid ? 'var(--color-income)' : 'var(--color-border)'}`,
+            }}
+          >
+            {paid ? '✓ Paid this month' : 'Mark paid'}
+          </button>
           <button onClick={() => setEditing(true)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', padding: '5px 10px', border: '1px solid var(--color-border)' }}>Edit</button>
           <ConfirmButton onConfirm={() => onDelete(debt.id)} title={`Delete ${debt.name}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}>✕</ConfirmButton>
         </div>
@@ -399,12 +415,14 @@ function DebtRow({ debt, groups, accounts, overLimitMonth, onUpdate, onDelete, d
   );
 }
 
-function DebtGroupBlock({ group, debts, groups, accounts, overLimitFor, onUpdate, onDelete, onAddInGroup, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: {
+function DebtGroupBlock({ group, debts, groups, accounts, overLimitFor, isPaidThisMonth, onTogglePaid, onUpdate, onDelete, onAddInGroup, onRenameGroup, onDeleteGroup, dragFor, draggingId, groupDrag }: {
   group: LineItemGroup;
   debts: Debt[];
   groups: LineItemGroup[];
   accounts: AccountOpt[];
   overLimitFor: (id: number) => number | null;
+  isPaidThisMonth: (d: Debt) => boolean;
+  onTogglePaid: (d: Debt) => void;
   onUpdate: (id: number, data: DebtInput) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onAddInGroup: (groupId: number) => void;
@@ -460,7 +478,7 @@ function DebtGroupBlock({ group, debts, groups, accounts, overLimitFor, onUpdate
 
       {!collapsed && (
         <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {debts.map((d) => <DebtRow key={d.id} debt={d} groups={groups} accounts={accounts} overLimitMonth={overLimitFor(d.id)} onUpdate={onUpdate} onDelete={onDelete} drag={dragFor(d)} dragging={draggingId === d.id} />)}
+          {debts.map((d) => <DebtRow key={d.id} debt={d} groups={groups} accounts={accounts} overLimitMonth={overLimitFor(d.id)} paid={isPaidThisMonth(d)} onTogglePaid={() => onTogglePaid(d)} onUpdate={onUpdate} onDelete={onDelete} drag={dragFor(d)} dragging={draggingId === d.id} />)}
           {debts.length === 0 && (
             <p style={{ padding: '6px 4px', color: 'var(--color-text-muted)', fontSize: 12.5 }}>Empty group — add a debt below.</p>
           )}
@@ -512,7 +530,7 @@ function payoffDateFromIndex(monthIndex: number | null): string {
   return payoffDateLabel(monthIndex);
 }
 
-export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDelete, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup, plan, basePlan, extra, strategy, onExtraChange, onStrategyChange }: Props) {
+export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDelete, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup, plan, basePlan, extra, strategy, onExtraChange, onStrategyChange, isPaidThisMonth, onTogglePaid }: Props) {
   const [adding, setAdding] = useState<false | { groupId: number | null }>(false);
   const myGroups = groups.filter((g) => g.kind === 'debt');
   const ungrouped = debts.filter((d) => d.group_id == null);
@@ -608,6 +626,8 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
           groups={myGroups}
           accounts={accounts}
           overLimitFor={overLimitFor}
+          isPaidThisMonth={isPaidThisMonth}
+          onTogglePaid={onTogglePaid}
           onUpdate={onUpdate}
           onDelete={onDelete}
           onAddInGroup={(groupId) => setAdding({ groupId })}
@@ -621,7 +641,7 @@ export default function Debts({ debts, groups, accounts, onAdd, onUpdate, onDele
 
       {/* Ungrouped debts */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {ungrouped.map((d) => <DebtRow key={d.id} debt={d} groups={myGroups} accounts={accounts} overLimitMonth={overLimitFor(d.id)} onUpdate={onUpdate} onDelete={onDelete} drag={dnd.handlers(d)} dragging={dnd.dragId === d.id} />)}
+        {ungrouped.map((d) => <DebtRow key={d.id} debt={d} groups={myGroups} accounts={accounts} overLimitMonth={overLimitFor(d.id)} paid={isPaidThisMonth(d)} onTogglePaid={() => onTogglePaid(d)} onUpdate={onUpdate} onDelete={onDelete} drag={dnd.handlers(d)} dragging={dnd.dragId === d.id} />)}
         {debts.length === 0 && (
           <p style={{ padding: '20px 12px', color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 13 }}>
             No debts tracked. Add a loan or credit card to see when it’s paid off.

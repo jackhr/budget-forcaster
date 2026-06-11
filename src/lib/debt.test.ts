@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { simulateDebt, summarizeDebt, simulateDebtPlan } from './debt';
+import { simulateDebt, summarizeDebt, simulateDebtPlan, debtPaidDefault } from './debt';
 import type { Debt } from '../types';
 
 function makeDebt(over: Partial<Debt>): Debt {
@@ -141,5 +141,27 @@ describe('simulateDebtPlan charges & credit limits', () => {
     const card = makeDebt({ id: 1, balance: 0, apr: 0, monthly_payment: 0 });
     const plan = simulateDebtPlan([card], 0, 'none', 1, [{ debtId: 999, monthIndex: 0, amount: 250 }]);
     expect(plan.chargeOverflow[0]).toBeCloseTo(250, 5);
+  });
+});
+
+describe('debtPaidDefault', () => {
+  it('is false when no autopay day is set', () => {
+    expect(debtPaidDefault(makeDebt({ payment_day: null }))).toBe(false);
+  });
+  it('is paid once the autopay day has arrived, unpaid while upcoming', () => {
+    const now = new Date(2026, 5, 11); // June 11
+    expect(debtPaidDefault(makeDebt({ payment_day: 5 }), now)).toBe(true);   // past
+    expect(debtPaidDefault(makeDebt({ payment_day: 11 }), now)).toBe(true);  // today
+    expect(debtPaidDefault(makeDebt({ payment_day: 20 }), now)).toBe(false); // upcoming
+  });
+});
+
+describe('simulateDebtPlan paidThisMonth', () => {
+  it('skips the current month payment for a paid debt, then resumes', () => {
+    const d = makeDebt({ id: 1, balance: 1000, apr: 0, monthly_payment: 200 });
+    const plan = simulateDebtPlan([d], 0, 'none', 3, [], undefined, new Set([1]));
+    expect(plan.outflowByDebt.get(1)![0]).toBe(0);              // month 0 skipped
+    expect(plan.remainingByDebt.get(1)![0]).toBeCloseTo(1000, 5); // balance unchanged in month 0
+    expect(plan.outflowByDebt.get(1)![1]).toBeCloseTo(200, 5);  // resumes next month
   });
 });
