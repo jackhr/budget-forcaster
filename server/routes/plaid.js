@@ -530,7 +530,11 @@ router.post('/resync', async (req, res) => {
     const setDebtById = db.prepare(
       `UPDATE debts SET
        balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
-       monthly_payment = COALESCE(?, monthly_payment), payment_day = COALESCE(?, payment_day),
+       monthly_payment = CASE
+         WHEN ? = 0 AND COALESCE(?, credit_limit) IS NOT NULL THEN monthly_payment
+         ELSE COALESCE(?, monthly_payment)
+       END,
+       payment_day = COALESCE(?, payment_day),
        last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
        last_payment_amount = ?, last_payment_date = ?, is_overdue = ?, plaid_aprs = ?
        WHERE plaid_account_id = ?`
@@ -538,7 +542,11 @@ router.post('/resync', async (req, res) => {
     const setDebtByName = db.prepare(
       `UPDATE debts SET
        balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
-       monthly_payment = COALESCE(?, monthly_payment), payment_day = COALESCE(?, payment_day),
+       monthly_payment = CASE
+         WHEN ? = 0 AND COALESCE(?, credit_limit) IS NOT NULL THEN monthly_payment
+         ELSE COALESCE(?, monthly_payment)
+       END,
+       payment_day = COALESCE(?, payment_day),
        last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
        last_payment_amount = ?, last_payment_date = ?, is_overdue = ?, plaid_aprs = ?, plaid_account_id = ?
        WHERE plaid_account_id IS NULL AND name = ?`
@@ -554,7 +562,9 @@ router.post('/resync', async (req, res) => {
         let n = setAcctById.run(current, pa.account_id).changes;
         if (!n) n = setAcctByName.run(current, pa.account_id, label).changes;
         const liabilityArgs = [
-          owed, pa.credit_limit, pa.apr, pa.minimum_payment_amount, dueDay(pa.next_payment_due_date),
+          owed, pa.credit_limit, pa.apr,
+          pa.minimum_payment_amount, pa.credit_limit, pa.minimum_payment_amount,
+          dueDay(pa.next_payment_due_date),
           pa.last_statement_balance, pa.last_statement_issue_date, pa.next_payment_due_date,
           pa.last_payment_amount, pa.last_payment_date, pa.is_overdue, pa.aprs ?? '[]',
         ];
