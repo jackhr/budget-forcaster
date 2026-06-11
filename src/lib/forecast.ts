@@ -617,6 +617,7 @@ export interface AccountActivityItem {
   total: number;
   nextLabel: string | null;
   rangeLabel: string | null;
+  paid?: boolean; // a debt payment already made this month (excluded from the in/out totals)
 }
 
 export interface AccountActivity {
@@ -692,6 +693,7 @@ export function buildAccountActivity(
   inflation = 0,
   now: Date = new Date(),
   startMonth = 0,
+  paidThisMonth?: Set<number>,
 ): AccountActivity {
   const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const isPrimary = accountId === primaryId;
@@ -705,13 +707,15 @@ export function buildAccountActivity(
   const finalize = (
     key: string, name: string, kind: AccountActivityItem['kind'], direction: 'in' | 'out',
     frequency: Frequency, detail: string, start: string | null, end: string | null, series: number[],
+    paid = false,
   ) => {
     let total = 0;
     let nextIndex = -1;
     for (let m = startMonth; m < months; m++) {
       const v = series[m];
       total += v;
-      if (direction === 'in') inByMonth[m - startMonth] += v; else outByMonth[m - startMonth] += v;
+      // A payment already made this month still shows, but doesn't add to the in/out totals.
+      if (!paid) { if (direction === 'in') inByMonth[m - startMonth] += v; else outByMonth[m - startMonth] += v; }
       if (v > 0.005 && nextIndex < 0) nextIndex = m;
     }
     if (total <= 0.005) return;
@@ -722,6 +726,7 @@ export function buildAccountActivity(
       total: round2(total),
       nextLabel: nextIndex >= 0 ? labels[nextIndex] : null,
       rangeLabel: rangeLabelOf(start, end, now),
+      paid: paid || undefined,
     });
   };
 
@@ -776,7 +781,9 @@ export function buildAccountActivity(
     } else {
       detail = (d.account_id == null && isPrimary) ? 'Full payment (default)' : 'Funded';
     }
-    finalize(`debt${d.id}`, d.name, 'debt', 'out', 'monthly', detail, null, null, series);
+    // Mark a debt already paid this month (only when the window starts at the current month).
+    const paid = startMonth === 0 && !!paidThisMonth?.has(d.id);
+    finalize(`debt${d.id}`, d.name, 'debt', 'out', 'monthly', detail, null, null, series, paid);
   }
 
   items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));

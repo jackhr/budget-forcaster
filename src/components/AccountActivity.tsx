@@ -38,10 +38,11 @@ function Badge({ kind }: { kind: AccountActivityItem['kind'] }) {
 }
 
 function Row({ item, cost }: { item: AccountActivityItem; cost: boolean }) {
-  const color = cost ? 'var(--color-expense)' : 'var(--color-income)';
+  const paid = !!item.paid;
+  const color = paid ? 'var(--color-text-muted)' : (cost ? 'var(--color-expense)' : 'var(--color-income)');
   const sign = item.direction === 'in' ? '+' : '−'; // relative to the entity's balance
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.9fr', gap: 8, alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-sm)', transition: 'background 0.1s' }}
+    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.9fr', gap: 8, alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-sm)', transition: 'background 0.1s', opacity: paid ? 0.7 : 1 }}
       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
@@ -49,13 +50,14 @@ function Row({ item, cost }: { item: AccountActivityItem; cost: boolean }) {
         <span style={{ color, fontWeight: 700 }}>{cost ? '↑' : '↓'}</span>
         <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
         <Badge kind={item.kind} />
+        {paid && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-income)', border: '1px solid var(--color-income)', borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>✓ PAID</span>}
       </div>
       <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>{FREQUENCY_LABELS[item.frequency]}</span>
       <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
-        {item.detail}{item.rangeLabel ? ` · ${item.rangeLabel}` : ''}
+        {paid ? 'Already paid this month' : `${item.detail}${item.rangeLabel ? ` · ${item.rangeLabel}` : ''}`}
       </span>
       <span style={{ textAlign: 'right' }}>
-        <div style={{ fontWeight: 600, color }}>{sign}{formatMoney(item.perOccurrence)}</div>
+        <div style={{ fontWeight: 600, color, textDecoration: paid ? 'line-through' : 'none' }}>{sign}{formatMoney(item.perOccurrence)}</div>
         <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>≈{formatMoney(item.monthlyAvg, { whole: true })}/mo</div>
       </span>
     </div>

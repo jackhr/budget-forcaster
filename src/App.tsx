@@ -663,6 +663,8 @@ export default function App() {
           const activityCharges = [...buildDebtCharges(payments, activityHorizon), ...activityExpensePlan.charges];
           const activityPayments = buildDebtPaymentSchedule(debts, activityHorizon);
           const activityPlan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, activityHorizon, activityCharges, activityPayments);
+          // "Paid this month" only applies when the activity is showing the current month.
+          const activityPaid = activityMonth === 0 ? paidThisMonth : undefined;
           const shared = {
             entities, selected: sel, onSelect: setActiveEntity,
             month: activityMonth, onMonthChange: (value: number) => setActivityMonth(Math.max(0, Math.min(119, value))),
@@ -679,7 +681,7 @@ export default function App() {
             );
           }
           const acct = accounts.find((a) => a.id === id)!;
-          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth);
+          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth, activityPaid);
           return (
             <Suspense fallback={<ChartFallback />}>
               <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? '★ primary — pays the bills' : 'savings pile'} activity={activity} />
