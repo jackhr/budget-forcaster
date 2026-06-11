@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, monthOffset } from './forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
 import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
@@ -389,5 +389,26 @@ describe('buildAccountActivity', () => {
 
     const a2 = buildAccountActivity(2, accounts, sources, expenses, [], debts, plan, 6, 0, NOW);
     expect(a2.items.map((i) => i.name)).toEqual(['Side']); // only Side income
+  });
+});
+
+describe('buildDebtActivity', () => {
+  const debt: Debt = { id: 1, name: 'Card', balance: 1000, apr: 24, credit_limit: 5000, monthly_payment: 200, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: 9, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
+  const accounts: Account[] = [{ id: 9, name: 'Checking', balance: 0, is_primary: 1, sort_order: null, created_at: '', updated_at: '' }];
+
+  it('reports charges + interest as inflows and payments as outflow', () => {
+    const charges = [{ debtId: 1, monthIndex: 0, amount: 300, label: 'New TV', kind: 'expense' as const }];
+    const plan = simulateDebtPlan([debt], 0, 'none', 6, charges);
+    const act = buildDebtActivity(debt, plan, charges, accounts, 6, NOW);
+
+    const charge = act.items.find((i) => i.name === 'New TV');
+    expect(charge?.direction).toBe('in');
+    expect(charge?.total).toBeCloseTo(300, 1);
+
+    expect(act.items.some((i) => i.kind === 'interest' && i.direction === 'in')).toBe(true);
+
+    const pay = act.items.find((i) => i.name === 'Payments');
+    expect(pay?.direction).toBe('out');
+    expect(pay?.detail).toBe('from Checking');
   });
 });

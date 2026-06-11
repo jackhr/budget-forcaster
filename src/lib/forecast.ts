@@ -608,7 +608,7 @@ export function buildNetWorth(savings: SavingsPoint[], debtRemaining: number[]):
 export interface AccountActivityItem {
   key: string;
   name: string;
-  kind: 'income' | 'expense' | 'future' | 'debt';
+  kind: 'income' | 'expense' | 'future' | 'debt' | 'interest';
   direction: 'in' | 'out';
   frequency: Frequency;
   detail: string;
@@ -776,6 +776,81 @@ export function buildAccountActivity(
     }
     finalize(`debt${d.id}`, d.name, 'debt', 'out', 'monthly', detail, null, null, series);
   }
+
+  items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));
+  return { labels, inByMonth, outByMonth, items };
+}
+
+// Which account(s) a debt's payment is drawn from, as a short label.
+function debtPaymentSource(debt: Debt, accounts: Account[]): string {
+  const nameOf = (id: number | null) => accounts.find((a) => a.id === id)?.name;
+  const list = debt.funding_rules?.length ? debt.funding_rules : (debt.funding_allocations ?? []);
+  const accIds = [...new Set(list.filter((a) => a.source_type === 'account' && a.source_id != null).map((a) => a.source_id as number))];
+  if (accIds.length === 1) return `from ${nameOf(accIds[0]) ?? 'account'}`;
+  if (accIds.length > 1) return `from ${accIds.length} accounts`;
+  if (debt.account_id != null) return `from ${nameOf(debt.account_id) ?? 'account'}`;
+  const primary = accounts.find((a) => a.is_primary);
+  return primary ? `from ${primary.name}` : 'from primary';
+}
+
+// What flows into a debt (charges + interest, which grow the balance) and out of it
+// (payments, which pay it down) — the debt counterpart to buildAccountActivity.
+export function buildDebtActivity(
+  debt: Debt,
+  plan: DebtPlan,
+  charges: DebtCharge[],
+  accounts: Account[],
+  months: number,
+  now: Date = new Date(),
+): AccountActivity {
+  const labels = labelsFor(months, now);
+  const inByMonth = new Array(months).fill(0);
+  const outByMonth = new Array(months).fill(0);
+  const items: AccountActivityItem[] = [];
+
+  const push = (
+    key: string, name: string, kind: AccountActivityItem['kind'], direction: 'in' | 'out',
+    frequency: Frequency, detail: string, series: number[],
+  ) => {
+    let total = 0;
+    let nextIndex = -1;
+    for (let m = 0; m < months; m++) {
+      const v = series[m] ?? 0;
+      total += v;
+      if (direction === 'in') inByMonth[m] += v; else outByMonth[m] += v;
+      if (v > 0.005 && nextIndex < 0) nextIndex = m;
+    }
+    if (total <= 0.005) return;
+    items.push({
+      key, name, kind, direction, frequency, detail,
+      perOccurrence: nextIndex >= 0 ? round2(series[nextIndex]) : 0,
+      monthlyAvg: round2(total / months),
+      total: round2(total),
+      nextLabel: nextIndex >= 0 ? labels[nextIndex] : null,
+      rangeLabel: null,
+    });
+  };
+
+  // Charges grouped by source obligation (an expense or future expense billed here).
+  const bySource = new Map<string, { name: string; kind: 'expense' | 'future'; series: number[] }>();
+  for (const c of charges) {
+    if (c.debtId !== debt.id || c.monthIndex < 0 || c.monthIndex >= months) continue;
+    const key = `${c.kind ?? 'future'}:${c.label ?? 'Charge'}`;
+    let entry = bySource.get(key);
+    if (!entry) { entry = { name: c.label ?? 'Charge', kind: (c.kind ?? 'future'), series: new Array(months).fill(0) }; bySource.set(key, entry); }
+    entry.series[c.monthIndex] += c.amount;
+  }
+  for (const [key, src] of bySource) {
+    const occ = src.series.filter((v) => v > 0.005).length;
+    const freq: Frequency = occ <= 1 ? 'one-time' : 'monthly';
+    push(`chg${key}`, src.name, src.kind, 'in', freq, src.kind === 'expense' ? 'Expense charged here' : 'Future expense charged here', src.series.map(round2));
+  }
+
+  const interest = plan.interestByDebt.get(debt.id);
+  if (interest) push(`int${debt.id}`, 'Interest', 'interest', 'in', 'monthly', `${debt.apr}% APR`, interest);
+
+  const pay = plan.outflowByDebt.get(debt.id);
+  if (pay) push(`pay${debt.id}`, 'Payments', 'debt', 'out', 'monthly', debtPaymentSource(debt, accounts), pay);
 
   items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));
   return { labels, inByMonth, outByMonth, items };

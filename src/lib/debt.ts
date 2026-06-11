@@ -87,6 +87,7 @@ export interface DebtPlan {
   outflowByDebt: Map<number, number[]>; // per-debt payment each month (for pay-from attribution)
   remaining: number[]; // total remaining balance at each month-end (for net worth)
   remainingByDebt: Map<number, number[]>; // per-debt remaining balance each month (for breakdown)
+  interestByDebt: Map<number, number[]>; // per-debt interest accrued each month
   payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
   overLimitByDebt: Map<number, number | null>; // debt id -> first month-end balance above its credit limit (null if never)
   chargeOverflow: number[]; // per month, charge $ that didn't fit on a card (over limit) or hit a loan/unknown target -> left UNCOVERED (not paid from cash)
@@ -153,6 +154,7 @@ export function simulateDebtPlan(
   const stateById = new Map(states.map((s) => [s.id, s]));
   const remainingByDebt = new Map<number, number[]>(states.map((s) => [s.id, new Array(months).fill(0)]));
   const outflowByDebt = new Map<number, number[]>(states.map((s) => [s.id, new Array(months).fill(0)]));
+  const interestByDebt = new Map<number, number[]>(states.map((s) => [s.id, new Array(months).fill(0)]));
 
   // Bucket charges by month for quick lookup.
   const chargesByMonth = new Map<number, DebtCharge[]>();
@@ -171,6 +173,7 @@ export function simulateDebtPlan(
         const interest = d.bal * d.rate;
         d.bal += interest;
         totalInterest += interest;
+        interestByDebt.get(d.id)![m] += interest;
       }
     }
 
@@ -251,7 +254,7 @@ export function simulateDebtPlan(
     outflow[m] = round2(outflow[m]);
     remaining[m] = round2(remaining[m]);
     chargeOverflow[m] = round2(chargeOverflow[m]);
-    for (const d of states) outflowByDebt.get(d.id)![m] = round2(outflowByDebt.get(d.id)![m]);
+    for (const d of states) { outflowByDebt.get(d.id)![m] = round2(outflowByDebt.get(d.id)![m]); interestByDebt.get(d.id)![m] = round2(interestByDebt.get(d.id)![m]); }
     if (debtFreeMonthIndex === null && states.every((d) => d.bal <= 0.005)) {
       debtFreeMonthIndex = m;
     }
@@ -262,6 +265,7 @@ export function simulateDebtPlan(
     outflowByDebt,
     remaining,
     remainingByDebt,
+    interestByDebt,
     chargeOverflow,
     payoffMonthByDebt,
     overLimitByDebt,

@@ -4,7 +4,7 @@ import {
   accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
 import { simulateDebtPlan, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -39,7 +39,7 @@ const TABS: [Tab, string][] = [
   ['networth', 'Net Worth'],
   ['breakdown', 'Breakdown'],
   ['overview', 'Overview'],
-  ['account', 'Account'],
+  ['account', 'Activity'],
   ['outflows', 'Outflows'],
   ['transactions', 'Transactions'],
 ];
@@ -110,7 +110,7 @@ export default function App() {
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
   const [breakdownIncludeFuture, setBreakdownIncludeFuture] = useState(() => localStorage.getItem('bf.breakdownFuture') !== '0');
-  const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
+  const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
   const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -623,23 +623,39 @@ export default function App() {
           </Suspense>
         )}
         {tab === 'account' && (() => {
-          const primary = accounts.find((a) => a.is_primary) ?? accounts[0];
-          const resolvedId = (activeAccountId != null && accounts.some((a) => a.id === activeAccountId)) ? activeAccountId : (primary?.id ?? null);
-          if (resolvedId == null) {
-            return <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24, color: 'var(--color-text-muted)' }}>Add an account to see its activity.</div>;
+          const entities = [
+            ...accounts.map((a) => ({ id: a.id, name: a.name, kind: 'account' as const, isPrimary: !!a.is_primary })),
+            ...debts.map((d) => ({ id: d.id, name: d.name, kind: 'debt' as const })),
+          ];
+          if (entities.length === 0) {
+            return <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24, color: 'var(--color-text-muted)' }}>Add an account or debt to see its activity.</div>;
           }
-          const activity = buildAccountActivity(resolvedId, accounts, incomeSources, expenses, payments, debts, plan, months, inflation);
+          const valid = (v: string) => {
+            const [k, idS] = v.split(':'); const id = Number(idS);
+            return (k === 'account' && accounts.some((a) => a.id === id)) || (k === 'debt' && debts.some((d) => d.id === id));
+          };
+          const primary = accounts.find((a) => a.is_primary) ?? accounts[0];
+          const sel = activeEntity && valid(activeEntity)
+            ? activeEntity
+            : (primary ? `account:${primary.id}` : `debt:${debts[0].id}`);
+          const [kind, idS] = sel.split(':');
+          const id = Number(idS);
+          const shared = { entities, selected: sel, onSelect: setActiveEntity, months, onMonthsChange: setMonths };
+          if (kind === 'debt') {
+            const debt = debts.find((d) => d.id === id)!;
+            const activity = buildDebtActivity(debt, plan, debtCharges, accounts, months);
+            const sub = `${debt.apr}% APR${debt.credit_limit != null ? ` · ${formatMoney(debt.credit_limit, { whole: true })} limit` : ''}`;
+            return (
+              <Suspense fallback={<ChartFallback />}>
+                <AccountActivity {...shared} entityKind="debt" balance={debt.balance} balanceSub={sub} activity={activity} />
+              </Suspense>
+            );
+          }
+          const acct = accounts.find((a) => a.id === id)!;
+          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, plan, months, inflation);
           return (
             <Suspense fallback={<ChartFallback />}>
-              <AccountActivity
-                accounts={accounts}
-                selectedId={resolvedId}
-                onSelect={setActiveAccountId}
-                account={accounts.find((a) => a.id === resolvedId)}
-                activity={activity}
-                months={months}
-                onMonthsChange={setMonths}
-              />
+              <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? '★ primary — pays the bills' : 'savings pile'} activity={activity} />
             </Suspense>
           );
         })()}
