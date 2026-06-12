@@ -5,6 +5,7 @@ import {
   type Scenario,
 } from './api/client';
 import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
+import { buildMonthBreakdown } from './lib/monthlyBreakdown';
 import { simulateDebtPlan, debtPaidDefault, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -25,6 +26,7 @@ const ForecastChart = lazy(() => import('./components/ForecastChart'));
 const SavingsChart = lazy(() => import('./components/SavingsChart'));
 const NetWorthChart = lazy(() => import('./components/NetWorthChart'));
 const BreakdownChart = lazy(() => import('./components/BreakdownChart'));
+const MonthlyBreakdown = lazy(() => import('./components/MonthlyBreakdown'));
 const OverviewChart = lazy(() => import('./components/OverviewChart'));
 const AccountActivity = lazy(() => import('./components/AccountActivity'));
 const AccountOutflows = lazy(() => import('./components/AccountOutflows'));
@@ -43,6 +45,7 @@ const TABS: [Tab, string][] = [
   ['transactions', 'Transactions'],
 ];
 type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
+type BreakdownMode = 'range' | 'month';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
   const pos = new Map(ids.map((id, i) => [id, i]));
@@ -110,6 +113,8 @@ export default function App() {
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
   const [breakdownIncludeFuture, setBreakdownIncludeFuture] = useState(() => localStorage.getItem('bf.breakdownFuture') !== '0');
+  const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>(() => (localStorage.getItem('bf.breakdownMode') as BreakdownMode) || 'range');
+  const [breakdownMonth, setBreakdownMonth] = useState(() => Number(localStorage.getItem('bf.breakdownMonth')) || 0);
   const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
   const [activityMonth, setActivityMonth] = useState(() => Number(localStorage.getItem('bf.activityMonth')) || 0);
   const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
@@ -130,6 +135,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
   useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
+  useEffect(() => { localStorage.setItem('bf.breakdownMode', breakdownMode); }, [breakdownMode]);
+  useEffect(() => { localStorage.setItem('bf.breakdownMonth', String(breakdownMonth)); }, [breakdownMonth]);
   useEffect(() => { localStorage.setItem('bf.activityMonth', String(activityMonth)); }, [activityMonth]);
   useEffect(() => { localStorage.setItem('bf.debtPaid', JSON.stringify(paidOverrides)); }, [paidOverrides]);
   useEffect(() => { localStorage.setItem('bf.expensePaid', JSON.stringify(expensePaidOverrides)); }, [expensePaidOverrides]);
@@ -329,6 +336,9 @@ export default function App() {
     : null;
   const visibleMap = (map: Map<number, number[]>) =>
     new Map([...map].map(([id, values]) => [id, visible(values)]));
+  const monthlyBreakdown = buildMonthBreakdown(
+    incomeSources, expenses, payments, debts, accounts, breakdownMonth, new Date(), paidThisMonth, expensesPaidThisMonth,
+  );
 
   // This month's outflow breakdown.
   const m0 = savings[0];
@@ -698,41 +708,66 @@ export default function App() {
         })()}
         {tab === 'breakdown' && (
           <>
-            <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
-              {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['future', 'Future'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => setBreakdownSection(id)}
-                  style={{
-                    background: breakdownSection === id ? 'var(--color-surface-2)' : 'transparent',
-                    color: breakdownSection === id ? 'var(--color-text)' : 'var(--color-text-muted)',
-                    border: `1px solid ${breakdownSection === id ? 'var(--color-border)' : 'transparent'}`,
-                    padding: '6px 16px', fontWeight: 600, fontSize: 13,
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
+                {([['range', 'Range'], ['month', 'Month']] as [BreakdownMode, string][]).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setBreakdownMode(id)}
+                    style={{
+                      background: breakdownMode === id ? 'var(--color-primary)' : 'transparent',
+                      color: breakdownMode === id ? '#fff' : 'var(--color-text-muted)',
+                      border: 'none', padding: '6px 16px', fontWeight: 600, fontSize: 13,
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {breakdownMode === 'range' && (
+                <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
+                  {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['future', 'Future'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
+                    <button
+                      key={id}
+                      onClick={() => setBreakdownSection(id)}
+                      style={{
+                        background: breakdownSection === id ? 'var(--color-surface-2)' : 'transparent',
+                        color: breakdownSection === id ? 'var(--color-text)' : 'var(--color-text-muted)',
+                        border: `1px solid ${breakdownSection === id ? 'var(--color-border)' : 'transparent'}`,
+                        padding: '6px 16px', fontWeight: 600, fontSize: 13,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            {breakdownSection === 'account' && (
+            {breakdownMode === 'range' && breakdownSection === 'account' && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-muted)', cursor: 'pointer', width: 'fit-content' }}>
                 <input type="checkbox" checked={breakdownIncludeFuture} onChange={(e) => setBreakdownIncludeFuture(e.target.checked)} />
                 Include future expenses
               </label>
             )}
-            <Suspense fallback={<ChartFallback />}>
-              <BreakdownChart
-                title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={visibleBreakdown}
-                startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth}
-                futureBars={breakdownSection === 'account' ? visible(futureExpenseBars) : undefined}
-                futureBarsActive={breakdownIncludeFuture}
-                debtMonthInfo={breakdownSection === 'debt' ? visibleDebtMonthInfo : undefined}
-                creditLimits={breakdownSection === 'debt'
-                  ? new Map(debts.filter((d) => d.debt_type !== 'loan' && d.credit_limit != null).map((d) => [d.id, d.credit_limit as number]))
-                  : undefined}
-                paidIds={breakdownSection === 'debt' ? paidThisMonth : undefined}
-              />
-            </Suspense>
+            {breakdownMode === 'range' ? (
+              <Suspense fallback={<ChartFallback />}>
+                <BreakdownChart
+                  title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={visibleBreakdown}
+                  startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth}
+                  futureBars={breakdownSection === 'account' ? visible(futureExpenseBars) : undefined}
+                  futureBarsActive={breakdownIncludeFuture}
+                  debtMonthInfo={breakdownSection === 'debt' ? visibleDebtMonthInfo : undefined}
+                  creditLimits={breakdownSection === 'debt'
+                    ? new Map(debts.filter((d) => d.debt_type !== 'loan' && d.credit_limit != null).map((d) => [d.id, d.credit_limit as number]))
+                    : undefined}
+                  paidIds={breakdownSection === 'debt' ? paidThisMonth : undefined}
+                />
+              </Suspense>
+            ) : (
+              <Suspense fallback={<ChartFallback />}>
+                <MonthlyBreakdown breakdown={monthlyBreakdown} month={breakdownMonth} onMonthChange={setBreakdownMonth} initialView="daily" />
+              </Suspense>
+            )}
           </>
         )}
         {tab === 'outflows' && (
