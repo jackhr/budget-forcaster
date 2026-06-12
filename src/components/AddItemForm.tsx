@@ -3,7 +3,6 @@ import type { AllocationSourceType, Frequency, ItemFormData } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
-import OptionalMonthField from './OptionalMonthField';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
@@ -13,7 +12,6 @@ interface Props {
   accentColor: string;
   placeholder: string;
   showFrequency?: boolean;
-  showEndDate?: boolean;
   showAccount?: boolean;
   showFunding?: boolean;
   groupId?: number | null;
@@ -32,13 +30,11 @@ const selectStyle: React.CSSProperties = {
   padding: '8px 10px', fontSize: 13, fontFamily: 'inherit',
 };
 
-export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, showEndDate, showAccount, showFunding, groupId, accounts, debts }: Props) {
+export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, showAccount, showFunding, groupId, accounts, debts }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('monthly');
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
   const [account, setAccount] = useState<number | null>(null);
   const [fundingSource, setFundingSource] = useState('');
   const [saving, setSaving] = useState(false);
@@ -48,10 +44,10 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const cardAvail = selectedCard?.available ?? null;
   const amtNum = parseFloat(amount);
   const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
-  const valid = name.trim().length > 0 && amtNum > 0 && (!end || !start || end >= start);
+  const valid = name.trim().length > 0 && amtNum > 0;
 
   const reset = () => {
-    setName(''); setAmount(''); setFrequency('monthly'); setStart(''); setEnd('');
+    setName(''); setAmount(''); setFrequency('monthly');
     setAccount(null); setFundingSource('');
   };
 
@@ -65,8 +61,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     await onAdd({
       name: name.trim(),
       monthly_amount: amtNum,
-      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
-      ...(showEndDate ? { end_date: end ? `${end}-01` : null } : {}),
+      ...(showFrequency ? { frequency } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: funding } : {}),
       ...(groupId != null ? { group_id: groupId } : {}),
@@ -118,19 +113,6 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
                 {FREQUENCIES.map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
               </select>
             ))}
-
-            {showFrequency && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>Active period</div>
-                  <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>Use the defaults for an item that is already active and continues indefinitely.</p>
-                </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  <OptionalMonthField label="Starts" value={start} onChange={(value) => { setStart(value); if (value && end && end < value) setEnd(value); }} emptyLabel="Active now" chooseLabel="Schedule a future start" clearLabel="Make active now" />
-                  {showEndDate && <OptionalMonthField label="Ends" value={end} min={start || undefined} onChange={setEnd} emptyLabel="Ongoing" chooseLabel="Set an end month" clearLabel="Make ongoing" />}
-                </div>
-              </div>
-            )}
 
             {showAccount && accounts?.length ? field('Deposited into', 'The account that receives this income.', (
               <select value={account ?? primaryId ?? ''} onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>

@@ -26,7 +26,6 @@ interface Props {
   showFunding?: boolean;
   showFrequency?: boolean;
   showAccount?: boolean;
-  showEndDate?: boolean;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onAdd: (data: ItemFormData) => Promise<void>;
@@ -76,13 +75,12 @@ interface GroupBlockProps {
   debts?: NamedSource[];
   showFunding?: boolean;
   showAccount?: boolean;
-  showEndDate?: boolean;
   dragFor: (item: LineItem) => DragProps;
   draggingId: number | null;
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, showEndDate, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const { collapsed, toggle: toggleCollapsed } = useCollapsedGroup(group.id);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -167,7 +165,6 @@ function GroupBlock({ group, placeholder, items, groups, accentColor, showFreque
               showFrequency={showFrequency}
               showFunding={showFunding}
               showAccount={showAccount}
-              showEndDate={showEndDate}
               groups={groups}
               accounts={accounts}
               debts={debts}
@@ -181,7 +178,7 @@ function GroupBlock({ group, placeholder, items, groups, accentColor, showFreque
             </p>
           )}
           <div style={{ padding: '0 12px 6px' }}>
-            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder={placeholder} showFrequency={showFrequency} showEndDate={showEndDate} showAccount={showAccount} showFunding={showFunding} groupId={group.id} accounts={accounts} debts={debts} />
+            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder={placeholder} showFrequency={showFrequency} showAccount={showAccount} showFunding={showFunding} groupId={group.id} accounts={accounts} debts={debts} />
           </div>
         </div>
       )}
@@ -238,7 +235,7 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, showEndDate, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
+export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
@@ -300,7 +297,6 @@ export default function LineItemTable({ title, description, items, accentColor, 
           debts={debts}
           showFunding={showFunding}
           showAccount={showAccount}
-          showEndDate={showEndDate}
           dragFor={dnd.handlers}
           draggingId={dnd.dragId}
           groupDrag={groupDnd.handlers(group)}
@@ -319,7 +315,6 @@ export default function LineItemTable({ title, description, items, accentColor, 
             showFrequency={showFrequency}
             showFunding={showFunding}
             showAccount={showAccount}
-            showEndDate={showEndDate}
             groups={myGroups}
             accounts={accounts}
             debts={debts}
@@ -339,7 +334,6 @@ export default function LineItemTable({ title, description, items, accentColor, 
         accentColor={accentColor}
         placeholder={itemLabel}
         showFrequency={showFrequency}
-        showEndDate={showEndDate}
         showAccount={showAccount}
         showFunding={showFunding}
         accounts={accounts}

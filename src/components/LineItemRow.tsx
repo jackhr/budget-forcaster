@@ -5,7 +5,6 @@ import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
-import OptionalMonthField from './OptionalMonthField';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
@@ -15,8 +14,7 @@ interface Props {
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   accentColor: string;
-  showFrequency?: boolean; // frequency + start date (income & expense)
-  showEndDate?: boolean;   // end date (expense range)
+  showFrequency?: boolean;
   showAccount?: boolean;   // "lands in account" selector (income)
   showFunding?: boolean;   // expense split-funding editor
   groups?: LineItemGroup[];
@@ -26,15 +24,8 @@ interface Props {
   dragging?: boolean;
 }
 
-function monthShort(ym: string | null): string | null {
-  if (!ym) return null;
-  return new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-}
-
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showEndDate, showAccount, showFunding, groups, accounts, debts, drag, dragging }: Props) {
+export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showAccount, showFunding, groups, accounts, debts, drag, dragging }: Props) {
   const itemFreq: Frequency = 'frequency' in item ? item.frequency : 'monthly';
-  const itemStart = 'start_date' in item ? item.start_date : null;
-  const itemEnd = 'end_date' in item ? item.end_date : null;
   const itemAccount = 'account_id' in item ? item.account_id : null;
   const itemAllocations: ExpenseAllocation[] = 'funding_allocations' in item ? (item.funding_allocations ?? []) : [];
   const itemRules: FundingRule[] = 'funding_rules' in item ? (item.funding_rules ?? []) : [];
@@ -45,8 +36,6 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const [amount, setAmount] = useState(String(item.monthly_amount));
   const [frequency, setFrequency] = useState<Frequency>(itemFreq);
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
-  const [start, setStart] = useState(itemStart ? itemStart.slice(0, 7) : '');
-  const [end, setEnd] = useState(itemEnd ? itemEnd.slice(0, 7) : '');
   const [account, setAccount] = useState<number | null>(itemAccount);
   const [allocations, setAllocations] = useState<ExpenseAllocation[]>(itemAllocations);
   const [fundingRules, setFundingRules] = useState<FundingRule[]>(itemRules);
@@ -57,8 +46,6 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setAmount(String(item.monthly_amount));
     setFrequency(itemFreq);
     setGroupId(item.group_id);
-    setStart(itemStart ? itemStart.slice(0, 7) : '');
-    setEnd(itemEnd ? itemEnd.slice(0, 7) : '');
     setAccount(itemAccount);
     setAllocations(itemAllocations);
     setFundingRules(itemRules);
@@ -66,8 +53,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   }
 
   const amtNum = parseFloat(amount);
-  const endBeforeStart = !!end && !!start && end < start;
-  const valid = name.trim().length > 0 && amtNum > 0 && !endBeforeStart;
+  const valid = name.trim().length > 0 && amtNum > 0;
 
   // "Paid from" is simple (one account/card, or the primary account) unless
   // there's a scheduled plan or a split — then show the funding-plan summary.
@@ -90,8 +76,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       name: name.trim(),
       monthly_amount: amt,
       group_id: groupId,
-      ...(showFrequency ? { frequency, start_date: start ? `${start}-01` : null } : {}),
-      ...(showEndDate ? { end_date: end ? `${end}-01` : null } : {}),
+      ...(showFrequency ? { frequency } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: allocations.filter((a) => a.source_id != null && a.value > 0) } : {}),
       ...(showFunding ? { funding_rules: fundingRules.filter((r) => r.source_id != null && r.value > 0) } : {}),
@@ -99,9 +84,6 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setSaving(false);
     setEditing(false);
   }
-
-  const startLabel = monthShort(itemStart);
-  const endLabel = monthShort(itemEnd);
 
   return (
     <>
@@ -123,32 +105,21 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
           <div style={{ width: 3, height: 24, marginTop: 1, borderRadius: 2, background: accentColor, flexShrink: 0 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
             <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-            {showFrequency && (itemFreq !== 'monthly' || startLabel || endLabel) && (
+            {showFrequency && itemFreq !== 'monthly' && (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
-                {itemFreq !== 'monthly' && (
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                    color: accentColor,
-                    background: `${accentColor}1f`,
-                    border: `1px solid ${accentColor}40`,
-                    borderRadius: 5,
-                    padding: '1px 6px',
-                  }}>
-                    {FREQUENCY_LABELS[itemFreq]}
-                  </span>
-                )}
-                {(startLabel || endLabel) && (
-                  <span style={{
-                    fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
-                    color: 'var(--color-text-muted)', background: 'var(--color-surface-2)',
-                    border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px',
-                  }}>
-                    {startLabel ? `from ${startLabel}` : ''}{startLabel && endLabel ? ' ' : ''}{endLabel ? `until ${endLabel}` : ''}
-                  </span>
-                )}
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: accentColor,
+                  background: `${accentColor}1f`,
+                  border: `1px solid ${accentColor}40`,
+                  borderRadius: 5,
+                  padding: '1px 6px',
+                }}>
+                  {FREQUENCY_LABELS[itemFreq]}
+                </span>
               </div>
             )}
           </div>
@@ -243,44 +214,6 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                   ))}
                 </select>
               </label>
-            )}
-
-            {showFrequency && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>Active period</div>
-                  <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
-                    Choose when this payment begins or ends. Leave it active now and ongoing for normal recurring bills.
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  <OptionalMonthField
-                    label="Starts"
-                    value={start}
-                    onChange={(value) => {
-                      setStart(value);
-                      if (value && end && end < value) setEnd(value);
-                    }}
-                    emptyLabel="Active now"
-                    chooseLabel="Schedule a future start"
-                    clearLabel="Make active now"
-                  />
-                  {showEndDate && (
-                    <OptionalMonthField
-                      label="Ends"
-                      value={end}
-                      min={start || undefined}
-                      onChange={setEnd}
-                      emptyLabel="Ongoing"
-                      chooseLabel="Set an end month"
-                      clearLabel="Make ongoing"
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-            {endBeforeStart && (
-              <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>End can’t be before the start.</p>
             )}
 
             {groups && (

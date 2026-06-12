@@ -362,13 +362,13 @@ export default function App() {
   const addExpense = (data: ItemFormData) => guard(async () => {
     const item = await expensesApi.create({
       name: data.name, monthly_amount: data.monthly_amount,
-      frequency: data.frequency ?? 'monthly', start_date: data.start_date ?? null, end_date: data.end_date ?? null,
+      frequency: data.frequency ?? 'monthly', start_date: null, end_date: null,
       group_id: data.group_id ?? null, funding_allocations: data.funding_allocations ?? [], funding_rules: data.funding_rules ?? [],
     });
     setExpenses((prev) => [...prev, item]);
   }, 'Could not add expense');
   const updateExpense = (id: number, data: ItemFormData) => guard(async () => {
-    const item = await expensesApi.update(id, data);
+    const item = await expensesApi.update(id, { ...data, start_date: null, end_date: null });
     setExpenses((prev) => prev.map((i) => (i.id === id ? item : i)));
   }, 'Could not update expense');
   const deleteExpense = (id: number) => guard(async () => {
@@ -779,9 +779,9 @@ export default function App() {
             onReorder={reorderIncome} onReorderGroup={reorderGroups}
           />
           <LineItemTable
-            title="Expenses" description="Costs by frequency & date range — split across cash & credit via Edit"
+            title="Expenses" description="Ongoing costs by frequency — split across cash & credit via Edit"
             items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
-            kind="expense" groups={groups} showFrequency showEndDate showFunding
+            kind="expense" groups={groups} showFrequency showFunding
             accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
             debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null, overLimit: d.credit_limit != null && d.balance > d.credit_limit + 0.005 }))}
             onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}

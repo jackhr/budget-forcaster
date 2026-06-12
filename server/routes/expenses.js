@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { reorder, ORDER_BY } = require('../lib/data');
-const { normalizeDate, dateError } = require('../lib/dates');
+const { dateError } = require('../lib/dates');
 const { cleanAllocations, cleanFundingRules, parseJsonArray } = require('../lib/funding');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
@@ -34,16 +34,12 @@ router.post('/reorder', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date } = req.body;
+  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency } = req.body;
   if (!name || !isAmount(monthly_amount) || monthly_amount < 0) {
     return res.status(400).json({ error: 'name and a non-negative numeric monthly_amount are required' });
   }
-  let normalizedStart;
-  let normalizedEnd;
   let cleanedRules;
   try {
-    normalizedStart = normalizeDate(start_date, 'start_date');
-    normalizedEnd = normalizeDate(end_date, 'end_date');
     cleanedRules = cleanFundingRules(funding_rules);
   } catch (e) {
     if (dateError(res, e)) return;
@@ -56,23 +52,19 @@ router.post('/', (req, res) => {
     name, monthly_amount, group_id ?? null,
     JSON.stringify(cleanAllocations(funding_allocations)),
     JSON.stringify(cleanedRules),
-    normalizeFrequency(frequency), normalizedStart, normalizedEnd,
+    normalizeFrequency(frequency), null, null,
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(serialize(row));
 });
 
 router.put('/:id', (req, res) => {
-  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date } = req.body;
+  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency } = req.body;
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  let normalizedStart = existing.start_date;
-  let normalizedEnd = existing.end_date;
   let cleanedRules = existing.funding_rules;
   try {
-    if (start_date !== undefined) normalizedStart = normalizeDate(start_date, 'start_date');
-    if (end_date !== undefined) normalizedEnd = normalizeDate(end_date, 'end_date');
     if (funding_rules !== undefined) cleanedRules = JSON.stringify(cleanFundingRules(funding_rules));
   } catch (e) {
     if (dateError(res, e)) return;
@@ -90,8 +82,8 @@ router.put('/:id', (req, res) => {
     funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations)) : existing.funding_allocations,
     cleanedRules,
     frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency,
-    normalizedStart,
-    normalizedEnd,
+    null,
+    null,
     id
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
