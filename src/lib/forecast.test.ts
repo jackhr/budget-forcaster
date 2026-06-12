@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
 import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
@@ -88,6 +88,20 @@ describe('buildExpensePlan', () => {
     const sv = buildSavings([], ep.ongoingCashOut, [], simulateDebtPlan([card], 0, 'none', 2, ep.charges).outflow, 2, 1000, NOW);
     expect(sv[0].expenses).toBe(0);       // the expense doesn't dip cash
     expect(sv[0].debtOut).toBe(400);      // the card payment covers the charge
+  });
+
+  it('skips cash outflow and card charges for an expense paid this month', () => {
+    const accounts = [acct(1, 'Cash', 0, true)];
+    const card: Debt = { id: 5, name: 'Visa', balance: 0, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
+    const expenses = [
+      expense({ id: 1, monthly_amount: 200 }),
+      expense({ id: 2, monthly_amount: 300, funding_allocations: [{ source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 100 }] }),
+    ];
+    const ep = buildExpensePlan(expenses, accounts, [card], 2, 0, NOW, new Set([1, 2]));
+
+    expect(ep.ongoingCashOut).toEqual([0, 200]);
+    expect(ep.charges).toMatchObject([{ debtId: 5, monthIndex: 1, amount: 300 }]);
+    expect(buildExpenseBreakdown(expenses, 2, 0, NOW, new Set([1, 2])).total).toEqual([0, 500]);
   });
 });
 
@@ -389,6 +403,16 @@ describe('buildAccountActivity', () => {
 
     const a2 = buildAccountActivity(2, accounts, sources, expenses, [], debts, plan, 6, 0, NOW);
     expect(a2.items.map((i) => i.name)).toEqual(['Side']); // only Side income
+  });
+
+  it('shows a paid expense without counting it in current-month outflow', () => {
+    const accounts = [acct(1, 'Checking', 5000, true)];
+    const expenses = [expense({ id: 20, name: 'Rent', monthly_amount: 1000 })];
+    const plan = simulateDebtPlan([], 0, 'none', 1);
+    const activity = buildAccountActivity(1, accounts, [], expenses, [], [], plan, 1, 0, NOW, 0, undefined, new Set([20]));
+
+    expect(activity.outByMonth).toEqual([0]);
+    expect(activity.items.find((i) => i.name === 'Rent')?.paid).toBe(true);
   });
 });
 

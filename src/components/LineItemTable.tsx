@@ -26,6 +26,8 @@ interface Props {
   showFunding?: boolean;
   showFrequency?: boolean;
   showAccount?: boolean;
+  isPaidThisMonth?: (item: LineItem) => boolean;
+  onTogglePaid?: (item: LineItem) => void;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onAdd: (data: ItemFormData) => Promise<void>;
@@ -75,12 +77,14 @@ interface GroupBlockProps {
   debts?: NamedSource[];
   showFunding?: boolean;
   showAccount?: boolean;
+  isPaidThisMonth?: (item: LineItem) => boolean;
+  onTogglePaid?: (item: LineItem) => void;
   dragFor: (item: LineItem) => DragProps;
   draggingId: number | null;
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, isPaidThisMonth, onTogglePaid, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const { collapsed, toggle: toggleCollapsed } = useCollapsedGroup(group.id);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -168,6 +172,8 @@ function GroupBlock({ group, placeholder, items, groups, accentColor, showFreque
               groups={groups}
               accounts={accounts}
               debts={debts}
+              paid={isPaidThisMonth?.(item)}
+              onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
               drag={dragFor(item)}
               dragging={draggingId === item.id}
             />
@@ -235,7 +241,7 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
+export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, isPaidThisMonth, onTogglePaid, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
@@ -297,6 +303,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
           debts={debts}
           showFunding={showFunding}
           showAccount={showAccount}
+          isPaidThisMonth={isPaidThisMonth}
+          onTogglePaid={onTogglePaid}
           dragFor={dnd.handlers}
           draggingId={dnd.dragId}
           groupDrag={groupDnd.handlers(group)}
@@ -318,6 +326,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
             groups={myGroups}
             accounts={accounts}
             debts={debts}
+            paid={isPaidThisMonth?.(item)}
+            onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
             drag={dnd.handlers(item)}
             dragging={dnd.dragId === item.id}
           />

@@ -20,11 +20,13 @@ interface Props {
   groups?: LineItemGroup[];
   accounts?: AccountOpt[];
   debts?: NamedSource[];
+  paid?: boolean;
+  onTogglePaid?: () => void;
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
   dragging?: boolean;
 }
 
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showAccount, showFunding, groups, accounts, debts, drag, dragging }: Props) {
+export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showAccount, showFunding, groups, accounts, debts, paid, onTogglePaid, drag, dragging }: Props) {
   const itemFreq: Frequency = 'frequency' in item ? item.frequency : 'monthly';
   const itemAccount = 'account_id' in item ? item.account_id : null;
   const itemAllocations: ExpenseAllocation[] = 'funding_allocations' in item ? (item.funding_allocations ?? []) : [];
@@ -89,7 +91,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     <>
       <div {...drag} style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 140px 96px',
+        gridTemplateColumns: `1fr 140px ${onTogglePaid ? '210px' : '96px'}`,
         gap: '8px',
         padding: '10px 12px',
         borderRadius: 'var(--radius-sm)',
@@ -127,7 +129,21 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
         <span style={{ fontWeight: 600, color: accentColor }}>
           {formatMoney(item.monthly_amount)}
         </span>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {onTogglePaid && (
+            <button
+              onClick={onTogglePaid}
+              title={paid ? 'Paid this month — this month’s expense is excluded from the forecast. Click to mark unpaid.' : 'Not paid this month — click to mark paid (skips this month’s expense in the forecast).'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 'var(--radius-sm)', whiteSpace: 'nowrap',
+                background: paid ? 'var(--color-surface-2)' : 'transparent',
+                color: paid ? 'var(--color-income)' : 'var(--color-text-muted)',
+                border: `1px solid ${paid ? 'var(--color-income)' : 'var(--color-border)'}`,
+              }}
+            >
+              {paid ? '✓ Paid this month' : 'Mark paid'}
+            </button>
+          )}
           <button
             onClick={openEditor}
             style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', padding: '5px 10px', border: '1px solid var(--color-border)' }}

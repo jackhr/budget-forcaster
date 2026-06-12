@@ -371,6 +371,7 @@ export function buildExpensePlan(
   months: number,
   inflation = 0,
   now: Date = new Date(),
+  paidThisMonth?: Set<number>,
 ): ExpensePlan {
   const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const accountIds = new Set(accounts.map((a) => a.id));
@@ -382,6 +383,7 @@ export function buildExpensePlan(
   for (let m = 0; m < months; m++) {
     const f = inflationFactor(inflation, m);
     for (const e of expenses) {
+      if (m === 0 && paidThisMonth?.has(e.id)) continue;
       const amount = expenseOccurrenceAtMonth(e, m, now) * f;
       if (amount <= 0) continue;
       const funding = paymentFundingFromSources(amount, m, now, e.funding_rules, e.funding_allocations, () => ({ cash: amount, parts: [] }));
@@ -479,10 +481,10 @@ export function buildIncomeBreakdown(sources: IncomeSource[], months: number, no
 }
 
 // Per-expense monthly cost over the horizon, inflation-adjusted (+ total).
-export function buildExpenseBreakdown(expenses: Expense[], months: number, inflation = 0, now: Date = new Date()): Breakdown {
+export function buildExpenseBreakdown(expenses: Expense[], months: number, inflation = 0, now: Date = new Date(), paidThisMonth?: Set<number>): Breakdown {
   const series = expenses.map((e) => ({
     id: e.id, name: e.name,
-    values: Array.from({ length: months }, (_, i) => round2(expenseOccurrenceAtMonth(e, i, now) * inflationFactor(inflation, i))),
+    values: Array.from({ length: months }, (_, i) => round2(i === 0 && paidThisMonth?.has(e.id) ? 0 : expenseOccurrenceAtMonth(e, i, now) * inflationFactor(inflation, i))),
   }));
   return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
 }
@@ -694,6 +696,7 @@ export function buildAccountActivity(
   now: Date = new Date(),
   startMonth = 0,
   paidThisMonth?: Set<number>,
+  paidExpensesThisMonth?: Set<number>,
 ): AccountActivity {
   const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const isPrimary = accountId === primaryId;
@@ -744,9 +747,10 @@ export function buildAccountActivity(
       const funding = paymentFundingFromSources(amt, m, now, e.funding_rules, e.funding_allocations, () => ({ cash: amt, parts: [] }));
       return accountPortionOfFunding(funding, accountId, isPrimary);
     });
+    const paid = startMonth === 0 && !!paidExpensesThisMonth?.has(e.id);
     finalize(`exp${e.id}`, e.name, 'expense', 'out', e.frequency,
       fundingDetailForAccount(e.funding_allocations, e.funding_rules, accountId, isPrimary),
-      e.start_date, e.end_date, series);
+      e.start_date, e.end_date, series, paid);
   }
 
   for (const p of payments) {

@@ -117,6 +117,9 @@ export default function App() {
   const [paidOverrides, setPaidOverrides] = useState<Record<number, string>>(() => {
     try { return JSON.parse(localStorage.getItem('bf.debtPaid') || '{}'); } catch { return {}; }
   });
+  const [expensePaidOverrides, setExpensePaidOverrides] = useState<Record<number, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('bf.expensePaid') || '{}'); } catch { return {}; }
+  });
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +132,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
   useEffect(() => { localStorage.setItem('bf.activityMonth', String(activityMonth)); }, [activityMonth]);
   useEffect(() => { localStorage.setItem('bf.debtPaid', JSON.stringify(paidOverrides)); }, [paidOverrides]);
+  useEffect(() => { localStorage.setItem('bf.expensePaid', JSON.stringify(expensePaidOverrides)); }, [expensePaidOverrides]);
   useEffect(() => { if (startMonth >= months) setStartMonth(Math.max(0, months - 1)); }, [startMonth, months]);
 
   const changeStartMonth = (value: number) => setStartMonth(Math.max(0, Math.min(value, months - 1)));
@@ -168,13 +172,16 @@ export default function App() {
   // --- Derived series ---
   const totalCash = accounts.reduce((sum, a) => sum + a.balance, 0);
   // Split-funded expenses: cash portions reduce accounts; credit-line portions charge cards.
-  const expensePlan = buildExpensePlan(expenses, accounts, debts, months, inflation);
+  const monthKey = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+  const isExpensePaidThisMonth = (e: Expense): boolean => expensePaidOverrides[e.id] === `${monthKey}:1`;
+  const toggleExpensePaid = (e: Expense) => setExpensePaidOverrides((prev) => ({ ...prev, [e.id]: `${monthKey}:${isExpensePaidThisMonth(e) ? 0 : 1}` }));
+  const expensesPaidThisMonth = new Set(expenses.filter(isExpensePaidThisMonth).map((e) => e.id));
+  const expensePlan = buildExpensePlan(expenses, accounts, debts, months, inflation, new Date(), expensesPaidThisMonth);
   // Future expenses charged to a card + expense card-portions both bill the debt over time.
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   // Any active debt funding-plan amount overrides its monthly payment per month.
   const debtPayments = buildDebtPaymentSchedule(debts, months);
   // "Paid this month": user override for the current month, else the autopay-day default.
-  const monthKey = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
   const isPaidThisMonth = (d: Debt): boolean => {
     const ov = paidOverrides[d.id];
     if (ov && ov.startsWith(`${monthKey}:`)) return ov.endsWith(':1');
@@ -265,7 +272,7 @@ export default function App() {
     breakdownTitle = 'Income Breakdown';
     breakdownSubtitle = 'Each income source per month, alongside the combined total';
   } else if (breakdownSection === 'expense') {
-    breakdown = buildExpenseBreakdown(expenses, months, inflation);
+    breakdown = buildExpenseBreakdown(expenses, months, inflation, new Date(), expensesPaidThisMonth);
     breakdownTitle = 'Expense Breakdown';
     breakdownSubtitle = 'Each expense per month (inflation-adjusted), alongside the combined total';
   } else if (breakdownSection === 'future') {
@@ -659,7 +666,7 @@ export default function App() {
           const [kind, idS] = sel.split(':');
           const id = Number(idS);
           const activityHorizon = activityMonth + 1;
-          const activityExpensePlan = buildExpensePlan(expenses, accounts, debts, activityHorizon, inflation);
+          const activityExpensePlan = buildExpensePlan(expenses, accounts, debts, activityHorizon, inflation, new Date(), expensesPaidThisMonth);
           const activityCharges = [...buildDebtCharges(payments, activityHorizon), ...activityExpensePlan.charges];
           const activityPayments = buildDebtPaymentSchedule(debts, activityHorizon);
           const activityPlan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, activityHorizon, activityCharges, activityPayments);
@@ -681,7 +688,8 @@ export default function App() {
             );
           }
           const acct = accounts.find((a) => a.id === id)!;
-          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth, activityPaid);
+          const activityExpensePaid = activityMonth === 0 ? expensesPaidThisMonth : undefined;
+          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth, activityPaid, activityExpensePaid);
           return (
             <Suspense fallback={<ChartFallback />}>
               <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? '★ primary — pays the bills' : 'savings pile'} activity={activity} />
@@ -782,6 +790,8 @@ export default function App() {
             title="Expenses" description="Ongoing costs by frequency — split across cash & credit via Edit"
             items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
             kind="expense" groups={groups} showFrequency showFunding
+            isPaidThisMonth={(item) => isExpensePaidThisMonth(item as Expense)}
+            onTogglePaid={(item) => toggleExpensePaid(item as Expense)}
             accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
             debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null, overLimit: d.credit_limit != null && d.balance > d.credit_limit + 0.005 }))}
             onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}
