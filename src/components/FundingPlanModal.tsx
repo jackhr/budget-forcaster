@@ -102,14 +102,6 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
     letterSpacing: '0.05em',
   };
   const inputStyle: React.CSSProperties = {
-    background: 'var(--color-bg)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--color-text)',
-    padding: '8px 10px',
-    fontSize: 13,
-    fontFamily: 'inherit',
-    colorScheme: 'dark',
     width: '100%',
   };
 
@@ -134,8 +126,8 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
     <Modal title={title} onClose={onCancel} maxWidth={720}>
       <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {draft.map((rule, idx) => (
-          <div key={idx} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 86px 110px 32px', gap: 8, alignItems: 'end' }}>
+          <div key={idx} className="funding-rule-card">
+            <div className="funding-rule-main">
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={labelStyle}>Source</span>
                 <select
@@ -175,7 +167,15 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
                   style={inputStyle}
                 />
               </label>
-              <button type="button" onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', color: 'var(--color-expense)', padding: '8px 0' }}>x</button>
+              <button
+                type="button"
+                className="funding-rule-remove"
+                aria-label="Remove funding rule"
+                title="Remove funding rule"
+                onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
+              >
+                ✕
+              </button>
             </div>
 
             {cardAvailable(rule) != null && (
@@ -188,7 +188,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               </p>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: rule.frequency === 'one-time' ? '1fr 1fr' : '1fr 1fr 1fr', gap: 8 }}>
+            <div className={`funding-rule-schedule${rule.frequency === 'one-time' ? ' is-one-time' : ''}`}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={labelStyle}>Frequency</span>
                 <select
@@ -239,7 +239,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
             Active fixed and percentage amounts combine to replace the monthly payment. Until a future plan starts, the monthly payment remains in effect.
           </p>
         )}
-        {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Use YYYY-MM, and make sure end is not before start.</p>}
+        {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Make sure the end date is not before the start date.</p>}
         {cardSpill > 0.005 && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>
             ⚠ {formatMoney(cardSpill)} per occurrence exceeds the card's available credit and is left uncovered — add another rule to fund it.

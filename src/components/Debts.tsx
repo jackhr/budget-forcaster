@@ -84,9 +84,7 @@ const labelStyle: React.CSSProperties = {
   textTransform: 'uppercase', letterSpacing: '0.05em',
 };
 const selectStyle: React.CSSProperties = {
-  background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '8px 10px',
-  fontSize: 13, fontFamily: 'inherit', width: '100%',
+  width: '100%',
 };
 
 interface EditorProps {

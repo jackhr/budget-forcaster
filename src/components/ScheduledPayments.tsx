@@ -88,14 +88,6 @@ function defaultDate(monthsAhead: number) {
 }
 
 const dateInputStyle: React.CSSProperties = {
-  background: 'var(--color-bg)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--color-text)',
-  padding: '8px 10px',
-  fontSize: 13,
-  fontFamily: 'inherit',
-  colorScheme: 'dark',
   width: '100%',
 };
 

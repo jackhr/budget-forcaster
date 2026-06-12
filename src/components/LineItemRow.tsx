@@ -149,17 +149,16 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                     onClick={onTogglePaid}
                     title={paid ? 'Paid this month — this month’s expense is excluded from the forecast. Click to mark unpaid.' : 'Not paid this month — click to mark paid (skips this month’s expense in the forecast).'}
                     style={{
-                      background: 'transparent',
+                      background: paid ? 'rgba(34, 197, 94, 0.12)' : 'var(--color-surface-2)',
                       color: paid ? 'var(--color-income)' : 'var(--color-text-muted)',
-                      border: 0,
-                      padding: 0,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
+                      border: `1px solid ${paid ? 'rgba(34, 197, 94, 0.55)' : 'var(--color-border)'}`,
+                      padding: '3px 8px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {paid ? '✓ Paid this month' : 'Mark paid'}
+                    {paid ? '✓ Paid this month' : '✓ Mark paid'}
                   </button>
                 )}
               </div>
@@ -241,15 +240,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                 <select
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value as Frequency)}
-                  style={{
-                    background: 'var(--color-bg)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--color-text)',
-                    padding: '8px 10px',
-                    fontSize: 13,
-                    fontFamily: 'inherit',
-                  }}
+                  style={{ width: '100%' }}
                 >
                   {FREQUENCIES.map((f) => (
                     <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
@@ -263,7 +254,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   When
                 </span>
-                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ colorScheme: 'dark' }} />
+                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ width: '100%' }} />
                 <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>
                   First occurrence; repeats according to the selected frequency.
                 </span>
@@ -278,15 +269,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                 <select
                   value={groupId ?? ''}
                   onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}
-                  style={{
-                    background: 'var(--color-bg)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--color-text)',
-                    padding: '8px 10px',
-                    fontSize: 13,
-                    fontFamily: 'inherit',
-                  }}
+                  style={{ width: '100%' }}
                 >
                   <option value="">No group</option>
                   {groups.map((g) => (
@@ -304,11 +287,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                 <select
                   value={account ?? primaryId ?? ''}
                   onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)}
-                  style={{
-                    background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
-                    padding: '8px 10px', fontSize: 13, fontFamily: 'inherit',
-                  }}
+                  style={{ width: '100%' }}
                 >
                   {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
                 </select>
@@ -342,7 +321,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                         const [t, id] = v.split(':');
                         setAllocations([{ source_type: t as AllocationSourceType, source_id: Number(id), alloc_type: 'percent', value: 100 }]);
                       }}
-                      style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '8px 10px', fontSize: 13, fontFamily: 'inherit' }}
+                      style={{ width: '100%' }}
                     >
                       <option value="">Primary account</option>
                       {accounts && accounts.length > 0 && (

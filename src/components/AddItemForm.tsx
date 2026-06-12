@@ -25,9 +25,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
-  width: '100%', background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
-  padding: '8px 10px', fontSize: 13, fontFamily: 'inherit',
+  width: '100%',
 };
 
 function today(): string {
@@ -122,7 +120,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
             ))}
 
             {showFunding && field('When', 'First occurrence; repeats according to the selected frequency.', (
-              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ colorScheme: 'dark' }} />
+              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ width: '100%' }} />
             ))}
 
             {showAccount && accounts?.length ? field('Deposited into', 'The account that receives this income.', (
