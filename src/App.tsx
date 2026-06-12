@@ -369,13 +369,13 @@ export default function App() {
   const addExpense = (data: ItemFormData) => guard(async () => {
     const item = await expensesApi.create({
       name: data.name, monthly_amount: data.monthly_amount,
-      frequency: data.frequency ?? 'monthly', start_date: null, end_date: null,
+      frequency: data.frequency ?? 'monthly', start_date: data.start_date ?? null, end_date: null,
       group_id: data.group_id ?? null, funding_allocations: data.funding_allocations ?? [], funding_rules: data.funding_rules ?? [],
     });
     setExpenses((prev) => [...prev, item]);
   }, 'Could not add expense');
   const updateExpense = (id: number, data: ItemFormData) => guard(async () => {
-    const item = await expensesApi.update(id, { ...data, start_date: null, end_date: null });
+    const item = await expensesApi.update(id, { ...data, end_date: null });
     setExpenses((prev) => prev.map((i) => (i.id === id ? item : i)));
   }, 'Could not update expense');
   const deleteExpense = (id: number) => guard(async () => {

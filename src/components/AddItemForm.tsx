@@ -30,11 +30,17 @@ const selectStyle: React.CSSProperties = {
   padding: '8px 10px', fontSize: 13, fontFamily: 'inherit',
 };
 
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, showAccount, showFunding, groupId, accounts, debts }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('monthly');
+  const [start, setStart] = useState(today);
   const [account, setAccount] = useState<number | null>(null);
   const [fundingSource, setFundingSource] = useState('');
   const [saving, setSaving] = useState(false);
@@ -44,10 +50,10 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const cardAvail = selectedCard?.available ?? null;
   const amtNum = parseFloat(amount);
   const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
-  const valid = name.trim().length > 0 && amtNum > 0;
+  const valid = name.trim().length > 0 && amtNum > 0 && (!showFunding || !!start);
 
   const reset = () => {
-    setName(''); setAmount(''); setFrequency('monthly');
+    setName(''); setAmount(''); setFrequency('monthly'); setStart(today());
     setAccount(null); setFundingSource('');
   };
 
@@ -62,6 +68,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
       name: name.trim(),
       monthly_amount: amtNum,
       ...(showFrequency ? { frequency } : {}),
+      ...(showFunding ? { start_date: start } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: funding } : {}),
       ...(groupId != null ? { group_id: groupId } : {}),
@@ -112,6 +119,10 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
               <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} style={selectStyle}>
                 {FREQUENCIES.map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
               </select>
+            ))}
+
+            {showFunding && field('When', 'First occurrence; repeats according to the selected frequency.', (
+              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ colorScheme: 'dark' }} />
             ))}
 
             {showAccount && accounts?.length ? field('Deposited into', 'The account that receives this income.', (

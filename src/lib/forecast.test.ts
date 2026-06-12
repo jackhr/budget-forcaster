@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
 import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
@@ -61,6 +61,18 @@ describe('buildExpensePlan', () => {
     expect(ep.ongoingCashOut[3]).toBe(0);
     expect(ep.ongoingCashOut[5]).toBe(300); // Jun
     expect(ep.ongoingCashOut[8]).toBe(0);   // past end
+  });
+
+  it('anchors normal and future expense recurrence to the same first-occurrence date', () => {
+    const normal = expense({ monthly_amount: 300, frequency: 'quarterly', start_date: '2025-11-15' });
+    const future: ScheduledPayment = {
+      id: 1, name: 'E', amount: 300, frequency: 'quarterly', start_date: '2025-11-15', end_date: null,
+      funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
+    };
+
+    expect(buildExpenseBreakdown([normal], 4, 0, NOW).total)
+      .toEqual(buildFutureExpenseBreakdown([future], 4, NOW).total);
+    expect(buildExpenseBreakdown([normal], 4, 0, NOW).total).toEqual([0, 300, 0, 0]);
   });
 
   it('splits a bill across cash and a card; remainder to the primary account', () => {

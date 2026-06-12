@@ -57,7 +57,7 @@ export function monthlyExpenseTotal(expenses: Expense[]): number {
 // Pre-inflation amount an expense bills in a given month, honoring its frequency
 // and optional start/end range (frequency cycle anchored to the start).
 function expenseOccurrenceAtMonth(e: Expense, monthIndex: number, now: Date): number {
-  const startOff = e.start_date ? Math.max(0, monthOffset(e.start_date, now)) : 0;
+  const startOff = e.start_date ? monthOffset(e.start_date, now) : 0;
   if (monthIndex < startOff) return 0;
   const endOff = e.end_date ? monthOffset(e.end_date, now) : Infinity;
   if (monthIndex > endOff) return 0;

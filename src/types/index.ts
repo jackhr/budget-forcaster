@@ -59,8 +59,8 @@ export interface Expense {
   name: string;
   monthly_amount: number; // amount per occurrence at the given frequency
   frequency: Frequency;
-  start_date: string | null; // YYYY-MM-DD; null = now / always
-  end_date: string | null; // YYYY-MM-DD; null = ongoing
+  start_date: string | null; // YYYY-MM-DD first occurrence; null only for legacy data
+  end_date: string | null; // retained for schema compatibility; normal expenses are ongoing
   group_id: number | null;
   funding_allocations: ExpenseAllocation[]; // remainder draws from the primary account
   funding_rules: FundingRule[]; // scheduled funding plan; empty = use funding_allocations

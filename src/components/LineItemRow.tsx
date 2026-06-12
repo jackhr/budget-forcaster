@@ -9,6 +9,17 @@ import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
 
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatDate(date: string | null): string | null {
+  if (!date) return null;
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 interface Props {
   item: LineItem;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
@@ -37,6 +48,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const [name, setName] = useState(item.name);
   const [amount, setAmount] = useState(String(item.monthly_amount));
   const [frequency, setFrequency] = useState<Frequency>(itemFreq);
+  const [start, setStart] = useState('start_date' in item && item.start_date ? item.start_date : today());
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
   const [account, setAccount] = useState<number | null>(itemAccount);
   const [allocations, setAllocations] = useState<ExpenseAllocation[]>(itemAllocations);
@@ -47,6 +59,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setName(item.name);
     setAmount(String(item.monthly_amount));
     setFrequency(itemFreq);
+    setStart('start_date' in item && item.start_date ? item.start_date : today());
     setGroupId(item.group_id);
     setAccount(itemAccount);
     setAllocations(itemAllocations);
@@ -55,7 +68,8 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   }
 
   const amtNum = parseFloat(amount);
-  const valid = name.trim().length > 0 && amtNum > 0;
+  const valid = name.trim().length > 0 && amtNum > 0 && (!showFunding || !!start);
+  const startLabel = showFunding && 'start_date' in item ? formatDate(item.start_date) : null;
 
   // "Paid from" is simple (one account/card, or the primary account) unless
   // there's a scheduled plan or a split — then show the funding-plan summary.
@@ -79,6 +93,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       monthly_amount: amt,
       group_id: groupId,
       ...(showFrequency ? { frequency } : {}),
+      ...(showFunding ? { start_date: start } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: allocations.filter((a) => a.source_id != null && a.value > 0) } : {}),
       ...(showFunding ? { funding_rules: fundingRules.filter((r) => r.source_id != null && r.value > 0) } : {}),
@@ -107,7 +122,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
           <div style={{ width: 3, height: 24, marginTop: 1, borderRadius: 2, background: accentColor, flexShrink: 0 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
             <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>{item.name}</span>
-            {(showFrequency && itemFreq !== 'monthly') || onTogglePaid ? (
+            {(showFrequency && itemFreq !== 'monthly') || startLabel || onTogglePaid ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
                 {showFrequency && itemFreq !== 'monthly' && (
                   <span style={{
@@ -122,6 +137,11 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                     padding: '1px 6px',
                   }}>
                     {FREQUENCY_LABELS[itemFreq]}
+                  </span>
+                )}
+                {startLabel && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600 }}>
+                    from {startLabel}
                   </span>
                 )}
                 {onTogglePaid && (
@@ -235,6 +255,18 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                     <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
                   ))}
                 </select>
+              </label>
+            )}
+
+            {showFunding && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  When
+                </span>
+                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ colorScheme: 'dark' }} />
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>
+                  First occurrence; repeats according to the selected frequency.
+                </span>
               </label>
             )}
 

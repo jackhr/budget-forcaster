@@ -66,29 +66,28 @@ export function fundingLabel(p: ScheduledPayment, accounts: AccountOpt[], debts:
   return accounts.find((a) => a.is_primary)?.name ?? 'Cash'; // legacy cash/income -> primary
 }
 
-function formatMonth(date: string) {
-  const [y, m] = date.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+function formatDate(date: string) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function scheduleLabel(p: ScheduledPayment) {
   if (p.frequency === 'one-time') {
     const off = monthOffset(p.start_date);
     const rel = off < 0 ? 'past' : off === 0 ? 'this month' : `in ${off} mo`;
-    return `One-time · ${formatMonth(p.start_date)} (${rel})`;
+    return `One-time · ${formatDate(p.start_date)} (${rel})`;
   }
-  const end = p.end_date ? `→ ${formatMonth(p.end_date)}` : '→ ongoing';
-  return `${FREQUENCY_LABELS[p.frequency]} · from ${formatMonth(p.start_date)} ${end}`;
+  const end = p.end_date ? `→ ${formatDate(p.end_date)}` : '→ ongoing';
+  return `${FREQUENCY_LABELS[p.frequency]} · from ${formatDate(p.start_date)} ${end}`;
 }
 
-function defaultMonth(monthsAhead: number) {
+function defaultDate(monthsAhead: number) {
   const d = new Date();
-  d.setDate(1);
   d.setMonth(d.getMonth() + monthsAhead);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const monthInputStyle: React.CSSProperties = {
+const dateInputStyle: React.CSSProperties = {
   background: 'var(--color-bg)',
   border: '1px solid var(--color-border)',
   borderRadius: 'var(--radius-sm)',
@@ -113,8 +112,8 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
   const [name, setName] = useState(initial.name);
   const [amount, setAmount] = useState(String(initial.amount || ''));
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
-  const [start, setStart] = useState(initial.start_date.slice(0, 7));
-  const [end, setEnd] = useState(initial.end_date ? initial.end_date.slice(0, 7) : '');
+  const [start, setStart] = useState(initial.start_date);
+  const [end, setEnd] = useState(initial.end_date ?? '');
   const [allocations, setAllocations] = useState<ExpenseAllocation[]>(allocationsFromLegacy(initial));
   const [fundingRules, setFundingRules] = useState<FundingRule[]>(initial.funding_rules ?? []);
   const [editingFunding, setEditingFunding] = useState(false);
@@ -149,8 +148,8 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
       name: name.trim(),
       amount: amtNum,
       frequency,
-      start_date: `${start}-01`,
-      end_date: recurring && end ? `${end}-01` : null,
+      start_date: start,
+      end_date: recurring && end ? end : null,
       funding_source_type: f.type,
       funding_source_id: f.id,
       funding_allocations: clean,
@@ -198,7 +197,7 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
             <span style={labelStyle}>Frequency</span>
-            <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} style={monthInputStyle}>
+            <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} style={dateInputStyle}>
               {FREQUENCIES.map((f) => (
                 <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
               ))}
@@ -208,13 +207,16 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
 
         <div style={{ display: 'flex', gap: 12 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-            <span style={labelStyle}>{recurring ? 'Starts' : 'When'}</span>
-            <input type="month" value={start} onChange={(e) => setStart(e.target.value)} required style={monthInputStyle} />
+            <span style={labelStyle}>When</span>
+            <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={dateInputStyle} />
+            <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>
+              {recurring ? 'First occurrence; repeats according to the selected frequency.' : 'Date this expense occurs.'}
+            </span>
           </label>
           {recurring && (
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
               <span style={labelStyle}>Ends <span style={{ textTransform: 'none', opacity: 0.7 }}>(optional)</span></span>
-              <input type="month" value={end} min={start} onChange={(e) => setEnd(e.target.value)} style={monthInputStyle} />
+              <input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} style={dateInputStyle} />
             </label>
           )}
         </div>
@@ -243,7 +245,7 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
                     const [t, id] = v.split(':');
                     setAllocations([{ source_type: t as AllocationSourceType, source_id: Number(id), alloc_type: 'percent', value: 100 }]);
                   }}
-                  style={monthInputStyle}
+                  style={dateInputStyle}
                 >
                   <option value="">Primary account (cash)</option>
                   {accounts.length > 0 && (
@@ -412,7 +414,7 @@ export default function ScheduledPayments({ payments, accounts, debts, onAdd, on
           title="Add Future Expense"
           accounts={accounts}
           debts={debts}
-          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: `${defaultMonth(6)}-01`, end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [] }}
+          initial={{ name: '', amount: 0, frequency: 'one-time', start_date: defaultDate(6), end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [] }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
         />

@@ -228,13 +228,14 @@ if (!expenseFundingCols.some((c) => c.name === 'frequency')) {
   db.exec("ALTER TABLE expenses ADD COLUMN frequency TEXT NOT NULL DEFAULT 'monthly'");
 }
 if (!expenseFundingCols.some((c) => c.name === 'start_date')) {
-  db.exec('ALTER TABLE expenses ADD COLUMN start_date TEXT'); // null = now / always
+  db.exec('ALTER TABLE expenses ADD COLUMN start_date TEXT');
 }
 if (!expenseFundingCols.some((c) => c.name === 'end_date')) {
   db.exec('ALTER TABLE expenses ADD COLUMN end_date TEXT'); // null = ongoing
 }
-// Table expenses are ongoing obligations. Date-bound obligations belong in scheduled_payments.
-db.exec('UPDATE expenses SET start_date = NULL, end_date = NULL WHERE start_date IS NOT NULL OR end_date IS NOT NULL');
+// Existing expenses predate the required first-occurrence date; keep them active from today.
+db.exec("UPDATE expenses SET start_date = date('now') WHERE start_date IS NULL");
+db.exec('UPDATE expenses SET end_date = NULL WHERE end_date IS NOT NULL');
 
 // --- Migration: add frequency column to income_sources if it doesn't exist ---
 const incomeCols = db.prepare('PRAGMA table_info(income_sources)').all();
