@@ -91,7 +91,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     <>
       <div {...drag} style={{
         display: 'grid',
-        gridTemplateColumns: `1fr 140px ${onTogglePaid ? '210px' : '96px'}`,
+        gridTemplateColumns: 'minmax(0, 1fr) 140px 96px',
         gap: '8px',
         padding: '10px 12px',
         borderRadius: 'var(--radius-sm)',
@@ -106,44 +106,50 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
           <div style={{ width: 3, height: 24, marginTop: 1, borderRadius: 2, background: accentColor, flexShrink: 0 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-            <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-            {showFrequency && itemFreq !== 'monthly' && (
+            <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>{item.name}</span>
+            {(showFrequency && itemFreq !== 'monthly') || onTogglePaid ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
-                <span style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  color: accentColor,
-                  background: `${accentColor}1f`,
-                  border: `1px solid ${accentColor}40`,
-                  borderRadius: 5,
-                  padding: '1px 6px',
-                }}>
-                  {FREQUENCY_LABELS[itemFreq]}
-                </span>
+                {showFrequency && itemFreq !== 'monthly' && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: accentColor,
+                    background: `${accentColor}1f`,
+                    border: `1px solid ${accentColor}40`,
+                    borderRadius: 5,
+                    padding: '1px 6px',
+                  }}>
+                    {FREQUENCY_LABELS[itemFreq]}
+                  </span>
+                )}
+                {onTogglePaid && (
+                  <button
+                    onClick={onTogglePaid}
+                    title={paid ? 'Paid this month — this month’s expense is excluded from the forecast. Click to mark unpaid.' : 'Not paid this month — click to mark paid (skips this month’s expense in the forecast).'}
+                    style={{
+                      background: 'transparent',
+                      color: paid ? 'var(--color-income)' : 'var(--color-text-muted)',
+                      border: 0,
+                      padding: 0,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {paid ? '✓ Paid this month' : 'Mark paid'}
+                  </button>
+                )}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
         <span style={{ fontWeight: 600, color: accentColor }}>
           {formatMoney(item.monthly_amount)}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {onTogglePaid && (
-            <button
-              onClick={onTogglePaid}
-              title={paid ? 'Paid this month — this month’s expense is excluded from the forecast. Click to mark unpaid.' : 'Not paid this month — click to mark paid (skips this month’s expense in the forecast).'}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 'var(--radius-sm)', whiteSpace: 'nowrap',
-                background: paid ? 'var(--color-surface-2)' : 'transparent',
-                color: paid ? 'var(--color-income)' : 'var(--color-text-muted)',
-                border: `1px solid ${paid ? 'var(--color-income)' : 'var(--color-border)'}`,
-              }}
-            >
-              {paid ? '✓ Paid this month' : 'Mark paid'}
-            </button>
-          )}
           <button
             onClick={openEditor}
             style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', padding: '5px 10px', border: '1px solid var(--color-border)' }}
