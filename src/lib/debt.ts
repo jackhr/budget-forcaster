@@ -116,7 +116,7 @@ interface DebtState {
   bal: number;
   rate: number;
   min: number;
-  sched: (number | null)[] | null; // active funding-plan payment per month; null entry = use min/strategy
+  sched: (number | null)[] | null; // funding-plan payment per month; null entry = use min/strategy
   paidMonth: number | null;
   limit: number | null;   // credit limit (null = no cap)
   chargeable: boolean;    // credit cards can be charged; loans cannot
@@ -128,8 +128,7 @@ interface DebtState {
 // payments forward and apply the global `extra` to the current target debt.
 //
 // paymentSchedule (optional) overrides a debt's monthly_payment per month when a
-// funding plan sets an amount (fixed, percent, or mixed). The monthly payment stands
-// before a future plan kicks in.
+// funding plan exists. A zero entry is authoritative and makes no payment that month.
 //
 // paidThisMonth (optional) = debt ids already paid this month: they make no payment
 // in month 0 (the current balance already reflects it), then resume normally.

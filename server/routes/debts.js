@@ -18,6 +18,10 @@ function normalizeDay(v) {
   return Number.isFinite(n) && n >= 1 && n <= 31 ? n : null;
 }
 
+function fundingRulesValid(rules) {
+  return rules.every((r) => r.alloc_type !== 'percent' || r.value <= 100);
+}
+
 function serialize(row) {
   return {
     ...row,
@@ -38,8 +42,8 @@ router.post('/reorder', (req, res) => {
 
 router.post('/', (req, res) => {
   const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules, debt_type, payment_day } = req.body;
-  if (!name || !isAmount(balance) || balance < 0 || !isAmount(monthly_payment) || monthly_payment < 0) {
-    return res.status(400).json({ error: 'name, a non-negative balance and monthly_payment are required' });
+  if (!name || !isAmount(balance) || balance < 0 || !isAmount(monthly_payment) || monthly_payment <= 0) {
+    return res.status(400).json({ error: 'name, a non-negative balance and a monthly_payment greater than zero are required' });
   }
   let cleanedRules;
   try {
@@ -47,6 +51,9 @@ router.post('/', (req, res) => {
   } catch (e) {
     if (dateError(res, e)) return;
     throw e;
+  }
+  if (!fundingRulesValid(cleanedRules)) {
+    return res.status(400).json({ error: 'A percentage funding rule cannot exceed 100%' });
   }
   const stmt = db.prepare(
     'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules, debt_type, payment_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -67,12 +74,20 @@ router.put('/:id', (req, res) => {
   const { debt_type, payment_day } = req.body;
   const existing = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  const effectiveMonthlyPayment = monthly_payment ?? existing.monthly_payment;
+  if (!isAmount(effectiveMonthlyPayment) || effectiveMonthlyPayment <= 0) {
+    return res.status(400).json({ error: 'monthly_payment must be greater than zero' });
+  }
   let cleanedRules = existing.funding_rules;
   try {
     if (funding_rules !== undefined) cleanedRules = JSON.stringify(cleanFundingRules(funding_rules, { allowDebt: false }));
   } catch (e) {
     if (dateError(res, e)) return;
     throw e;
+  }
+  const parsedRules = typeof cleanedRules === 'string' ? parseJsonArray(cleanedRules) : cleanedRules;
+  if (!fundingRulesValid(parsedRules)) {
+    return res.status(400).json({ error: 'A percentage funding rule cannot exceed 100%' });
   }
 
   db.prepare(

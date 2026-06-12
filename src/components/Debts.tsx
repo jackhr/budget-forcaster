@@ -147,14 +147,14 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
   const limNum = isCard && limit ? parseFloat(limit) : null;
   const dayNum = payDay ? Math.trunc(parseFloat(payDay)) : null;
   const overLimit = limNum != null && !isNaN(limNum) && balNum > limNum + 0.005;
-  const hasFundingPlan = fundingRules.length > 0;
-  const paymentValid = payNum > 0 || (hasFundingPlan && (payment.trim() === '' || payNum === 0));
+  const paymentValid = payNum > 0;
+  const fundingPercentValid = fundingRules.every((r) => r.alloc_type !== 'percent' || r.value <= 100);
 
   const preview = (balNum > 0 && payNum > 0 && aprNum >= 0)
     ? summarizeDebt({ id: 0, name, balance: balNum, apr: aprNum, credit_limit: limNum, monthly_payment: payNum, debt_type: debtType, payment_day: dayNum, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' })
     : null;
 
-  const valid = name.trim().length > 0 && balNum > 0 && paymentValid && (isNaN(aprNum) ? false : aprNum >= 0);
+  const valid = name.trim().length > 0 && balNum > 0 && paymentValid && fundingPercentValid && (isNaN(aprNum) ? false : aprNum >= 0);
   async function handle(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) return;
@@ -236,7 +236,7 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
           {field('Monthly Payment', (
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }}>$</span>
-              <input type="number" value={payment} onChange={(e) => setPayment(e.target.value)} min={0} step="any" style={{ ...inputStyle, paddingLeft: 24 }} required={!hasFundingPlan} />
+              <input type="number" value={payment} onChange={(e) => setPayment(e.target.value)} min={0.01} step="any" style={{ ...inputStyle, paddingLeft: 24 }} required />
             </div>
           ))}
           {isCard && field('Credit Limit (optional)', (
@@ -250,6 +250,16 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
         {overLimit && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)', margin: 0 }}>
             ⚠ This card is {formatMoney(balNum - limNum!, { whole: true })} over its credit limit.
+          </p>
+        )}
+        {!paymentValid && (
+          <p style={{ fontSize: 12, color: 'var(--color-expense)', margin: 0 }}>
+            ⚠ A default monthly payment greater than $0 is required, even when this debt has a funding plan.
+          </p>
+        )}
+        {!fundingPercentValid && (
+          <p style={{ fontSize: 12, color: 'var(--color-expense)', margin: 0 }}>
+            ⚠ A funding-plan percentage exceeds 100%. Edit the funding plan before saving this debt.
           </p>
         )}
         {field('Pay from', (

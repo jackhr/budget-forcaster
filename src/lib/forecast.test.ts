@@ -285,8 +285,33 @@ describe('debt pay-from account', () => {
     };
 
     const schedule = buildDebtPaymentSchedule([percentDebt, mixedDebt], 3, NOW);
-    expect(schedule.get(1)).toEqual([null, 50, 50]); // null = normal payment/strategy until the future plan starts
+    expect(schedule.get(1)).toEqual([0, 50, 50]); // a funding plan is authoritative, including before its first active rule
     expect(schedule.get(2)).toEqual([75, 75, 75]); // later this month counts as active now
+  });
+
+  it('caps each percentage rule at 100% while allowing separate rules to accumulate', () => {
+    const debt: Debt = {
+      id: 1, name: 'Percent', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
+      group_id: null, account_id: null, funding_allocations: [], funding_rules: [
+        { source_type: 'account', source_id: 2, alloc_type: 'percent', value: 1000, frequency: 'monthly', start_date: null, end_date: null },
+        { source_type: 'account', source_id: 2, alloc_type: 'percent', value: 50, frequency: 'monthly', start_date: null, end_date: null },
+      ],
+      created_at: '', updated_at: '',
+    };
+
+    expect(buildDebtPaymentSchedule([debt], 1, NOW).get(1)).toEqual([150]);
+  });
+
+  it('keeps funding-rule frequency anchored to its actual start date', () => {
+    const debt: Debt = {
+      id: 1, name: 'Quarterly', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
+      group_id: null, account_id: null, funding_allocations: [], funding_rules: [
+        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 300, frequency: 'quarterly', start_date: '2025-12-15', end_date: null },
+      ],
+      created_at: '', updated_at: '',
+    };
+
+    expect(buildDebtPaymentSchedule([debt], 4, NOW).get(1)).toEqual([0, 0, 300, 0]);
   });
 
   it('does not apply a percentage funding plan twice when attributing debt payments', () => {
@@ -302,13 +327,13 @@ describe('debt pay-from account', () => {
     const plan = simulateDebtPlan([debt], 0, 'none', 2, [], schedule);
     const map = buildDebtOutByAccount([debt], plan, accounts, NOW);
 
-    expect(plan.outflowByDebt.get(1)).toEqual([100, 50]);
-    expect(map.get(1)).toEqual([100, 0]);
+    expect(plan.outflowByDebt.get(1)).toEqual([0, 50]);
+    expect(map.get(1)).toEqual([0, 0]);
     expect(map.get(2)).toEqual([0, 50]);
     expect(buildAccountActivity(2, accounts, [], [], [], [debt], plan, 2, 0, NOW).outByMonth).toEqual([0, 50]);
   });
 
-  it('uses the existing pay-from account until a future funding plan starts', () => {
+  it('does not use the existing pay-from account before a future funding plan starts', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0), acct(3, 'Future', 0)];
     const debt: Debt = {
       id: 1, name: 'Future plan', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
@@ -324,7 +349,7 @@ describe('debt pay-from account', () => {
     const map = buildDebtOutByAccount([debt], plan, accounts, NOW);
 
     expect(map.get(1)).toEqual([0, 0]);
-    expect(map.get(2)).toEqual([100, 0]);
+    expect(map.get(2)).toEqual([0, 0]);
     expect(map.get(3)).toEqual([0, 200]);
   });
 
@@ -370,12 +395,12 @@ describe('debt pay-from account', () => {
         created_at: '', updated_at: '',
       },
     ];
-    const plan = simulateDebtPlan(debts, 0, 'none', 2);
+    const plan = simulateDebtPlan(debts, 0, 'none', 2, [], buildDebtPaymentSchedule(debts, 2, NOW));
     const map = buildDebtOutByAccount(debts, plan, accounts, NOW);
     expect(map.get(2)![0]).toBe(100);
-    expect(map.get(1)![0]).toBe(200);
+    expect(map.get(1)![0]).toBe(0);
     expect(map.get(2)![1]).toBe(200);
-    expect(map.get(1)![1]).toBe(100);
+    expect(map.get(1)![1]).toBe(0);
   });
 });
 

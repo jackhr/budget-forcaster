@@ -108,7 +108,7 @@ function paymentCashAtMonth(p: ScheduledPayment, monthIndex: number, now: Date):
 }
 
 function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number, now: Date): number {
-  const startOff = rule.start_date ? Math.max(0, monthOffset(rule.start_date, now)) : 0;
+  const startOff = rule.start_date ? monthOffset(rule.start_date, now) : 0;
   if (monthIndex < startOff) return 0;
   const endOff = rule.end_date ? monthOffset(rule.end_date, now) : Infinity;
   if (monthIndex > endOff) return 0;
@@ -120,7 +120,9 @@ function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number,
       case 'one-time': if (since !== 0) return 0; break;
       default: break;
     }
-    return amount * (rule.value / 100);
+    // A single percentage rule cannot exceed the full default payment. Multiple
+    // rules may still accumulate when the user intentionally adds them.
+    return amount * (Math.min(100, rule.value) / 100);
   }
   switch (rule.frequency) {
     case 'weekly': return rule.value * (52 / 12);
@@ -132,26 +134,23 @@ function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number,
   }
 }
 
-// Effective monthly payment per debt per month. Any active funding-plan amount
-// overrides the debt's monthly_payment: fixed rules contribute their dollar value,
-// and percent rules contribute that percentage of monthly_payment. Before a future
-// plan kicks in, monthly_payment remains in effect.
+// Effective monthly payment per debt per month. When a debt has funding rules, the
+// rules are its complete payment plan: active rules accumulate and months without
+// an active rule make no payment. Debts without rules use monthly_payment/strategy.
 export function buildDebtPaymentSchedule(debts: Debt[], months: number, now: Date = new Date()): Map<number, (number | null)[]> {
   const map = new Map<number, (number | null)[]>();
   for (const d of debts) {
     const rules = d.funding_rules ?? [];
-    // null means no active override this month, so the normal monthly payment and
-    // payoff strategy remain in effect.
+    // null means this debt has no funding plan, so monthly payment/strategy apply.
     const arr: (number | null)[] = new Array(months).fill(null);
     if (rules.length > 0) {
       for (let m = 0; m < months; m++) {
         let total = 0;
-        let active = false;
         for (const r of rules) {
           const v = fundingRuleValue(r, d.monthly_payment, m, now);
-          if (v > 0) { total += v; active = true; }
+          if (v > 0) total += v;
         }
-        if (active) arr[m] = round2(total); // active plan controls this month's payment
+        arr[m] = round2(total);
       }
     }
     map.set(d.id, arr);
@@ -186,7 +185,7 @@ function debtPaymentByAccount(
     rule,
     amount: fundingRuleValue(rule, debt.monthly_payment, monthIndex, now),
   })).filter(({ amount: ruleAmount }) => ruleAmount > 0);
-  if (activeRules.length > 0) {
+  if (rules.length > 0) {
     for (const { rule, amount: ruleAmount } of activeRules) if (rule.alloc_type === 'fixed') add(rule.source_type, rule.source_id, ruleAmount);
     for (const { rule, amount: ruleAmount } of activeRules) if (rule.alloc_type === 'percent') add(rule.source_type, rule.source_id, ruleAmount);
   } else if (allocs.length > 0) {
@@ -198,7 +197,8 @@ function debtPaymentByAccount(
     add('account', debt.account_id != null && accountIds.has(debt.account_id) ? debt.account_id : primaryId, amount);
   }
 
-  if (remaining > 0.005 && primaryId != null) {
+  // A funding plan is authoritative; never invent a primary-account remainder.
+  if (rules.length === 0 && remaining > 0.005 && primaryId != null) {
     byAccount.set(primaryId, (byAccount.get(primaryId) ?? 0) + remaining);
   }
   for (const [id, value] of byAccount) byAccount.set(id, round2(value));

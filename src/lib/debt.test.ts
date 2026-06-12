@@ -87,13 +87,13 @@ describe('simulateDebtPlan', () => {
     expect(plan.remainingByDebt.get(1)![3]).toBeCloseTo(300, 5);
   });
 
-  it('an active funding plan prevents avalanche rollover from increasing its payment', () => {
+  it('a funding plan prevents avalanche rollover from increasing its payment, including zero-payment months', () => {
     const controlled = makeDebt({ id: 1, balance: 1000, apr: 30, monthly_payment: 100 });
     const payoff = makeDebt({ id: 2, balance: 50, apr: 0, monthly_payment: 100 });
-    const schedule = new Map<number, (number | null)[]>([[1, [null, 200, 200]]]);
+    const schedule = new Map<number, (number | null)[]>([[1, [0, 200, 200]]]);
     const plan = simulateDebtPlan([controlled, payoff], 0, 'avalanche', 3, [], schedule);
 
-    expect(plan.outflowByDebt.get(1)![0]).toBeCloseTo(150, 5); // no active plan: receives rollover
+    expect(plan.outflowByDebt.get(1)![0]).toBe(0);
     expect(plan.outflowByDebt.get(1)![1]).toBeCloseTo(200, 5); // active plan: exact amount
     expect(plan.outflowByDebt.get(1)![2]).toBeCloseTo(200, 5);
   });

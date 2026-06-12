@@ -93,6 +93,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
   // Day-level dates (YYYY-MM-DD); native pickers guarantee the format, so we only
   // guard that a recurring rule's end isn't before its start.
   const dateInvalid = draft.some((r) => r.frequency !== 'one-time' && !!r.start_date && !!r.end_date && r.end_date < r.start_date);
+  const percentInvalid = draft.some((r) => r.alloc_type === 'percent' && r.value > 100);
 
   const labelStyle: React.CSSProperties = {
     fontSize: 12,
@@ -111,7 +112,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
 
   function save(e: React.FormEvent) {
     e.preventDefault();
-    if (dateInvalid) return;
+    if (dateInvalid || percentInvalid) return;
     setSaving(true);
     onSave(draft
       .filter((r) => r.source_id != null && r.value > 0)
@@ -161,7 +162,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={labelStyle}>Amount</span>
                 <input
-                  type="number" min={0} step="any"
+                  type="number" min={0} max={rule.alloc_type === 'percent' ? 100 : undefined} step="any"
                   value={rule.value || ''}
                   onChange={(e) => update(idx, { value: parseFloat(e.target.value) || 0 })}
                   style={inputStyle}
@@ -236,10 +237,11 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
           </p>
         ) : (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            Active fixed and percentage amounts combine to replace the monthly payment. Until a future plan starts, the monthly payment remains in effect.
+            These rules are the complete payment plan. Active rules combine, and months without an active rule make no payment.
           </p>
         )}
         {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Make sure the end date is not before the start date.</p>}
+        {percentInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>A percentage rule cannot exceed 100%. Add separate rules when multiple payments should accumulate.</p>}
         {cardSpill > 0.005 && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>
             ⚠ {formatMoney(cardSpill)} per occurrence exceeds the card's available credit and is left uncovered — add another rule to fund it.
@@ -248,7 +250,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" onClick={onCancel} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '9px 16px' }}>Cancel</button>
-          <button type="submit" disabled={saving || dateInvalid} style={{ background: 'var(--color-primary)', color: '#fff', padding: '9px 18px' }}>{saving ? 'Saving...' : 'Save Plan'}</button>
+          <button type="submit" disabled={saving || dateInvalid || percentInvalid} style={{ background: 'var(--color-primary)', color: '#fff', padding: '9px 18px' }}>{saving ? 'Saving...' : 'Save Plan'}</button>
         </div>
       </form>
     </Modal>
