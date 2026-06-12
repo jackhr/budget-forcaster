@@ -62,6 +62,7 @@ function ColumnHeader({ amountLabel }: { amountLabel: string }) {
 
 interface GroupBlockProps {
   group: LineItemGroup;
+  placeholder: string;
   items: LineItem[];
   groups: LineItemGroup[];
   accentColor: string;
@@ -81,7 +82,7 @@ interface GroupBlockProps {
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, showEndDate, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, showEndDate, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const { collapsed, toggle: toggleCollapsed } = useCollapsedGroup(group.id);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -180,7 +181,7 @@ function GroupBlock({ group, items, groups, accentColor, showFrequency, onUpdate
             </p>
           )}
           <div style={{ padding: '0 12px 6px' }}>
-            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder="item" showFrequency={showFrequency} showAccount={showAccount} showFunding={showFunding} groupId={group.id} accounts={accounts} debts={debts} />
+            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder={placeholder} showFrequency={showFrequency} showEndDate={showEndDate} showAccount={showAccount} showFunding={showFunding} groupId={group.id} accounts={accounts} debts={debts} />
           </div>
         </div>
       )}
@@ -242,6 +243,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
   const amountLabel = showFrequency ? 'Per Payment' : 'Monthly';
+  const itemLabel = title.replace(/s$/, '');
 
   const dnd = useDnd<LineItem>(items, onReorder, (a, b) => a.group_id === b.group_id);
   const groupDnd = useDnd<LineItemGroup>(myGroups, onReorderGroup);
@@ -284,6 +286,7 @@ export default function LineItemTable({ title, description, items, accentColor, 
         <GroupBlock
           key={group.id}
           group={group}
+          placeholder={itemLabel}
           items={items.filter((i) => i.group_id === group.id)}
           groups={myGroups}
           accentColor={accentColor}
@@ -334,8 +337,9 @@ export default function LineItemTable({ title, description, items, accentColor, 
       <AddItemForm
         onAdd={onAdd}
         accentColor={accentColor}
-        placeholder={title.replace(/s$/, '')}
+        placeholder={itemLabel}
         showFrequency={showFrequency}
+        showEndDate={showEndDate}
         showAccount={showAccount}
         showFunding={showFunding}
         accounts={accounts}

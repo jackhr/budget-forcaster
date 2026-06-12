@@ -5,6 +5,7 @@ import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
+import OptionalMonthField from './OptionalMonthField';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
@@ -245,40 +246,37 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
             )}
 
             {showFrequency && (
-              <div style={{ display: 'flex', gap: 12 }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Starts <span style={{ textTransform: 'none', opacity: 0.7 }}>(blank = now)</span>
-                  </span>
-                  <input
-                    type="month"
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>Active period</div>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+                    Choose when this payment begins or ends. Leave it active now and ongoing for normal recurring bills.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <OptionalMonthField
+                    label="Starts"
                     value={start}
-                    onChange={(e) => setStart(e.target.value)}
-                    style={{
-                      background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
-                      padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
+                    onChange={(value) => {
+                      setStart(value);
+                      if (value && end && end < value) setEnd(value);
                     }}
+                    emptyLabel="Active now"
+                    chooseLabel="Schedule a future start"
+                    clearLabel="Make active now"
                   />
-                </label>
-                {showEndDate && (
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Ends <span style={{ textTransform: 'none', opacity: 0.7 }}>(blank = ongoing)</span>
-                    </span>
-                    <input
-                      type="month"
+                  {showEndDate && (
+                    <OptionalMonthField
+                      label="Ends"
                       value={end}
-                      min={start}
-                      onChange={(e) => setEnd(e.target.value)}
-                      style={{
-                        background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-                        borderRadius: 'var(--radius-sm)', color: 'var(--color-text)',
-                        padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', colorScheme: 'dark',
-                      }}
+                      min={start || undefined}
+                      onChange={setEnd}
+                      emptyLabel="Ongoing"
+                      chooseLabel="Set an end month"
+                      clearLabel="Make ongoing"
                     />
-                  </label>
-                )}
+                  )}
+                </div>
               </div>
             )}
             {endBeforeStart && (
