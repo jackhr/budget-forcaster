@@ -443,9 +443,32 @@ describe('buildDebtActivity', () => {
 
     expect(act.items.some((i) => i.kind === 'interest' && i.direction === 'in')).toBe(true);
 
-    const pay = act.items.find((i) => i.name === 'Payments');
+    const pay = act.items.find((i) => i.name === 'Payment');
     expect(pay?.direction).toBe('out');
-    expect(pay?.detail).toBe('from Checking');
+    expect(pay?.detail).toBe('from Checking (primary)');
+  });
+
+  it('shows each account contribution as a separate payment row', () => {
+    const splitAccounts = [
+      acct(9, 'Checking', 0, true),
+      acct(10, 'Savings', 0),
+    ];
+    const splitDebt = {
+      ...debt,
+      monthly_payment: 200,
+      funding_allocations: [
+        { source_type: 'account' as const, source_id: 9, alloc_type: 'percent' as const, value: 50 },
+        { source_type: 'account' as const, source_id: 10, alloc_type: 'percent' as const, value: 50 },
+      ],
+    };
+    const plan = simulateDebtPlan([splitDebt], 0, 'none', 1);
+    const act = buildDebtActivity(splitDebt, plan, [], splitAccounts, 1, NOW);
+    const payments = act.items.filter((i) => i.direction === 'out');
+
+    expect(payments.map((i) => i.name)).toEqual(['Payment', 'Payment']);
+    expect(payments.map((i) => i.detail)).toEqual(['from Checking (primary)', 'from Savings']);
+    expect(payments.map((i) => i.perOccurrence)).toEqual([100, 100]);
+    expect(act.outByMonth).toEqual([200]);
   });
 
   it('limits activity rows and totals to the selected month window', () => {

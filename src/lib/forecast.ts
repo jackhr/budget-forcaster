@@ -794,18 +794,6 @@ export function buildAccountActivity(
   return { labels: labels.slice(startMonth), inByMonth, outByMonth, items };
 }
 
-// Which account(s) a debt's payment is drawn from, as a short label.
-function debtPaymentSource(debt: Debt, accounts: Account[]): string {
-  const nameOf = (id: number | null) => accounts.find((a) => a.id === id)?.name;
-  const list = debt.funding_rules?.length ? debt.funding_rules : (debt.funding_allocations ?? []);
-  const accIds = [...new Set(list.filter((a) => a.source_type === 'account' && a.source_id != null).map((a) => a.source_id as number))];
-  if (accIds.length === 1) return `from ${nameOf(accIds[0]) ?? 'account'}`;
-  if (accIds.length > 1) return `from ${accIds.length} accounts`;
-  if (debt.account_id != null) return `from ${nameOf(debt.account_id) ?? 'account'}`;
-  const primary = accounts.find((a) => a.is_primary);
-  return primary ? `from ${primary.name}` : 'from primary';
-}
-
 // What flows into a debt (charges + interest, which grow the balance) and out of it
 // (payments, which pay it down) — the debt counterpart to buildAccountActivity.
 export function buildDebtActivity(
@@ -865,7 +853,25 @@ export function buildDebtActivity(
   if (interest) push(`int${debt.id}`, 'Interest', 'interest', 'in', 'monthly', `${debt.apr}% APR`, interest);
 
   const pay = plan.outflowByDebt.get(debt.id);
-  if (pay) push(`pay${debt.id}`, 'Payments', 'debt', 'out', 'monthly', debtPaymentSource(debt, accounts), pay);
+  if (pay) {
+    const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
+    const accountIds = new Set(accounts.map((a) => a.id));
+    const byAccount = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
+    for (let m = 0; m < months; m++) {
+      for (const [accountId, amount] of debtPaymentByAccount(debt, pay[m] ?? 0, m, primaryId, accountIds, now)) {
+        byAccount.get(accountId)![m] = amount;
+      }
+    }
+    let accountRows = 0;
+    for (const account of accounts) {
+      const series = byAccount.get(account.id)!;
+      if (!series.some((amount) => amount > 0.005)) continue;
+      accountRows++;
+      push(`pay${debt.id}:account${account.id}`, 'Payment', 'debt', 'out', 'monthly', `from ${account.name}${account.is_primary ? ' (primary)' : ''}`, series);
+    }
+    // Preserve a payment row when no valid account exists to fund the debt.
+    if (accountRows === 0) push(`pay${debt.id}`, 'Payment', 'debt', 'out', 'monthly', 'Funding account not set', pay);
+  }
 
   items.sort((a, b) => (a.direction === b.direction ? b.total - a.total : a.direction === 'out' ? -1 : 1));
   return { labels: labels.slice(startMonth), inByMonth, outByMonth, items };
