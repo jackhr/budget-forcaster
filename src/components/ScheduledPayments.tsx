@@ -121,7 +121,7 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
 
   const recurring = frequency !== 'one-time';
   const amtNum = parseFloat(amount);
-  // When paying from a card, show its available credit and any spill to cash.
+  // When paying from a card, show its available credit and projected overage.
   const selectedCard = payFromValue.startsWith('debt:') ? debts.find((d) => d.id === Number(payFromValue.slice(5))) : undefined;
   const cardAvail = selectedCard?.available ?? null;
   const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
@@ -254,7 +254,7 @@ function PaymentEditor({ title, initial, accounts, debts, onCancel, onSubmit }: 
                 {selectedCard && cardAvail != null && (
                   <p style={{ fontSize: 12, margin: 0, color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
                     {cardSpill > 0.005
-                      ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} left — ${formatMoney(cardSpill)} of this ${formatMoney(amtNum || 0)} is uncovered (no source). Use “Split or schedule” to assign it.`
+                      ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} available — this charge would put it ${formatMoney(cardSpill)} over its limit.`
                       : `${formatMoney(cardAvail)} available on this card.`}
                   </p>
                 )}

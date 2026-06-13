@@ -139,7 +139,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
 
             {selectedCard && cardSpill > 0.005 && (
               <p style={{ fontSize: 12, margin: 0, color: 'var(--color-expense)' }}>
-                ⚠ {selectedCard.name} has {formatMoney(cardAvail!)} left. {formatMoney(cardSpill)} of this payment would be uncovered.
+                ⚠ {selectedCard.name} has {formatMoney(cardAvail!)} available. This charge would put it {formatMoney(cardSpill)} over its limit.
               </p>
             )}
 

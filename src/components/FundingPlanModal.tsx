@@ -84,7 +84,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
     const av = cardAvailable(rule);
     return cardAlreadyOverLimit(rule) || (av != null && ruleDollar(rule) > av + 0.005);
   }
-  // Per-occurrence dollars that exceed a card's available credit and fall to cash.
+  // Per-occurrence dollars that would put a selected card over its limit.
   const cardSpill = draft.reduce((sum, r) => {
     const av = cardAvailable(r);
     return av == null ? sum : sum + Math.max(0, ruleDollar(r) - av);
@@ -183,8 +183,8 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               <p style={{ fontSize: 12, color: overLimit(rule) ? 'var(--color-expense)' : 'var(--color-text-muted)', margin: 0 }}>
                 {overLimit(rule)
                   ? cardAlreadyOverLimit(rule)
-                    ? `⚠ Card is at its limit — this rule's ${formatMoney(ruleDollar(rule))} is left uncovered (add another source).`
-                    : `⚠ Card has ${formatMoney(cardAvailable(rule)!)} left — ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} of this ${formatMoney(ruleDollar(rule))} is uncovered (add another source).`
+                    ? `⚠ Card is already over its limit — this rule adds another ${formatMoney(ruleDollar(rule))}.`
+                    : `⚠ Card has ${formatMoney(cardAvailable(rule)!)} available — this rule would put it ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} over its limit.`
                   : `${formatMoney(cardAvailable(rule)!)} available on this card.`}
               </p>
             )}
@@ -233,7 +233,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
         </button>
         {allowDebt ? (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            Remainder for uncovered periods is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
+            Any unallocated remainder is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
           </p>
         ) : (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
@@ -244,7 +244,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
         {percentInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>A percentage rule cannot exceed 100%. Add separate rules when multiple payments should accumulate.</p>}
         {cardSpill > 0.005 && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>
-            ⚠ {formatMoney(cardSpill)} per occurrence exceeds the card's available credit and is left uncovered — add another rule to fund it.
+            ⚠ Selected card rules would exceed available credit by {formatMoney(cardSpill)} per occurrence and put those cards over limit.
           </p>
         )}
 

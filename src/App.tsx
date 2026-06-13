@@ -198,9 +198,8 @@ export default function App() {
   const paidThisMonth = new Set(debts.filter(isPaidThisMonth).map((d) => d.id));
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges, debtPayments, paidThisMonth);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges, debtPayments, paidThisMonth);
-  // Cash out for debts = the actual payments. Charge overflow (the part of a card
-  // charge that exceeds its available credit, or a loan/unknown target) is NOT paid
-  // from cash — it's left uncovered and flagged below.
+  // Cash out for debts = the actual payments. Charges aimed at a loan/unknown
+  // target are not paid from cash; valid cards accept charges even over limit.
   const debtCashOut = plan.outflow.map((v) => Math.round(v * 100) / 100);
   const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months);
   const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months, totalCash);
@@ -336,16 +335,24 @@ export default function App() {
     : null;
   const visibleMap = (map: Map<number, number[]>) =>
     new Map([...map].map(([id, values]) => [id, visible(values)]));
-  const monthlyBreakdown = buildMonthBreakdown(
-    incomeSources, expenses, payments, debts, accounts, breakdownMonth, new Date(), paidThisMonth, expensesPaidThisMonth,
+  let monthlyBreakdown = buildMonthBreakdown(
+    incomeSources, expenses, payments, debts, accounts, 0, new Date(), paidThisMonth, expensesPaidThisMonth,
   );
+  for (let monthIndex = 1; monthIndex <= breakdownMonth; monthIndex++) {
+    const priorEndingLiquidity = new Map(monthlyBreakdown.liquidity
+      .filter((series) => series.kind !== 'total')
+      .map((series) => [series.key, series.values[series.values.length - 1] ?? 0]));
+    monthlyBreakdown = buildMonthBreakdown(
+      incomeSources, expenses, payments, debts, accounts, monthIndex, new Date(), undefined, undefined, priorEndingLiquidity,
+    );
+  }
 
   // This month's outflow breakdown.
   const m0 = savings[0];
   const moneyOut = m0 ? m0.expenses + m0.scheduledOut + m0.debtOut : 0;
 
-  // Uncovered funding: card charges that exceed available credit aren't paid from
-  // anywhere — they're left floating until the user assigns a source.
+  // Uncovered funding: charges aimed at a loan or missing debt target aren't paid
+  // from anywhere. Valid cards accept the full charge and surface over-limit state.
   const uncoveredThisMonth = plan.chargeOverflow[0] ?? 0;
   const uncoveredMonths = plan.chargeOverflow.filter((v) => v > 0.005).length;
   const uncoveredAny = uncoveredMonths > 0;
@@ -593,7 +600,7 @@ export default function App() {
         )}
         {!error && uncoveredAny && (
           <div style={{ background: '#7f1d1d', border: '1px solid #991b1b', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#fca5a5', flexBasis: '100%' }}>
-            ⚠ Uncovered funding — {uncoveredThisMonth > 0.005 ? <><strong>{formatMoney(uncoveredThisMonth)}</strong> this month{uncoveredMonths > 1 ? ` (and ${uncoveredMonths - 1} more month${uncoveredMonths - 1 !== 1 ? 's' : ''})` : ''}</> : <><strong>{uncoveredMonths}</strong> month{uncoveredMonths !== 1 ? 's' : ''}</>} of card charges exceed available credit and aren't paid from anywhere. Lower the charge or assign another funding source.
+            ⚠ Invalid funding target — {uncoveredThisMonth > 0.005 ? <><strong>{formatMoney(uncoveredThisMonth)}</strong> this month{uncoveredMonths > 1 ? ` (and ${uncoveredMonths - 1} more month${uncoveredMonths - 1 !== 1 ? 's' : ''})` : ''}</> : <><strong>{uncoveredMonths}</strong> month{uncoveredMonths !== 1 ? 's' : ''}</>} of charges point to a loan or missing debt and aren't funded. Assign a valid account or credit card.
           </div>
         )}
       </header>

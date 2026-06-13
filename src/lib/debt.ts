@@ -97,7 +97,7 @@ export interface DebtPlan {
   interestByDebt: Map<number, number[]>; // per-debt interest accrued each month
   payoffMonthByDebt: Map<number, number | null>; // debt id -> month index it clears (null if not within horizon)
   overLimitByDebt: Map<number, number | null>; // debt id -> first month-end balance above its credit limit (null if never)
-  chargeOverflow: number[]; // per month, charge $ that didn't fit on a card (over limit) or hit a loan/unknown target -> left UNCOVERED (not paid from cash)
+  chargeOverflow: number[]; // per month, charge $ aimed at a loan/unknown target -> left UNCOVERED (not paid from cash)
   totalInterest: number;
   debtFreeMonthIndex: number | null; // when the last debt clears
 }
@@ -190,18 +190,14 @@ export function simulateDebtPlan(
       }
     }
 
-    // Apply this month's charges (obligations billed to a card). Hard cap: a card
-    // only absorbs up to its available credit; the excess (and any loan/unknown
-    // target's charge) is left uncovered (chargeOverflow) — not paid from cash — so
-    // the card can't run away past its limit and the gap is surfaced as a flag.
+    // Apply this month's charges. A valid credit card accepts the full charge even
+    // when that takes it over limit; over-limit state is surfaced separately. Only
+    // loan/unknown targets are left uncovered.
     for (const c of chargesByMonth.get(m) ?? []) {
       const st = stateById.get(c.debtId);
       if (!st || !st.chargeable) { chargeOverflow[m] += c.amount; continue; }
-      const available = st.limit == null ? Infinity : Math.max(0, st.limit - st.bal);
-      const applied = Math.min(c.amount, available);
-      st.bal += applied;
-      if (applied < c.amount) chargeOverflow[m] += (c.amount - applied);
-      if (applied > 0 && st.paidMonth !== null && st.bal > 0.005) {
+      st.bal += c.amount;
+      if (c.amount > 0 && st.paidMonth !== null && st.bal > 0.005) {
         st.paidMonth = null; // reactivated by a new charge
         payoffMonthByDebt.set(st.id, null);
       }

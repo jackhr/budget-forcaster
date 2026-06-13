@@ -74,7 +74,8 @@ function Event({ event }: { event: MonthObligation }) {
 }
 
 export default function MonthlyBreakdown({ breakdown, month, onMonthChange, initialView }: Props) {
-  const [view, setView] = useState<'daily' | 'calendar'>(initialView);
+  const [view, setView] = useState<'daily' | 'calendar' | 'liquidity'>(initialView);
+  const [liquidityKey, setLiquidityKey] = useState('total');
   const firstWeekday = new Date(breakdown.year, breakdown.month, 1).getDay();
   const cells = [...Array(firstWeekday).fill(null), ...Array.from({ length: breakdown.days }, (_, index) => index + 1)];
   while (cells.length % 7) cells.push(null);
@@ -103,11 +104,11 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
         {card('Money out', formatMoney(breakdown.totalOut, { whole: true }), 'var(--color-expense)')}
         {card('Net', formatSignedMoney(breakdown.net, { whole: true }), breakdown.net >= 0 ? 'var(--color-income)' : 'var(--color-expense)')}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignSelf: 'center', background: 'var(--color-bg)', padding: 4, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          {(['daily', 'calendar'] as const).map((option) => (
+          {(['daily', 'calendar', 'liquidity'] as const).map((option) => (
             <button key={option} onClick={() => setView(option)} style={{
               background: view === option ? 'var(--color-primary)' : 'transparent', color: view === option ? '#fff' : 'var(--color-text-muted)',
               border: 'none', borderRadius: 5, padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'capitalize',
-            }}>{option === 'daily' ? 'Daily chart' : 'Calendar'}</button>
+            }}>{option === 'daily' ? 'Daily chart' : option === 'calendar' ? 'Calendar' : 'Liquidity'}</button>
           ))}
         </div>
       </div>
@@ -129,7 +130,7 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
             <span style={{ color: 'var(--color-income)' }}>━ Money in</span><span style={{ color: 'var(--color-expense)' }}>━ Money out</span><span style={{ color: 'var(--color-text)' }}>━ Net</span>
           </div>
         </div>
-      ) : (
+      ) : view === 'calendar' ? (
         <div style={{ marginTop: 20, overflowX: 'auto' }}>
           <div style={{ minWidth: 760 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 6 }}>
@@ -148,6 +149,79 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
               })}
             </div>
           </div>
+        </div>
+      ) : (
+        <LiquidityChart breakdown={breakdown} selected={liquidityKey} onSelect={setLiquidityKey} />
+      )}
+    </div>
+  );
+}
+
+function LiquidityChart({ breakdown, selected, onSelect }: { breakdown: MonthBreakdown; selected: string; onSelect: (key: string) => void }) {
+  const series = breakdown.liquidity.find((item) => item.key === selected) ?? breakdown.liquidity[0];
+  const data = breakdown.daily.map((point, index) => ({ ...point, liquidity: series?.values[index] ?? 0 }));
+  const finalValue = series?.values[series.values.length - 1] ?? 0;
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div>
+          <h3 style={{ fontSize: 14, fontWeight: 600 }}>Available to Play With</h3>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+            Cash balances plus remaining card credit after each day’s obligations.
+          </p>
+        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Liquidity source</span>
+          <select value={selected} onChange={(event) => onSelect(event.target.value)} style={{ minWidth: 220 }}>
+            <option value="total">All liquidity</option>
+            <optgroup label="Cash accounts">
+              {breakdown.liquidity.filter((item) => item.kind === 'account').map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
+            </optgroup>
+            <optgroup label="Credit cards">
+              {breakdown.liquidity.filter((item) => item.kind === 'card').map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
+            </optgroup>
+          </select>
+        </label>
+      </div>
+      <div style={{ color: finalValue > 0 ? 'var(--color-income)' : 'var(--color-expense)', fontSize: 20, fontWeight: 700, marginBottom: 6 }}>
+        {formatMoney(finalValue)} <span style={{ color: 'var(--color-text-muted)', fontSize: 11, fontWeight: 500 }}>available at month end</span>
+      </div>
+      <ResponsiveContainer width="100%" height={390}>
+        <LineChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+          <XAxis dataKey="label" interval={0} tick={{ fill: 'var(--color-text-muted)', fontSize: 9 }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} />
+          <YAxis tickFormatter={formatCompactMoney} tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
+          <Tooltip content={<LiquidityTooltip name={series?.name ?? 'All liquidity'} seriesKey={series?.key ?? 'total'} />} />
+          <Line type="stepAfter" dataKey="liquidity" name={series?.name ?? 'All liquidity'} stroke="var(--color-primary)" strokeWidth={3} dot={false} activeDot={{ r: 4 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?: boolean; payload?: { payload: { liquidity: number; events: MonthObligation[] } }[]; label?: string; name: string; seriesKey: string }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  const effects = row.events.map((event) => ({
+    event,
+    effect: event.liquidityChanges.filter((change) => seriesKey === 'total' || change.key === seriesKey).reduce((sum, change) => sum + change.amount, 0),
+  })).filter(({ effect }) => seriesKey === 'total' || Math.abs(effect) > 0.005);
+  return (
+    <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12, minWidth: 240, maxWidth: 420 }}>
+      <strong>Day {label} · {name}</strong>
+      <p style={{ color: 'var(--color-primary)', fontWeight: 700, marginTop: 6 }}>{formatMoney(row.liquidity)} available</p>
+      {effects.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Today’s liquidity changes</p>
+          {effects.map(({ event, effect }) => (
+            <p key={event.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 3 }}>
+              <span>{event.name}</span>
+              <strong style={{ color: effect > 0.005 ? 'var(--color-income)' : effect < -0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                {Math.abs(effect) <= 0.005 ? 'no net change' : formatSignedMoney(effect)}
+              </strong>
+            </p>
+          ))}
         </div>
       )}
     </div>

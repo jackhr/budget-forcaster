@@ -107,12 +107,12 @@ describe('simulateDebtPlan charges & credit limits', () => {
     expect(plan.chargeOverflow.every((v) => v === 0)).toBe(true);
   });
 
-  it('caps a charge at available credit and spills the rest to cash', () => {
+  it('allows a valid card charge to exceed available credit and flags it over limit', () => {
     const card = makeDebt({ id: 1, balance: 800, apr: 0, monthly_payment: 0, credit_limit: 1000, debt_type: 'credit_card' });
     const plan = simulateDebtPlan([card], 0, 'none', 1, [{ debtId: 1, monthIndex: 0, amount: 500 }]);
-    // only 200 of the 500 fits under the 1000 limit; 300 spills to cash
-    expect(plan.remainingByDebt.get(1)![0]).toBeCloseTo(1000, 5);
-    expect(plan.chargeOverflow[0]).toBeCloseTo(300, 5);
+    expect(plan.remainingByDebt.get(1)![0]).toBeCloseTo(1300, 5);
+    expect(plan.chargeOverflow[0]).toBe(0);
+    expect(plan.overLimitByDebt.get(1)).toBe(0);
   });
 
   it('flags a card whose balance already exceeds its limit', () => {

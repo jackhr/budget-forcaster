@@ -13,6 +13,21 @@ export interface MonthObligation {
   detail: string;
   paid: boolean;
   dateSpecified: boolean;
+  liquidityChanges: LiquidityChange[];
+}
+
+export interface LiquidityChange {
+  key: string;
+  name: string;
+  kind: 'account' | 'card';
+  amount: number;
+}
+
+export interface LiquiditySeries {
+  key: string;
+  name: string;
+  kind: 'total' | 'account' | 'card';
+  values: number[];
 }
 
 export interface DailyMonthPoint {
@@ -36,6 +51,7 @@ export interface MonthBreakdown {
   totalIn: number;
   totalOut: number;
   net: number;
+  liquidity: LiquiditySeries[];
 }
 
 function round2(value: number): number {
@@ -130,6 +146,44 @@ function fundingSources(
   return [...new Set(names)].join(' + ') || fallback;
 }
 
+function sourceChange(sourceType: 'account' | 'debt', sourceId: number | null, amount: number, accounts: Account[], debts: Debt[]): LiquidityChange | null {
+  if (sourceId == null) return null;
+  if (sourceType === 'account') {
+    const account = accounts.find((item) => item.id === sourceId);
+    return account ? { key: `account:${account.id}`, name: account.name, kind: 'account', amount: round2(amount) } : null;
+  }
+  const debt = debts.find((item) => item.id === sourceId && item.debt_type === 'credit_card' && item.credit_limit != null);
+  return debt ? { key: `card:${debt.id}`, name: debt.name, kind: 'card', amount: round2(amount) } : null;
+}
+
+function fundingChanges(
+  amount: number,
+  rules: FundingRule[],
+  allocations: { source_type: 'account' | 'debt'; source_id: number | null; alloc_type: string; value: number }[],
+  accounts: Account[],
+  debts: Debt[],
+  fallbackType: 'account' | 'debt',
+  fallbackId: number | null,
+): LiquidityChange[] {
+  const sources = rules.length > 0 ? rules : allocations;
+  const changes: LiquidityChange[] = [];
+  let remaining = amount;
+  const apply = (source: { source_type: 'account' | 'debt'; source_id: number | null; alloc_type: string; value: number }) => {
+    const requested = source.alloc_type === 'fixed' ? source.value : amount * Math.min(100, source.value) / 100;
+    const used = Math.min(requested, remaining);
+    const change = sourceChange(source.source_type, source.source_id, -used, accounts, debts);
+    if (change && used > 0.005) {
+      changes.push(change);
+      remaining -= used;
+    }
+  };
+  for (const source of sources) if (source.alloc_type === 'fixed') apply(source);
+  for (const source of sources) if (source.alloc_type === 'percent') apply(source);
+  const fallback = sourceChange(fallbackType, fallbackId, -remaining, accounts, debts);
+  if (fallback && remaining > 0.005) changes.push(fallback);
+  return changes;
+}
+
 export function buildMonthBreakdown(
   income: IncomeSource[],
   expenses: Expense[],
@@ -140,45 +194,55 @@ export function buildMonthBreakdown(
   now: Date = new Date(),
   paidDebtIds?: Set<number>,
   paidExpenseIds?: Set<number>,
+  liquidityStart?: Map<string, number>,
 ): MonthBreakdown {
   const target = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
   const year = target.getFullYear();
   const month = target.getMonth();
   const days = new Date(year, month + 1, 0).getDate();
   const events: MonthObligation[] = [];
+  const primary = accounts.find((account) => account.is_primary) ?? accounts[0];
 
   const push = (
     key: string, date: Date, dateSpecified: boolean, name: string, kind: MonthObligationKind,
-    direction: 'in' | 'out', amount: number, detail: string, paid = false,
+    direction: 'in' | 'out', amount: number, detail: string, paid = false, liquidityChanges: LiquidityChange[] = [],
   ) => {
     if (amount <= 0.005) return;
-    events.push({ key, day: date.getDate(), date: isoDate(date), name, kind, direction, amount: round2(amount), detail, paid, dateSpecified });
+    events.push({ key, day: date.getDate(), date: isoDate(date), name, kind, direction, amount: round2(amount), detail, paid, dateSpecified, liquidityChanges });
   };
 
   for (const item of income) {
     for (const occurrence of occurrenceDates(item.frequency, item.start_date, null, year, month)) {
       const account = accounts.find((candidate) => candidate.id === item.account_id) ?? accounts.find((candidate) => candidate.is_primary) ?? accounts[0];
-      push(`income:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'income', 'in', item.monthly_amount, `to ${account?.name ?? 'primary account'}`);
+      const change = sourceChange('account', account?.id ?? null, item.monthly_amount, accounts, debts);
+      push(`income:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'income', 'in', item.monthly_amount, `to ${account?.name ?? 'primary account'}`, false, change ? [change] : []);
     }
   }
 
   for (const item of expenses) {
     for (const occurrence of occurrenceDates(item.frequency, item.start_date, item.end_date, year, month)) {
       const paid = monthOffset === 0 && !!paidExpenseIds?.has(item.id);
-      const primary = accounts.find((account) => account.is_primary) ?? accounts[0];
       const sources = fundingSources(item.funding_rules, item.funding_allocations, accounts, debts, primary?.name ?? 'primary account');
-      push(`expense:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'expense', 'out', item.monthly_amount, `from ${sources}`, paid);
+      const changes = fundingChanges(item.monthly_amount, item.funding_rules, item.funding_allocations, accounts, debts, 'account', primary?.id ?? null);
+      push(`expense:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'expense', 'out', item.monthly_amount, `from ${sources}`, paid, changes);
     }
   }
 
   for (const item of future) {
     for (const occurrence of occurrenceDates(item.frequency, item.start_date, item.end_date, year, month)) {
-      const primary = accounts.find((account) => account.is_primary) ?? accounts[0];
       let fallback = primary?.name ?? 'primary account';
+      let fallbackType: 'account' | 'debt' = 'account';
+      let fallbackId: number | null = primary?.id ?? null;
       if (item.funding_source_type === 'account') fallback = accounts.find((account) => account.id === item.funding_source_id)?.name ?? fallback;
-      if (item.funding_source_type === 'debt') fallback = debts.find((debt) => debt.id === item.funding_source_id)?.name ?? fallback;
+      if (item.funding_source_type === 'account') fallbackId = item.funding_source_id;
+      if (item.funding_source_type === 'debt') {
+        fallback = debts.find((debt) => debt.id === item.funding_source_id)?.name ?? fallback;
+        fallbackType = 'debt';
+        fallbackId = item.funding_source_id;
+      }
       const sources = fundingSources(item.funding_rules, item.funding_allocations, accounts, debts, fallback);
-      push(`future:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'future', 'out', item.amount, `from ${sources}`);
+      const changes = fundingChanges(item.amount, item.funding_rules, item.funding_allocations, accounts, debts, fallbackType, fallbackId);
+      push(`future:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'future', 'out', item.amount, `from ${sources}`, false, changes);
     }
   }
 
@@ -188,12 +252,23 @@ export function buildMonthBreakdown(
       debt.funding_rules.forEach((rule, ruleIndex) => {
         const amount = rule.alloc_type === 'fixed' ? rule.value : debt.monthly_payment * Math.min(100, rule.value) / 100;
         for (const occurrence of occurrenceDates(rule.frequency, rule.start_date, rule.end_date, year, month, debt.payment_day ?? 1)) {
-          push(`debt:${debt.id}:rule:${ruleIndex}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified || debt.payment_day != null, debt.name, 'debt', 'out', amount, `from ${sourceName(rule, accounts, debts)}`, paid);
+          const changes: LiquidityChange[] = [];
+          const source = sourceChange(rule.source_type, rule.source_id, -amount, accounts, debts);
+          if (source) changes.push(source);
+          const card = sourceChange('debt', debt.id, amount, accounts, debts);
+          if (card) changes.push(card);
+          push(`debt:${debt.id}:rule:${ruleIndex}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified || debt.payment_day != null, debt.name, 'debt', 'out', amount, `from ${sourceName(rule, accounts, debts)}`, paid, changes);
         }
       });
     } else {
       for (const occurrence of occurrenceDates('monthly', null, null, year, month, debt.payment_day ?? 1)) {
-        push(`debt:${debt.id}:${isoDate(occurrence.date)}`, occurrence.date, debt.payment_day != null, debt.name, 'debt', 'out', debt.monthly_payment, `from ${defaultDebtSource(debt, accounts)}`, paid);
+        const changes: LiquidityChange[] = [];
+        const sourceId = debt.funding_allocations[0]?.source_id ?? debt.account_id ?? primary?.id ?? null;
+        const source = sourceChange('account', sourceId, -debt.monthly_payment, accounts, debts);
+        if (source) changes.push(source);
+        const card = sourceChange('debt', debt.id, debt.monthly_payment, accounts, debts);
+        if (card) changes.push(card);
+        push(`debt:${debt.id}:${isoDate(occurrence.date)}`, occurrence.date, debt.payment_day != null, debt.name, 'debt', 'out', debt.monthly_payment, `from ${defaultDebtSource(debt, accounts)}`, paid, changes);
       }
     }
   }
@@ -213,8 +288,33 @@ export function buildMonthBreakdown(
     return { day, label: String(day), moneyIn, moneyOut, net: round2(moneyIn - moneyOut), dailyIn, dailyOut, events: dayEvents };
   });
 
+  const liquidity: LiquiditySeries[] = [
+    ...accounts.map((account) => ({ key: `account:${account.id}`, name: account.name, kind: 'account' as const, start: account.balance, max: Infinity })),
+    ...debts.filter((debt) => debt.debt_type === 'credit_card' && debt.credit_limit != null).map((debt) => ({
+      key: `card:${debt.id}`, name: debt.name, kind: 'card' as const, start: Math.max(0, debt.credit_limit! - debt.balance), max: debt.credit_limit!,
+    })),
+  ].map((source) => {
+    // Current balances are an as-of-today snapshot. Reconstruct this month's
+    // opening value so past obligations are not applied twice. Future months may
+    // instead receive the prior projected month's ending values.
+    const changesThroughToday = monthOffset === 0 && !liquidityStart
+      ? events.filter((event) => event.day <= now.getDate()).flatMap((event) => event.liquidityChanges)
+        .filter((change) => change.key === source.key).reduce((sum, change) => sum + change.amount, 0)
+      : 0;
+    let value = liquidityStart?.get(source.key) ?? (source.start - changesThroughToday);
+    const values = daily.map((point) => {
+      value += point.events.flatMap((event) => event.liquidityChanges).filter((change) => change.key === source.key).reduce((sum, change) => sum + change.amount, 0);
+      return round2(Math.max(0, Math.min(source.max, value)));
+    });
+    return { key: source.key, name: source.name, kind: source.kind, values };
+  });
+  liquidity.unshift({
+    key: 'total', name: 'All liquidity', kind: 'total',
+    values: daily.map((_, index) => round2(liquidity.reduce((sum, source) => sum + source.values[index], 0))),
+  });
+
   return {
     year, month, label: target.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), days, events, daily,
-    totalIn: moneyIn, totalOut: moneyOut, net: round2(moneyIn - moneyOut),
+    totalIn: moneyIn, totalOut: moneyOut, net: round2(moneyIn - moneyOut), liquidity,
   };
 }

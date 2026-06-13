@@ -67,4 +67,43 @@ describe('buildMonthBreakdown', () => {
     expect(result.daily[0].events[0]).toMatchObject({ name: 'Legacy bill', paid: true });
     expect(result.totalOut).toBe(80);
   });
+
+  it('tracks total, account, and available-card-credit liquidity by day', () => {
+    const cashAccounts: Account[] = [
+      { ...accounts[0], balance: 1000 },
+      { ...accounts[1], balance: 500 },
+    ];
+    const card = debt({
+      balance: 600,
+      credit_limit: 1000,
+      account_id: 1,
+      payment_day: 20,
+      monthly_payment: 100,
+    });
+    const income: IncomeSource[] = [
+      { id: 1, name: 'Paycheck', monthly_amount: 200, frequency: 'one-time', start_date: '2026-06-05', group_id: null, account_id: 2, created_at: '', updated_at: '' },
+    ];
+    const expenses: Expense[] = [
+      {
+        id: 1, name: 'Card purchase', monthly_amount: 150, frequency: 'one-time', start_date: '2026-06-10', end_date: null,
+        group_id: null, funding_allocations: [{ source_type: 'debt', source_id: 1, alloc_type: 'percent', value: 100 }], funding_rules: [], created_at: '', updated_at: '',
+      },
+    ];
+
+    const result = buildMonthBreakdown(income, expenses, [], [card], cashAccounts, 0, NOW);
+    const total = result.liquidity.find((series) => series.key === 'total')!;
+    const checking = result.liquidity.find((series) => series.key === 'account:1')!;
+    const bills = result.liquidity.find((series) => series.key === 'account:2')!;
+    const credit = result.liquidity.find((series) => series.key === 'card:1')!;
+
+    // Today's balances are reconstructed backward for earlier dates, then used as
+    // the anchor for the remaining forecast.
+    expect(total.values[0]).toBe(1850);
+    expect(bills.values[4]).toBe(500);
+    expect(credit.values[9]).toBe(400);
+    expect(total.values[11]).toBe(1900);
+    expect(checking.values[19]).toBe(900);
+    expect(credit.values[19]).toBe(500);
+    expect(total.values[19]).toBe(1900);
+  });
 });

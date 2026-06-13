@@ -68,7 +68,10 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   }
 
   const amtNum = parseFloat(amount);
-  const valid = name.trim().length > 0 && amtNum > 0 && (!showFunding || !!start);
+  const nameValid = name.trim().length > 0;
+  const amountValid = amtNum > 0;
+  const startValid = !showFunding || !!start;
+  const valid = nameValid && amountValid && startValid;
   const startLabel = showFunding && 'start_date' in item ? formatDate(item.start_date) : null;
 
   // "Paid from" is simple (one account/card, or the primary account) unless
@@ -78,7 +81,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     || allocations.some((a) => a.alloc_type !== 'percent' || a.value !== 100);
   const singleSource = allocations.length === 1 ? allocations[0] : null;
   const payFromValue = singleSource && singleSource.source_id != null ? `${singleSource.source_type}:${singleSource.source_id}` : '';
-  // When paying from a card, show its available credit and any spill to cash.
+  // When paying from a card, show its available credit and projected overage.
   const selectedCard = payFromValue.startsWith('debt:') ? debts?.find((d) => d.id === Number(payFromValue.slice(5))) : undefined;
   const cardAvail = selectedCard?.available ?? null;
   const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
@@ -338,7 +341,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                     {selectedCard && cardAvail != null && (
                       <p style={{ fontSize: 12, margin: 0, color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
                         {cardSpill > 0.005
-                          ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} left — ${formatMoney(cardSpill)} of this ${formatMoney(amtNum || 0)} is uncovered (no source). Use “Split or schedule” to assign it.`
+                          ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} available — this charge would put it ${formatMoney(cardSpill)} over its limit.`
                           : `${formatMoney(cardAvail)} available on this card.`}
                       </p>
                     )}
@@ -350,11 +353,9 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
               </div>
             ) : null}
 
-            {!valid && (
-              <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>
-                Enter a name and an amount greater than zero.
-              </p>
-            )}
+            {!nameValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Enter a name.</p>}
+            {!amountValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Enter an amount greater than zero.</p>}
+            {!startValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Choose the first occurrence date.</p>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
               <button
                 type="button"
