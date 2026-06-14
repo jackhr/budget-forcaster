@@ -5,7 +5,7 @@ const { reorder, ORDER_BY } = require('../lib/data');
 const { normalizeDate, dateError } = require('../lib/dates');
 const { cleanAllocations, cleanFundingRules, parseJsonArray } = require('../lib/funding');
 
-const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
+const VALID_FREQUENCIES = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annually', 'one-time'];
 
 function normalizeFrequency(freq, fallback = 'monthly') {
   return VALID_FREQUENCIES.includes(freq) ? freq : fallback;

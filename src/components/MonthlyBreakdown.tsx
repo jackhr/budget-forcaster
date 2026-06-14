@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { MonthBreakdown, MonthObligation, MonthObligationKind } from '../lib/monthlyBreakdown';
 import { formatCompactMoney, formatMoney, formatSignedMoney } from '../lib/format';
 import MonthControl from './MonthControl';
@@ -27,7 +27,7 @@ function DailyTooltip({ active, payload, label }: { active?: boolean; payload?: 
     <div key={event.key} style={{ display: 'flex', gap: 12, justifyContent: 'space-between', marginTop: 4 }}>
       <span style={{ color: 'var(--color-text)' }}>
         {event.name}
-        <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}> · {event.paid ? 'paid' : 'expected'} · {event.detail}</span>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}> · {event.paid ? (event.kind === 'income' ? 'received' : 'paid') : 'expected'} · {event.detail}</span>
       </span>
       <strong style={{ color, whiteSpace: 'nowrap' }}>{sign}{formatMoney(event.amount)}</strong>
     </div>
@@ -67,7 +67,7 @@ function Event({ event }: { event: MonthObligation }) {
         </span>
       </div>
       <div style={{ color: 'var(--color-text-muted)', fontSize: 9.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {!event.dateSpecified ? 'Date not set · ' : ''}{event.paid ? '✓ paid · ' : ''}{event.detail}
+        {!event.dateSpecified ? 'Date not set · ' : ''}{event.paid ? `✓ ${event.kind === 'income' ? 'received' : 'paid'} · ` : ''}{event.detail}
       </div>
     </div>
   );
@@ -161,6 +161,8 @@ function LiquidityChart({ breakdown, selected, onSelect }: { breakdown: MonthBre
   const series = breakdown.liquidity.find((item) => item.key === selected) ?? breakdown.liquidity[0];
   const data = breakdown.daily.map((point, index) => ({ ...point, liquidity: series?.values[index] ?? 0 }));
   const finalValue = series?.values[series.values.length - 1] ?? 0;
+  const today = new Date();
+  const todayLabel = today.getFullYear() === breakdown.year && today.getMonth() === breakdown.month ? String(today.getDate()) : null;
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -168,13 +170,14 @@ function LiquidityChart({ breakdown, selected, onSelect }: { breakdown: MonthBre
         <div>
           <h3 style={{ fontSize: 14, fontWeight: 600 }}>Available to Play With</h3>
           <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
-            Cash balances plus remaining card credit after each day’s obligations.
+            Reconstructed completed activity through today, followed by expected cash and card-credit changes.
           </p>
         </div>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Liquidity source</span>
           <select value={selected} onChange={(event) => onSelect(event.target.value)} style={{ minWidth: 220 }}>
             <option value="total">All liquidity</option>
+            <option value="accounts">All cash accounts</option>
             <optgroup label="Cash accounts">
               {breakdown.liquidity.filter((item) => item.kind === 'account').map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
             </optgroup>
@@ -192,6 +195,7 @@ function LiquidityChart({ breakdown, selected, onSelect }: { breakdown: MonthBre
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="label" interval={0} tick={{ fill: 'var(--color-text-muted)', fontSize: 9 }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} />
           <YAxis tickFormatter={formatCompactMoney} tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
+          {todayLabel && <ReferenceLine x={todayLabel} stroke="var(--color-text-muted)" strokeDasharray="4 4" label={{ value: 'Today', fill: 'var(--color-text-muted)', fontSize: 10, position: 'insideTopRight' }} />}
           <Tooltip content={<LiquidityTooltip name={series?.name ?? 'All liquidity'} seriesKey={series?.key ?? 'total'} />} />
           <Line type="stepAfter" dataKey="liquidity" name={series?.name ?? 'All liquidity'} stroke="var(--color-primary)" strokeWidth={3} dot={false} activeDot={{ r: 4 }} />
         </LineChart>
@@ -205,7 +209,7 @@ function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?
   const row = payload[0].payload;
   const effects = row.events.map((event) => ({
     event,
-    effect: event.liquidityChanges.filter((change) => seriesKey === 'total' || change.key === seriesKey).reduce((sum, change) => sum + change.amount, 0),
+    effect: event.liquidityChanges.filter((change) => seriesKey === 'total' || (seriesKey === 'accounts' && change.kind === 'account') || change.key === seriesKey).reduce((sum, change) => sum + change.amount, 0),
   })).filter(({ effect }) => seriesKey === 'total' || Math.abs(effect) > 0.005);
   return (
     <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12, minWidth: 240, maxWidth: 420 }}>
@@ -213,7 +217,7 @@ function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?
       <p style={{ color: 'var(--color-primary)', fontWeight: 700, marginTop: 6 }}>{formatMoney(row.liquidity)} available</p>
       {effects.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Today’s liquidity changes</p>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Day’s balance changes</p>
           {effects.map(({ event, effect }) => (
             <p key={event.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 3 }}>
               <span>{event.name}</span>

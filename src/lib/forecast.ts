@@ -20,10 +20,12 @@ export const FREQUENCIES: Frequency[] = [
   'annually',
   'one-time',
 ];
+export const INCOME_FREQUENCIES: Frequency[] = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annually', 'one-time'];
 
 export const FREQUENCY_LABELS: Record<Frequency, string> = {
   weekly: 'Weekly',
-  biweekly: 'Bi-weekly',
+  biweekly: 'Bi-weekly (every 2 weeks)',
+  semimonthly: 'Twice monthly (2 payments/month)',
   monthly: 'Monthly',
   quarterly: 'Quarterly',
   annually: 'Annually',
@@ -43,6 +45,14 @@ function incomeCashAtMonth(src: IncomeSource, monthIndex: number, now: Date): nu
   switch (src.frequency) {
     case 'weekly': return a * (52 / 12);
     case 'biweekly': return a * (26 / 12);
+    case 'semimonthly': {
+      if (monthIndex !== 0) return a * 2;
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const completed = new Set((src.occurrences ?? [])
+        .filter((occurrence) => occurrence.scheduled_date.startsWith(month) && occurrence.status !== 'expected')
+        .map((occurrence) => occurrence.scheduled_date));
+      return a * Math.max(0, 2 - completed.size);
+    }
     case 'monthly': return a;
     case 'quarterly': return since % 3 === 0 ? a : 0;
     case 'annually': return since % 12 === 0 ? a : 0;
@@ -66,6 +76,7 @@ function expenseOccurrenceAtMonth(e: Expense, monthIndex: number, now: Date): nu
   switch (e.frequency ?? 'monthly') {
     case 'weekly': return a * (52 / 12);
     case 'biweekly': return a * (26 / 12);
+    case 'semimonthly': return a * 2;
     case 'monthly': return a;
     case 'quarterly': return since % 3 === 0 ? a : 0;
     case 'annually': return since % 12 === 0 ? a : 0;
@@ -101,6 +112,7 @@ function paymentCashAtMonth(p: ScheduledPayment, monthIndex: number, now: Date):
     case 'one-time': return since === 0 ? p.amount : 0;
     case 'weekly': return p.amount * (52 / 12);
     case 'biweekly': return p.amount * (26 / 12);
+    case 'semimonthly': return p.amount * 2;
     case 'monthly': return p.amount;
     case 'quarterly': return since % 3 === 0 ? p.amount : 0;
     case 'annually': return since % 12 === 0 ? p.amount : 0;
@@ -118,6 +130,7 @@ function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number,
       case 'quarterly': if (since % 3 !== 0) return 0; break;
       case 'annually': if (since % 12 !== 0) return 0; break;
       case 'one-time': if (since !== 0) return 0; break;
+      case 'semimonthly': break;
       default: break;
     }
     // A single percentage rule cannot exceed the full default payment. Multiple
@@ -127,6 +140,7 @@ function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number,
   switch (rule.frequency) {
     case 'weekly': return rule.value * (52 / 12);
     case 'biweekly': return rule.value * (26 / 12);
+    case 'semimonthly': return rule.value * 2;
     case 'monthly': return rule.value;
     case 'quarterly': return since % 3 === 0 ? rule.value : 0;
     case 'annually': return since % 12 === 0 ? rule.value : 0;

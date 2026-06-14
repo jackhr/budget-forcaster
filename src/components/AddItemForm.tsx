@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AllocationSourceType, Frequency, ItemFormData } from '../types';
-import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
+import { FREQUENCIES, FREQUENCY_LABELS, INCOME_FREQUENCIES } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 
@@ -38,6 +38,8 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('monthly');
+  const [payday1, setPayday1] = useState(15);
+  const [payday2, setPayday2] = useState(31);
   const [start, setStart] = useState(today);
   const [account, setAccount] = useState<number | null>(null);
   const [fundingSource, setFundingSource] = useState('');
@@ -51,7 +53,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const valid = name.trim().length > 0 && amtNum > 0 && (!showFunding || !!start);
 
   const reset = () => {
-    setName(''); setAmount(''); setFrequency('monthly'); setStart(today());
+    setName(''); setAmount(''); setFrequency('monthly'); setPayday1(15); setPayday2(31); setStart(today());
     setAccount(null); setFundingSource('');
   };
 
@@ -66,6 +68,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
       name: name.trim(),
       monthly_amount: amtNum,
       ...(showFrequency ? { frequency } : {}),
+      ...(showAccount && frequency === 'semimonthly' ? { payday_1: payday1, payday_2: payday2 } : {}),
       ...(showFunding ? { start_date: start } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: funding } : {}),
@@ -115,9 +118,16 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
 
             {showFrequency && field('Frequency', 'How often the amount above occurs.', (
               <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} style={selectStyle}>
-                {FREQUENCIES.map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
+                {(showAccount ? INCOME_FREQUENCIES : FREQUENCIES).map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
               </select>
             ))}
+
+            {showAccount && frequency === 'semimonthly' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {field('First payday', 'Day of month.', <input type="number" min={1} max={31} value={payday1} onChange={(e) => setPayday1(Number(e.target.value))} />)}
+                {field('Second payday', 'Use 31 for month end.', <input type="number" min={1} max={31} value={payday2} onChange={(e) => setPayday2(Number(e.target.value))} />)}
+              </div>
+            )}
 
             {showFunding && field('When', 'First occurrence; repeats according to the selected frequency.', (
               <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ width: '100%' }} />

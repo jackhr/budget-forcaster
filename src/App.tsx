@@ -340,7 +340,7 @@ export default function App() {
   );
   for (let monthIndex = 1; monthIndex <= breakdownMonth; monthIndex++) {
     const priorEndingLiquidity = new Map(monthlyBreakdown.liquidity
-      .filter((series) => series.kind !== 'total')
+      .filter((series) => series.kind === 'account' || series.kind === 'card')
       .map((series) => [series.key, series.values[series.values.length - 1] ?? 0]));
     monthlyBreakdown = buildMonthBreakdown(
       incomeSources, expenses, payments, debts, accounts, monthIndex, new Date(), undefined, undefined, priorEndingLiquidity,
@@ -374,6 +374,18 @@ export default function App() {
     const item = await incomeApi.update(id, data);
     setIncomeSources((prev) => prev.map((i) => (i.id === id ? item : i)));
   }, 'Could not update income');
+  const updateIncomeOccurrence = async (income: IncomeSource, scheduledDate: string, occurrenceDate: string, status: 'expected' | 'received' | 'skipped') => {
+    await guard(async () => {
+      const item = await incomeApi.updateOccurrence(income.id, scheduledDate, { occurrence_date: occurrenceDate, status });
+      setIncomeSources((prev) => prev.map((candidate) => candidate.id === item.id ? item : candidate));
+    }, 'Could not update income payment');
+  };
+  const resetIncomeOccurrence = async (income: IncomeSource, scheduledDate: string) => {
+    await guard(async () => {
+      const item = await incomeApi.resetOccurrence(income.id, scheduledDate);
+      setIncomeSources((prev) => prev.map((candidate) => candidate.id === item.id ? item : candidate));
+    }, 'Could not reset income payment');
+  };
   const deleteIncome = (id: number) => guard(async () => {
     await incomeApi.delete(id);
     setIncomeSources((prev) => prev.filter((i) => i.id !== id));
@@ -825,6 +837,8 @@ export default function App() {
             kind="income" groups={groups} showFrequency showAccount
             accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
             onAdd={addIncome} onUpdate={updateIncome} onDelete={deleteIncome}
+            onUpdateOccurrence={(item, scheduledDate, occurrenceDate, status) => updateIncomeOccurrence(item as IncomeSource, scheduledDate, occurrenceDate, status)}
+            onResetOccurrence={(item, scheduledDate) => resetIncomeOccurrence(item as IncomeSource, scheduledDate)}
             onAddGroup={(name) => addGroup(name, 'income')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
             onReorder={reorderIncome} onReorderGroup={reorderGroups}
           />

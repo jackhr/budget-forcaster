@@ -16,6 +16,34 @@ function debt(over: Partial<Debt> = {}): Debt {
 }
 
 describe('buildMonthBreakdown', () => {
+  it('shows received and expected twice-monthly deposits without adding received cash again', () => {
+    const income: IncomeSource[] = [{
+      id: 1, name: 'Paycheck', monthly_amount: 2000, frequency: 'semimonthly', payday_1: 12, payday_2: 30,
+      start_date: null, group_id: null, account_id: 1,
+      occurrences: [{ scheduled_date: '2026-06-12', occurrence_date: '2026-06-12', status: 'detected', transaction_id: 'pay-1', transaction_amount: 2100 }],
+      created_at: '', updated_at: '',
+    }];
+
+    const result = buildMonthBreakdown(income, [], [], [], [{ ...accounts[0], balance: 2100 }], 0, NOW);
+
+    expect(result.events.map((event) => [event.day, event.paid])).toEqual([[12, true], [30, false]]);
+    expect(result.totalIn).toBe(4100);
+    expect(result.liquidity.find((series) => series.key === 'account:1')?.values[10]).toBe(0);
+    expect(result.liquidity.find((series) => series.key === 'account:1')?.values[11]).toBe(2100);
+    expect(result.liquidity.find((series) => series.key === 'account:1')?.values[29]).toBe(4100);
+  });
+
+  it('moves twice-monthly paydays to the previous business day on weekends', () => {
+    const income: IncomeSource[] = [{
+      id: 1, name: 'Paycheck', monthly_amount: 2000, frequency: 'semimonthly', payday_1: 15, payday_2: 31,
+      start_date: null, group_id: null, account_id: 1, occurrences: [], created_at: '', updated_at: '',
+    }];
+
+    const result = buildMonthBreakdown(income, [], [], [], accounts, 2, NOW); // August 2026; Aug 15 is Saturday
+
+    expect(result.events.map((event) => event.day)).toEqual([14, 31]);
+  });
+
   it('places obligations on their actual days and builds a cumulative daily line', () => {
     const income: IncomeSource[] = [
       { id: 1, name: 'Paycheck', monthly_amount: 2000, frequency: 'biweekly', start_date: '2026-06-05', group_id: null, account_id: 1, created_at: '', updated_at: '' },
@@ -92,6 +120,7 @@ describe('buildMonthBreakdown', () => {
 
     const result = buildMonthBreakdown(income, expenses, [], [card], cashAccounts, 0, NOW);
     const total = result.liquidity.find((series) => series.key === 'total')!;
+    const allCash = result.liquidity.find((series) => series.key === 'accounts')!;
     const checking = result.liquidity.find((series) => series.key === 'account:1')!;
     const bills = result.liquidity.find((series) => series.key === 'account:2')!;
     const credit = result.liquidity.find((series) => series.key === 'card:1')!;
@@ -99,11 +128,14 @@ describe('buildMonthBreakdown', () => {
     // Today's balances are reconstructed backward for earlier dates, then used as
     // the anchor for the remaining forecast.
     expect(total.values[0]).toBe(1850);
+    expect(allCash.values[0]).toBe(1300);
+    expect(allCash.values[4]).toBe(1500);
     expect(bills.values[4]).toBe(500);
     expect(credit.values[9]).toBe(400);
     expect(total.values[11]).toBe(1900);
     expect(checking.values[19]).toBe(900);
     expect(credit.values[19]).toBe(500);
     expect(total.values[19]).toBe(1900);
+    expect(allCash.values[19]).toBe(1400);
   });
 });

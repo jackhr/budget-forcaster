@@ -248,6 +248,24 @@ if (!incomeCols.some((c) => c.name === 'start_date')) {
 if (!incomeCols.some((c) => c.name === 'account_id')) {
   db.exec('ALTER TABLE income_sources ADD COLUMN account_id INTEGER'); // null = primary account
 }
+if (!incomeCols.some((c) => c.name === 'payday_1')) {
+  db.exec('ALTER TABLE income_sources ADD COLUMN payday_1 INTEGER');
+}
+if (!incomeCols.some((c) => c.name === 'payday_2')) {
+  db.exec('ALTER TABLE income_sources ADD COLUMN payday_2 INTEGER');
+}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS income_occurrences (
+    income_id INTEGER NOT NULL,
+    scheduled_date TEXT NOT NULL,
+    occurrence_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'expected',
+    transaction_id TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (income_id, scheduled_date),
+    FOREIGN KEY (income_id) REFERENCES income_sources(id) ON DELETE CASCADE
+  )
+`);
 
 // --- Migration: scheduled_payments from one-off (due_date) to recurring (frequency/start_date/end_date) ---
 const schedCols = db.prepare('PRAGMA table_info(scheduled_payments)').all();

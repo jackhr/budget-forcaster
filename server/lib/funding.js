@@ -1,4 +1,4 @@
-const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
+const VALID_FREQUENCIES = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annually', 'one-time'];
 const { normalizeDate } = require('./dates');
 
 function isAmount(v) {

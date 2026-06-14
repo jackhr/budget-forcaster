@@ -1,6 +1,7 @@
 export type Frequency =
   | 'weekly'
   | 'biweekly'
+  | 'semimonthly'
   | 'monthly'
   | 'quarterly'
   | 'annually'
@@ -11,6 +12,7 @@ export interface Account {
   name: string;
   balance: number;
   is_primary: 0 | 1;
+  plaid_account_id?: string | null;
   sort_order: number | null;
   created_at: string;
   updated_at: string;
@@ -26,14 +28,28 @@ export interface LineItemGroup {
   updated_at: string;
 }
 
+export type IncomeOccurrenceStatus = 'expected' | 'received' | 'detected' | 'skipped';
+
+export interface IncomeOccurrence {
+  scheduled_date: string;
+  occurrence_date: string;
+  status: IncomeOccurrenceStatus;
+  transaction_id: string | null;
+  transaction_name?: string | null;
+  transaction_amount?: number | null;
+}
+
 export interface IncomeSource {
   id: number;
   name: string;
   monthly_amount: number;
   frequency: Frequency;
+  payday_1?: number | null; // twice-monthly day; 31 means last day of month
+  payday_2?: number | null; // twice-monthly day; 31 means last day of month
   group_id: number | null;
   start_date: string | null; // YYYY-MM-DD; null = starts now / always
   account_id: number | null; // which cash account it lands in; null = primary
+  occurrences?: IncomeOccurrence[]; // saved overrides plus detected current-month deposits
   created_at: string;
   updated_at: string;
 }
@@ -146,6 +162,8 @@ export interface ItemFormData {
   name: string;
   monthly_amount: number;
   frequency?: Frequency;
+  payday_1?: number | null;
+  payday_2?: number | null;
   group_id?: number | null;
   start_date?: string | null;
   end_date?: string | null;

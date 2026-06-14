@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { AllocationSourceType, ExpenseAllocation, Frequency, FundingRule, ItemFormData, LineItem, LineItemGroup } from '../types';
-import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
+import type { AllocationSourceType, ExpenseAllocation, Frequency, FundingRule, IncomeOccurrenceStatus, ItemFormData, LineItem, LineItemGroup } from '../types';
+import { FREQUENCIES, FREQUENCY_LABELS, INCOME_FREQUENCIES } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
@@ -33,11 +33,13 @@ interface Props {
   debts?: NamedSource[];
   paid?: boolean;
   onTogglePaid?: () => void;
+  onUpdateOccurrence?: (scheduledDate: string, occurrenceDate: string, status: 'expected' | 'received' | 'skipped') => Promise<void>;
+  onResetOccurrence?: (scheduledDate: string) => Promise<void>;
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
   dragging?: boolean;
 }
 
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showAccount, showFunding, groups, accounts, debts, paid, onTogglePaid, drag, dragging }: Props) {
+export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showAccount, showFunding, groups, accounts, debts, paid, onTogglePaid, onUpdateOccurrence, onResetOccurrence, drag, dragging }: Props) {
   const itemFreq: Frequency = 'frequency' in item ? item.frequency : 'monthly';
   const itemAccount = 'account_id' in item ? item.account_id : null;
   const itemAllocations: ExpenseAllocation[] = 'funding_allocations' in item ? (item.funding_allocations ?? []) : [];
@@ -48,6 +50,8 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const [name, setName] = useState(item.name);
   const [amount, setAmount] = useState(String(item.monthly_amount));
   const [frequency, setFrequency] = useState<Frequency>(itemFreq);
+  const [payday1, setPayday1] = useState('payday_1' in item ? item.payday_1 ?? 15 : 15);
+  const [payday2, setPayday2] = useState('payday_2' in item ? item.payday_2 ?? 31 : 31);
   const [start, setStart] = useState('start_date' in item && item.start_date ? item.start_date : today());
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
   const [account, setAccount] = useState<number | null>(itemAccount);
@@ -59,6 +63,8 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setName(item.name);
     setAmount(String(item.monthly_amount));
     setFrequency(itemFreq);
+    setPayday1('payday_1' in item ? item.payday_1 ?? 15 : 15);
+    setPayday2('payday_2' in item ? item.payday_2 ?? 31 : 31);
     setStart('start_date' in item && item.start_date ? item.start_date : today());
     setGroupId(item.group_id);
     setAccount(itemAccount);
@@ -96,6 +102,8 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       monthly_amount: amt,
       group_id: groupId,
       ...(showFrequency ? { frequency } : {}),
+      ...(showAccount && frequency === 'semimonthly' ? { payday_1: payday1, payday_2: payday2 } : {}),
+      ...(showAccount ? { start_date: start } : {}),
       ...(showFunding ? { start_date: start } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: allocations.filter((a) => a.source_id != null && a.value > 0) } : {}),
@@ -104,6 +112,29 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setSaving(false);
     setEditing(false);
   }
+
+  const incomeOccurrences = (() => {
+    if (!showAccount || itemFreq !== 'semimonthly' || !('occurrences' in item)) return [];
+    const now = new Date();
+    const days = [item.payday_1 ?? 15, item.payday_2 ?? 31];
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const scheduled = [...new Set(days.map((day) => {
+      const date = new Date(now.getFullYear(), now.getMonth(), Math.min(day, lastDay));
+      if (date.getDay() === 6) date.setDate(date.getDate() - 1);
+      if (date.getDay() === 0) date.setDate(date.getDate() - 2);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }))];
+    return scheduled.map((scheduledDate) => {
+      const occurrence = item.occurrences?.find((candidate) => candidate.scheduled_date === scheduledDate);
+      return {
+        scheduledDate,
+        date: occurrence?.occurrence_date ?? scheduledDate,
+        status: (occurrence?.status ?? 'expected') as IncomeOccurrenceStatus,
+        transactionName: occurrence?.transaction_name,
+      };
+    });
+  })();
+  const receivedCount = incomeOccurrences.filter((occurrence) => occurrence.status === 'received' || occurrence.status === 'detected').length;
 
   return (
     <>
@@ -140,6 +171,11 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                     padding: '1px 6px',
                   }}>
                     {FREQUENCY_LABELS[itemFreq]}
+                  </span>
+                )}
+                {incomeOccurrences.length > 0 && (
+                  <span style={{ color: receivedCount === incomeOccurrences.length ? 'var(--color-income)' : 'var(--color-text-muted)', fontSize: 10, fontWeight: 700 }}>
+                    {receivedCount} of {incomeOccurrences.length} received this month
                   </span>
                 )}
                 {startLabel && (
@@ -245,11 +281,72 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                   onChange={(e) => setFrequency(e.target.value as Frequency)}
                   style={{ width: '100%' }}
                 >
-                  {FREQUENCIES.map((f) => (
+                  {(showAccount ? INCOME_FREQUENCIES : FREQUENCIES).map((f) => (
                     <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
                   ))}
                 </select>
               </label>
+            )}
+
+            {showAccount && frequency === 'semimonthly' && (
+              <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <strong style={{ fontSize: 13 }}>Twice-monthly pay schedule</strong>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>Day 31 automatically means the last day of shorter months.</p>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>First payday</span>
+                    <input type="number" min={1} max={31} value={payday1} onChange={(e) => setPayday1(Number(e.target.value))} />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Second payday</span>
+                    <input type="number" min={1} max={31} value={payday2} onChange={(e) => setPayday2(Number(e.target.value))} />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {showAccount && frequency !== 'semimonthly' && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  First occurrence
+                </span>
+                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: '100%' }} />
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>Anchors the recurring schedule.</span>
+              </label>
+            )}
+
+            {showAccount && frequency === 'semimonthly' && incomeOccurrences.length > 0 && onUpdateOccurrence && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  This month
+                </span>
+                {incomeOccurrences.map((occurrence, index) => {
+                  const complete = occurrence.status === 'received' || occurrence.status === 'detected';
+                  return (
+                    <div key={occurrence.scheduledDate} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 10 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <strong style={{ fontSize: 12.5 }}>Payment {index + 1}</strong>
+                        <input
+                          type="date"
+                          value={occurrence.date}
+                          onChange={(e) => onUpdateOccurrence(occurrence.scheduledDate, e.target.value, occurrence.status === 'detected' ? 'received' : occurrence.status as 'expected' | 'received' | 'skipped')}
+                          style={{ width: '100%' }}
+                        />
+                        {occurrence.status === 'detected' && <span style={{ color: 'var(--color-income)', fontSize: 10.5 }}>Detected from {occurrence.transactionName ?? 'bank transactions'}</span>}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        <button type="button" onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, complete ? 'expected' : 'received')} style={{ background: complete ? 'rgba(34,197,94,.12)' : 'var(--color-surface-2)', color: complete ? 'var(--color-income)' : 'var(--color-text)', border: `1px solid ${complete ? 'var(--color-income)' : 'var(--color-border)'}`, padding: '5px 8px', fontSize: 11 }}>
+                          {complete ? '✓ Received' : 'Mark received'}
+                        </button>
+                        <button type="button" onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, 'skipped')} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', padding: '4px 8px', fontSize: 10.5 }}>Skip</button>
+                        {onResetOccurrence && occurrence.date !== occurrence.scheduledDate && <button type="button" onClick={() => onResetOccurrence(occurrence.scheduledDate)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: 'none', padding: 2, fontSize: 10 }}>Reset date</button>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
             {showFunding && (

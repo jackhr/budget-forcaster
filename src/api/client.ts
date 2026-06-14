@@ -15,7 +15,7 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at'>;
+type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at' | 'occurrences'>;
 type ExpenseInput = Omit<Expense, 'id' | 'created_at' | 'updated_at'>;
 type ScheduledInput = Omit<ScheduledPayment, 'id' | 'created_at' | 'updated_at'>;
 
@@ -28,6 +28,10 @@ export const incomeApi = {
     req<IncomeSource>('/income', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: Partial<IncomeInput>) =>
     req<IncomeSource>(`/income/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateOccurrence: (id: number, scheduledDate: string, data: { occurrence_date: string; status: 'expected' | 'received' | 'skipped' }) =>
+    req<IncomeSource>(`/income/${id}/occurrences/${scheduledDate}`, { method: 'PUT', body: JSON.stringify(data) }),
+  resetOccurrence: (id: number, scheduledDate: string) =>
+    req<IncomeSource>(`/income/${id}/occurrences/${scheduledDate}`, { method: 'DELETE' }),
   delete: (id: number) => req<void>(`/income/${id}`, { method: 'DELETE' }),
   reorder: (ids: number[]) => reorder('income', ids),
 };

@@ -4,7 +4,7 @@ const db = require('../db/database');
 const { normalizeDate, dateError } = require('../lib/dates');
 const { cleanAllocations, cleanFundingRules, parseJsonArray } = require('../lib/funding');
 
-const VALID_FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'quarterly', 'annually', 'one-time'];
+const VALID_FREQUENCIES = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annually', 'one-time'];
 const VALID_FUNDING = ['cash', 'income', 'debt', 'account'];
 
 function isAmount(v) {

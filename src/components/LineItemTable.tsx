@@ -28,6 +28,8 @@ interface Props {
   showAccount?: boolean;
   isPaidThisMonth?: (item: LineItem) => boolean;
   onTogglePaid?: (item: LineItem) => void;
+  onUpdateOccurrence?: (item: LineItem, scheduledDate: string, occurrenceDate: string, status: 'expected' | 'received' | 'skipped') => Promise<void>;
+  onResetOccurrence?: (item: LineItem, scheduledDate: string) => Promise<void>;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onAdd: (data: ItemFormData) => Promise<void>;
@@ -79,12 +81,14 @@ interface GroupBlockProps {
   showAccount?: boolean;
   isPaidThisMonth?: (item: LineItem) => boolean;
   onTogglePaid?: (item: LineItem) => void;
+  onUpdateOccurrence?: (item: LineItem, scheduledDate: string, occurrenceDate: string, status: 'expected' | 'received' | 'skipped') => Promise<void>;
+  onResetOccurrence?: (item: LineItem, scheduledDate: string) => Promise<void>;
   dragFor: (item: LineItem) => DragProps;
   draggingId: number | null;
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, isPaidThisMonth, onTogglePaid, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, isPaidThisMonth, onTogglePaid, onUpdateOccurrence, onResetOccurrence, dragFor, draggingId, groupDrag }: GroupBlockProps) {
   const { collapsed, toggle: toggleCollapsed } = useCollapsedGroup(group.id);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -174,6 +178,8 @@ function GroupBlock({ group, placeholder, items, groups, accentColor, showFreque
               debts={debts}
               paid={isPaidThisMonth?.(item)}
               onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
+              onUpdateOccurrence={onUpdateOccurrence ? (scheduledDate, occurrenceDate, status) => onUpdateOccurrence(item, scheduledDate, occurrenceDate, status) : undefined}
+              onResetOccurrence={onResetOccurrence ? (scheduledDate) => onResetOccurrence(item, scheduledDate) : undefined}
               drag={dragFor(item)}
               dragging={draggingId === item.id}
             />
@@ -241,7 +247,7 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, isPaidThisMonth, onTogglePaid, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
+export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, isPaidThisMonth, onTogglePaid, onUpdateOccurrence, onResetOccurrence, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
@@ -305,6 +311,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
           showAccount={showAccount}
           isPaidThisMonth={isPaidThisMonth}
           onTogglePaid={onTogglePaid}
+          onUpdateOccurrence={onUpdateOccurrence}
+          onResetOccurrence={onResetOccurrence}
           dragFor={dnd.handlers}
           draggingId={dnd.dragId}
           groupDrag={groupDnd.handlers(group)}
@@ -328,6 +336,8 @@ export default function LineItemTable({ title, description, items, accentColor, 
             debts={debts}
             paid={isPaidThisMonth?.(item)}
             onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
+            onUpdateOccurrence={onUpdateOccurrence ? (scheduledDate, occurrenceDate, status) => onUpdateOccurrence(item, scheduledDate, occurrenceDate, status) : undefined}
+            onResetOccurrence={onResetOccurrence ? (scheduledDate) => onResetOccurrence(item, scheduledDate) : undefined}
             drag={dnd.handlers(item)}
             dragging={dnd.dragId === item.id}
           />

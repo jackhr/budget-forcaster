@@ -26,7 +26,7 @@ export interface LiquidityChange {
 export interface LiquiditySeries {
   key: string;
   name: string;
-  kind: 'total' | 'account' | 'card';
+  kind: 'total' | 'accounts' | 'account' | 'card';
   values: number[];
 }
 
@@ -71,6 +71,13 @@ function dateForMonthDay(year: number, month: number, day: number): Date {
   return new Date(year, month, Math.min(Math.max(1, day), new Date(year, month + 1, 0).getDate()));
 }
 
+function payrollDateForMonthDay(year: number, month: number, day: number): Date {
+  const date = dateForMonthDay(year, month, day);
+  if (date.getDay() === 6) date.setDate(date.getDate() - 1);
+  if (date.getDay() === 0) date.setDate(date.getDate() - 2);
+  return date;
+}
+
 function addMonths(date: Date, months: number): Date {
   return dateForMonthDay(date.getFullYear(), date.getMonth() + months, date.getDate());
 }
@@ -108,6 +115,13 @@ function occurrenceDates(
     return dates;
   }
 
+  if (frequency === 'semimonthly') {
+    return [dateForMonthDay(year, month, fallbackDay), dateForMonthDay(year, month, 31)]
+      .filter((date, index, dates) => index === 0 || date.getTime() !== dates[0].getTime())
+      .filter((date) => date >= start && (!end || date <= end))
+      .map((date) => ({ date, specified }));
+  }
+
   if (frequency === 'one-time') {
     return start >= monthStart && start <= monthEnd && (!end || start <= end) ? [{ date: start, specified }] : [];
   }
@@ -117,6 +131,29 @@ function occurrenceDates(
   if (difference < 0 || difference % interval !== 0) return [];
   const occurrence = addMonths(start, difference);
   return occurrence <= monthEnd && (!end || occurrence <= end) ? [{ date: occurrence, specified }] : [];
+}
+
+function incomeOccurrenceDates(item: IncomeSource, year: number, month: number): { date: Date; specified: boolean; status: 'expected' | 'received' | 'detected' | 'skipped'; amount: number }[] {
+  if (item.frequency !== 'semimonthly') {
+    return occurrenceDates(item.frequency, item.start_date, null, year, month)
+      .map((occurrence) => ({ ...occurrence, status: 'expected' as const, amount: item.monthly_amount }));
+  }
+  const defaults = [
+    payrollDateForMonthDay(year, month, item.payday_1 ?? 15),
+    payrollDateForMonthDay(year, month, item.payday_2 ?? 31),
+  ].filter((date, index, dates) => index === 0 || date.getTime() !== dates[0].getTime());
+  const overrides = new Map((item.occurrences ?? []).map((occurrence) => [occurrence.scheduled_date, occurrence]));
+  return defaults
+    .filter((date) => !item.start_date || isoDate(date).slice(0, 7) >= item.start_date.slice(0, 7))
+    .map((date) => {
+      const override = overrides.get(isoDate(date));
+      return {
+        date: override ? parseDate(override.occurrence_date) : date,
+        specified: true,
+        status: override?.status ?? 'expected',
+        amount: override?.status === 'detected' && override.transaction_amount != null ? override.transaction_amount : item.monthly_amount,
+      };
+    });
 }
 
 function sourceName(rule: FundingRule, accounts: Account[], debts: Debt[]): string {
@@ -212,10 +249,16 @@ export function buildMonthBreakdown(
   };
 
   for (const item of income) {
-    for (const occurrence of occurrenceDates(item.frequency, item.start_date, null, year, month)) {
+    for (const occurrence of incomeOccurrenceDates(item, year, month)) {
+      if (occurrence.status === 'skipped') continue;
       const account = accounts.find((candidate) => candidate.id === item.account_id) ?? accounts.find((candidate) => candidate.is_primary) ?? accounts[0];
-      const change = sourceChange('account', account?.id ?? null, item.monthly_amount, accounts, debts);
-      push(`income:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'income', 'in', item.monthly_amount, `to ${account?.name ?? 'primary account'}`, false, change ? [change] : []);
+      const change = sourceChange('account', account?.id ?? null, occurrence.amount, accounts, debts);
+      const received = occurrence.status === 'received' || occurrence.status === 'detected';
+      push(
+        `income:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'income', 'in', occurrence.amount,
+        received ? `${occurrence.status === 'detected' ? 'Detected deposit' : 'Received'} in ${account?.name ?? 'primary account'}` : `to ${account?.name ?? 'primary account'}`,
+        received, change ? [change] : [],
+      );
     }
   }
 
@@ -309,8 +352,12 @@ export function buildMonthBreakdown(
     return { key: source.key, name: source.name, kind: source.kind, values };
   });
   liquidity.unshift({
+    key: 'accounts', name: 'All cash accounts', kind: 'accounts',
+    values: daily.map((_, index) => round2(liquidity.filter((source) => source.kind === 'account').reduce((sum, source) => sum + source.values[index], 0))),
+  });
+  liquidity.unshift({
     key: 'total', name: 'All liquidity', kind: 'total',
-    values: daily.map((_, index) => round2(liquidity.reduce((sum, source) => sum + source.values[index], 0))),
+    values: daily.map((_, index) => round2(liquidity.filter((source) => source.kind === 'account' || source.kind === 'card').reduce((sum, source) => sum + source.values[index], 0))),
   });
 
   return {

@@ -41,6 +41,19 @@ describe('buildForecast', () => {
     expect(fc[2].income).toBe(1000);
     expect(fc[3].income).toBe(1000);
   });
+
+  it('forecasts only remaining twice-monthly deposits in the current month', () => {
+    const inc = [income({
+      monthly_amount: 2000,
+      frequency: 'semimonthly',
+      payday_1: 15,
+      payday_2: 31,
+      occurrences: [{ scheduled_date: '2026-01-15', occurrence_date: '2026-01-14', status: 'detected', transaction_id: 'pay-1' }],
+    })];
+    const fc = buildForecast(inc, flat(0, 2), [], [], 2, new Date(2026, 0, 16));
+    expect(fc[0].income).toBe(2000);
+    expect(fc[1].income).toBe(4000);
+  });
 });
 
 describe('buildExpensePlan', () => {
