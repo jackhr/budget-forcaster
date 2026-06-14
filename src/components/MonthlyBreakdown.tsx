@@ -207,10 +207,43 @@ function LiquidityChart({ breakdown, selected, onSelect }: { breakdown: MonthBre
 function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?: boolean; payload?: { payload: { liquidity: number; events: MonthObligation[] } }[]; label?: string; name: string; seriesKey: string }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
-  const effects = row.events.map((event) => ({
-    event,
-    effect: event.liquidityChanges.filter((change) => seriesKey === 'total' || (seriesKey === 'accounts' && change.kind === 'account') || change.key === seriesKey).reduce((sum, change) => sum + change.amount, 0),
-  })).filter(({ effect }) => seriesKey === 'total' || Math.abs(effect) > 0.005);
+  const effects = row.events.flatMap((event) => event.liquidityChanges
+    .filter((change) => seriesKey === 'total' || (seriesKey === 'accounts' && change.kind === 'account') || change.key === seriesKey)
+    .map((change) => ({ event, change })));
+  const grouped = (direction: 'to' | 'from') => {
+    const map = new Map<string, { name: string; kind: 'account' | 'card'; total: number; items: { key: string; name: string; amount: number }[] }>();
+    for (const { event, change } of effects) {
+      if ((direction === 'to') !== (change.amount > 0.005)) continue;
+      const group = map.get(change.key) ?? { name: change.name, kind: change.kind, total: 0, items: [] };
+      group.total += change.amount;
+      group.items.push({ key: event.key, name: event.name, amount: change.amount });
+      map.set(change.key, group);
+    }
+    return [...map.values()];
+  };
+  const to = grouped('to');
+  const from = grouped('from');
+  const section = (title: string, groups: ReturnType<typeof grouped>, color: string) => groups.length > 0 && (
+    <div style={{ marginTop: 9 }}>
+      <p style={{ color, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</p>
+      {groups.map((group) => (
+        <div key={`${title}:${group.name}`} style={{ marginTop: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <strong style={{ fontSize: 11.5 }}>{group.name}</strong>
+            <strong style={{ color, whiteSpace: 'nowrap' }}>{formatSignedMoney(group.total)}</strong>
+          </div>
+          <div style={{ borderLeft: '1px solid var(--color-border)', marginLeft: 3, paddingLeft: 8 }}>
+            {group.items.map((item, index) => (
+              <div key={`${item.key}:${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 2, color: 'var(--color-text-muted)', fontSize: 10.5 }}>
+                <span>{item.name}</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{formatSignedMoney(item.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
   return (
     <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12, minWidth: 240, maxWidth: 420 }}>
       <strong>Day {label} · {name}</strong>
@@ -218,14 +251,8 @@ function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?
       {effects.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <p style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Day’s balance changes</p>
-          {effects.map(({ event, effect }) => (
-            <p key={event.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 3 }}>
-              <span>{event.name}</span>
-              <strong style={{ color: effect > 0.005 ? 'var(--color-income)' : effect < -0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                {Math.abs(effect) <= 0.005 ? 'no net change' : formatSignedMoney(effect)}
-              </strong>
-            </p>
-          ))}
+          {section('To', to, 'var(--color-income)')}
+          {section('From', from, 'var(--color-expense)')}
         </div>
       )}
     </div>
