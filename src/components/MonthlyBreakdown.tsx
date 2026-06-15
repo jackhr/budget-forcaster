@@ -120,6 +120,7 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey="label" interval={0} tick={{ fill: 'var(--color-text-muted)', fontSize: 9 }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} />
               <YAxis tickFormatter={formatCompactMoney} tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
+              {isCurrentMonth && <ReferenceLine x={String(today.getDate())} stroke="var(--color-text-muted)" strokeDasharray="4 4" label={{ value: 'Today', fill: 'var(--color-text-muted)', fontSize: 10, position: 'insideTopRight' }} />}
               <Tooltip content={<DailyTooltip />} />
               <Line type="stepAfter" dataKey="moneyIn" name="Cumulative money in" stroke="var(--color-income)" strokeWidth={2} dot={false} />
               <Line type="stepAfter" dataKey="moneyOut" name="Cumulative money out" stroke="var(--color-expense)" strokeWidth={2} dot={false} />
