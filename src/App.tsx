@@ -234,14 +234,19 @@ export default function App() {
   const acctOpts = accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }));
   const futureExpenseBars = futureBd.labels.map((_, i) => {
     const active = futureBd.series.filter((s) => (s.values[i] ?? 0) > 0);
-    const froms = active.map((s) => {
+    const items = active.map((s) => {
       const p = payments.find((pp) => pp.id === s.id);
-      return p ? fundingLabel(p, acctOpts, cardOpts) : '';
-    }).filter(Boolean);
+      return {
+        label: s.name,
+        value: s.values[i] ?? 0,
+        from: p ? fundingLabel(p, acctOpts, cardOpts) : '',
+      };
+    });
     return {
       value: futureTotals[i] ?? 0,
       label: active.map((s) => s.name).join(', '),
-      from: [...new Set(froms)].join(', '),
+      from: [...new Set(items.map((item) => item.from).filter(Boolean))].join(', '),
+      items,
     };
   });
   const overviewData = savings.map((s, i) => ({

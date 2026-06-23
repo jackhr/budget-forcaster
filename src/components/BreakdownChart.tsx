@@ -6,7 +6,8 @@ import type { Breakdown } from '../lib/forecast';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
 
-interface FutureBar { value: number; label: string; from?: string }
+interface FutureBarItem { label: string; value: number; from?: string }
+interface FutureBar { value: number; label: string; from?: string; items?: FutureBarItem[] }
 
 interface DebtMonthDetail { charges: { label: string; amount: number; kind: string }[]; payment: number }
 type DebtMonthInfo = Map<number, DebtMonthDetail[]>;
@@ -31,9 +32,12 @@ function FutureLabel(props: { x: number; y: number; width: number; index: number
   const { x, y, width, index, bars } = props;
   const bar = bars[index];
   if (!bar || bar.value <= 0) return null;
-  const name = bar.label.length > 14 ? bar.label.slice(0, 13) + '…' : bar.label;
+  const names = (bar.items?.length ? bar.items.map((item) => item.label) : [bar.label])
+    .map((name) => name.length > 14 ? name.slice(0, 13) + '…' : name);
   return (
-    <text x={x + width / 2} y={y - 4} fill="var(--color-net-neg)" fontSize={10} textAnchor="middle">{name}</text>
+    <text x={x + width / 2} y={y - 4 - ((names.length - 1) * 11)} fill="var(--color-net-neg)" fontSize={10} textAnchor="middle">
+      {names.map((name, i) => <tspan key={i} x={x + width / 2} dy={i === 0 ? 0 : 11}>{name}</tspan>)}
+    </text>
   );
 }
 
@@ -55,6 +59,7 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
   const futureVal = Number(row?.future) || 0;
   const futureLabel = String(row?.futureLabel ?? '');
   const futureFrom = String(row?.futureFrom ?? '');
+  const futureItems = Array.isArray(row?.futureItems) ? row.futureItems as FutureBarItem[] : [];
   const idx = Number(row?.idx ?? -1);
 
   // Debt Breakdown: charges + payment applied to each visible debt this month.
@@ -86,10 +91,19 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
         );
       })}
       {futureVal > 0 && (
-        <p style={{ color: 'var(--color-net-neg)', marginTop: 6 }}>
-          {futureLabel || 'Future expense'}: −{formatMoney(futureVal)}
-          {futureFrom && <span style={{ color: 'var(--color-text-muted)' }}> · from {futureFrom}</span>}
-        </p>
+        <div style={{ color: 'var(--color-net-neg)', marginTop: 6 }}>
+          {futureItems.length > 0 ? futureItems.map((item, i) => (
+            <p key={`${item.label}-${i}`}>
+              {item.label}: −{formatMoney(item.value)}
+              {item.from && <span style={{ color: 'var(--color-text-muted)' }}> · from {item.from}</span>}
+            </p>
+          )) : (
+            <p>
+              {futureLabel || 'Future expense'}: −{formatMoney(futureVal)}
+              {futureFrom && <span style={{ color: 'var(--color-text-muted)' }}> · from {futureFrom}</span>}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -105,12 +119,13 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
   useEffect(() => { setHidden(new Set()); }, [title]);
 
   const data = labels.map((label, i) => {
-    const row: Record<string, number | string> = { label, total: total[i] ?? 0, idx: i };
+    const row: Record<string, unknown> = { label, total: total[i] ?? 0, idx: i };
     series.forEach((s) => { row[`k${s.id}`] = s.values[i] ?? 0; });
     if (futureBars) {
       row.future = futureBars[i]?.value ?? 0;
       row.futureLabel = futureBars[i]?.label ?? '';
       row.futureFrom = futureBars[i]?.from ?? '';
+      row.futureItems = futureBars[i]?.items ?? [];
     }
     return row;
   });
