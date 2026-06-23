@@ -60,8 +60,8 @@ function Event({ event }: { event: MonthObligation }) {
       borderLeft: `3px solid ${meta.color}`, background: 'var(--color-bg)', borderRadius: 5,
       padding: '4px 6px', opacity: event.paid ? 0.55 : 1, minWidth: 0,
     }}>
-      <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <strong style={{ fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.name}</strong>
+      <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between', alignItems: 'baseline', minWidth: 0 }}>
+        <strong style={{ fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{event.name}</strong>
         <span style={{ fontSize: 10, color: event.direction === 'in' ? 'var(--color-income)' : 'var(--color-expense)', whiteSpace: 'nowrap', textDecoration: event.paid ? 'line-through' : 'none' }}>
           {event.direction === 'in' ? '+' : '−'}{formatMoney(event.amount, { whole: true })}
         </span>
@@ -132,23 +132,21 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
           </div>
         </div>
       ) : view === 'calendar' ? (
-        <div style={{ marginTop: 20, overflowX: 'auto' }}>
-          <div style={{ minWidth: 760 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 6 }}>
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} style={{ color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>{day}</div>)}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
-              {cells.map((day, index) => {
-                const events = day ? breakdown.events.filter((event) => event.day === day) : [];
-                const current = !!day && isCurrentMonth && day === today.getDate();
-                return (
-                  <div key={index} style={{ minHeight: 132, background: day ? 'var(--color-surface-2)' : 'transparent', border: `1px solid ${current ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 7, padding: 6 }}>
-                    {day && <div style={{ fontSize: 11, fontWeight: 700, color: current ? 'var(--color-primary)' : 'var(--color-text-muted)', marginBottom: 5 }}>{day}</div>}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{events.map((event) => <Event key={event.key} event={event} />)}</div>
-                  </div>
-                );
-              })}
-            </div>
+        <div style={{ marginTop: 20, width: '100%' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6, marginBottom: 6 }}>
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} style={{ color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', minWidth: 0 }}>{day}</div>)}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6 }}>
+            {cells.map((day, index) => {
+              const events = day ? breakdown.events.filter((event) => event.day === day) : [];
+              const current = !!day && isCurrentMonth && day === today.getDate();
+              return (
+                <div key={index} style={{ minHeight: 132, minWidth: 0, overflow: 'hidden', background: day ? 'var(--color-surface-2)' : 'transparent', border: `1px solid ${current ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 7, padding: 6 }}>
+                  {day && <div style={{ fontSize: 11, fontWeight: 700, color: current ? 'var(--color-primary)' : 'var(--color-text-muted)', marginBottom: 5 }}>{day}</div>}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>{events.map((event) => <Event key={event.key} event={event} />)}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
