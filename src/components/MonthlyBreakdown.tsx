@@ -18,6 +18,10 @@ const KIND: Record<MonthObligationKind, { label: string; color: string }> = {
   debt: { label: 'Debt', color: '#a78bfa' },
 };
 
+function roundForDisplay(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function DailyTooltip({ active, payload, label }: { active?: boolean; payload?: { payload: { dailyIn: number; dailyOut: number; moneyIn: number; moneyOut: number; net: number; events: MonthObligation[] } }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
@@ -76,11 +80,43 @@ function Event({ event }: { event: MonthObligation }) {
 export default function MonthlyBreakdown({ breakdown, month, onMonthChange, initialView }: Props) {
   const [view, setView] = useState<'daily' | 'calendar' | 'liquidity'>(initialView);
   const [liquidityKey, setLiquidityKey] = useState('total');
+  const [accountScope, setAccountScope] = useState('all');
   const firstWeekday = new Date(breakdown.year, breakdown.month, 1).getDay();
   const cells = [...Array(firstWeekday).fill(null), ...Array.from({ length: breakdown.days }, (_, index) => index + 1)];
   while (cells.length % 7) cells.push(null);
   const today = new Date();
   const isCurrentMonth = today.getFullYear() === breakdown.year && today.getMonth() === breakdown.month;
+  const accountOptions = breakdown.liquidity.filter((item) => item.kind === 'account');
+
+  const eventForScope = (event: MonthObligation): MonthObligation | null => {
+    if (accountScope === 'all') return event;
+    const changes = event.liquidityChanges.filter((change) => (
+      change.kind === 'account' && (accountScope === 'accounts' || change.key === accountScope)
+    ));
+    if (!changes.length) return null;
+    const amount = roundForDisplay(changes.reduce((sum, change) => sum + Math.abs(change.amount), 0));
+    if (amount <= 0.005) return null;
+    const accounts = [...new Set(changes.map((change) => change.name))];
+    const direction = changes.reduce((sum, change) => sum + change.amount, 0) >= 0 ? 'in' : 'out';
+    return { ...event, direction, amount, detail: `${direction === 'in' ? 'to' : 'from'} ${accounts.join(' + ')}` };
+  };
+
+  const scopedDaily = breakdown.daily.map((point) => {
+    const events = point.events.map(eventForScope).filter((event): event is MonthObligation => !!event);
+    const dailyIn = roundForDisplay(events.filter((event) => event.direction === 'in').reduce((sum, event) => sum + event.amount, 0));
+    const dailyOut = roundForDisplay(events.filter((event) => event.direction === 'out').reduce((sum, event) => sum + event.amount, 0));
+    return { ...point, events, dailyIn, dailyOut };
+  }).reduce<typeof breakdown.daily>((days, point) => {
+    const previous = days[days.length - 1];
+    const moneyIn = roundForDisplay((previous?.moneyIn ?? 0) + point.dailyIn);
+    const moneyOut = roundForDisplay((previous?.moneyOut ?? 0) + point.dailyOut);
+    days.push({ ...point, moneyIn, moneyOut, net: roundForDisplay(moneyIn - moneyOut) });
+    return days;
+  }, []);
+  const scopedEvents = scopedDaily.flatMap((point) => point.events);
+  const scopedTotalIn = scopedDaily[scopedDaily.length - 1]?.moneyIn ?? 0;
+  const scopedTotalOut = scopedDaily[scopedDaily.length - 1]?.moneyOut ?? 0;
+  const scopedNet = roundForDisplay(scopedTotalIn - scopedTotalOut);
 
   const card = (label: string, value: string, color: string) => (
     <div style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', minWidth: 130 }}>
@@ -99,24 +135,36 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
         <MonthControl month={month} onMonthChange={onMonthChange} />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {card('Money in', formatMoney(breakdown.totalIn, { whole: true }), 'var(--color-income)')}
-        {card('Money out', formatMoney(breakdown.totalOut, { whole: true }), 'var(--color-expense)')}
-        {card('Net', formatSignedMoney(breakdown.net, { whole: true }), breakdown.net >= 0 ? 'var(--color-income)' : 'var(--color-expense)')}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignSelf: 'center', background: 'var(--color-bg)', padding: 4, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          {(['daily', 'calendar', 'liquidity'] as const).map((option) => (
-            <button key={option} onClick={() => setView(option)} style={{
-              background: view === option ? 'var(--color-primary)' : 'transparent', color: view === option ? '#fff' : 'var(--color-text-muted)',
-              border: 'none', borderRadius: 5, padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'capitalize',
-            }}>{option === 'daily' ? 'Daily chart' : option === 'calendar' ? 'Calendar' : 'Liquidity'}</button>
-          ))}
+      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        {card('Money in', formatMoney(scopedTotalIn, { whole: true }), 'var(--color-income)')}
+        {card('Money out', formatMoney(scopedTotalOut, { whole: true }), 'var(--color-expense)')}
+        {card('Net', formatSignedMoney(scopedNet, { whole: true }), scopedNet >= 0 ? 'var(--color-income)' : 'var(--color-expense)')}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {view !== 'liquidity' && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Bank account</span>
+              <select value={accountScope} onChange={(event) => setAccountScope(event.target.value)} style={{ minWidth: 220, minHeight: 36, paddingTop: 6, paddingBottom: 6 }}>
+                <option value="all">All obligations</option>
+                <option value="accounts">All cash accounts</option>
+                {accountOptions.map((option) => <option key={option.key} value={option.key}>{option.name}</option>)}
+              </select>
+            </label>
+          )}
+          <div style={{ display: 'flex', gap: 4, background: 'var(--color-bg)', padding: 4, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+            {(['daily', 'calendar', 'liquidity'] as const).map((option) => (
+              <button key={option} onClick={() => setView(option)} style={{
+                background: view === option ? 'var(--color-primary)' : 'transparent', color: view === option ? '#fff' : 'var(--color-text-muted)',
+                border: 'none', borderRadius: 5, padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'capitalize',
+              }}>{option === 'daily' ? 'Daily chart' : option === 'calendar' ? 'Calendar' : 'Liquidity'}</button>
+            ))}
+          </div>
         </div>
       </div>
 
       {view === 'daily' ? (
         <div style={{ marginTop: 20 }}>
           <ResponsiveContainer width="100%" height={390}>
-            <LineChart data={breakdown.daily} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
+            <LineChart data={scopedDaily} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey="label" interval={0} tick={{ fill: 'var(--color-text-muted)', fontSize: 9 }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} />
               <YAxis tickFormatter={formatCompactMoney} tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
@@ -138,7 +186,7 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6 }}>
             {cells.map((day, index) => {
-              const events = day ? breakdown.events.filter((event) => event.day === day) : [];
+              const events = day ? scopedEvents.filter((event) => event.day === day) : [];
               const current = !!day && isCurrentMonth && day === today.getDate();
               return (
                 <div key={index} style={{ minHeight: 132, minWidth: 0, overflow: 'hidden', background: day ? 'var(--color-surface-2)' : 'transparent', border: `1px solid ${current ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 7, padding: 6 }}>
