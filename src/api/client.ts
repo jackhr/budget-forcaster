@@ -171,7 +171,7 @@ export const plaidApi = {
       method: 'POST', body: JSON.stringify({ public_token: publicToken }),
     }),
   accounts: () => req<PlaidAccount[]>('/plaid/accounts'),
-  transactions: (accountId: string | null, days = 90) =>
+  transactions: (accountId: string | null, days: number | 'all' = 'all') =>
     req<PlaidTransaction[]>(`/plaid/transactions?days=${days}${accountId ? `&account_id=${encodeURIComponent(accountId)}` : ''}`),
   syncTransactions: () =>
     req<{ ok: boolean; added: number; modified: number; removed: number }>('/plaid/transactions/sync', { method: 'POST' }),

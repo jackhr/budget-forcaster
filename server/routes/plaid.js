@@ -31,6 +31,7 @@ router.post('/create_link_token', async (req, res) => {
       client_name: 'Budget Forecaster',
       products: ['transactions'],
       additional_consented_products: ['liabilities'],
+      transactions: { days_requested: MAX_TRANSACTION_HISTORY_DAYS },
       country_codes: ['US'],
       language: 'en',
     });
@@ -98,6 +99,7 @@ router.post('/items/:id/liabilities_link_token', async (req, res) => {
 // (except the very first time, when there's nothing cached yet).
 const ACCOUNTS_TTL_MS = 5 * 60 * 1000;
 const LIABILITIES_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_TRANSACTION_HISTORY_DAYS = 730;
 
 const upsertAccount = db.prepare(`
   INSERT INTO plaid_accounts
@@ -382,7 +384,12 @@ async function syncItem(client, item) {
   const totals = { added: 0, modified: 0, removed: 0 };
   // First sync (no cursor) returns history in pages; loop until caught up.
   for (;;) {
-    const { data } = await client.transactionsSync({ access_token: item.access_token, cursor, count: 250 });
+    const { data } = await client.transactionsSync({
+      access_token: item.access_token,
+      cursor,
+      count: 500,
+      options: cursor ? undefined : { days_requested: MAX_TRANSACTION_HISTORY_DAYS },
+    });
     const apply = db.transaction(() => {
       for (const t of data.added) upsertTxn.run(txnRow(item.item_id, t));
       for (const t of data.modified) upsertTxn.run(txnRow(item.item_id, t));
@@ -412,10 +419,13 @@ async function syncItems(client, items) {
 // first request for a freshly-linked item syncs it; afterwards it's instant.
 router.get('/transactions', async (req, res) => {
   const accountId = req.query.account_id ? String(req.query.account_id) : null;
-  const days = Math.min(730, Math.max(1, Number(req.query.days) || 90));
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString().slice(0, 10);
+  const daysParam = req.query.days == null ? 'all' : String(req.query.days);
+  const days = daysParam === 'all' ? null : Math.min(MAX_TRANSACTION_HISTORY_DAYS, Math.max(1, Number(daysParam) || 90));
+  const sinceStr = days == null ? null : (() => {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    return since.toISOString().slice(0, 10);
+  })();
   try {
     const client = getClient();
     if (client) {
@@ -423,8 +433,12 @@ router.get('/transactions', async (req, res) => {
       if (fresh.length) await syncItems(client, fresh);
     }
     const rows = accountId
-      ? db.prepare('SELECT * FROM plaid_transactions WHERE account_id = ? AND date >= ? ORDER BY date DESC, transaction_id DESC').all(accountId, sinceStr)
-      : db.prepare('SELECT * FROM plaid_transactions WHERE date >= ? ORDER BY date DESC, transaction_id DESC').all(sinceStr);
+      ? sinceStr
+        ? db.prepare('SELECT * FROM plaid_transactions WHERE account_id = ? AND date >= ? ORDER BY date DESC, transaction_id DESC').all(accountId, sinceStr)
+        : db.prepare('SELECT * FROM plaid_transactions WHERE account_id = ? ORDER BY date DESC, transaction_id DESC').all(accountId)
+      : sinceStr
+        ? db.prepare('SELECT * FROM plaid_transactions WHERE date >= ? ORDER BY date DESC, transaction_id DESC').all(sinceStr)
+        : db.prepare('SELECT * FROM plaid_transactions ORDER BY date DESC, transaction_id DESC').all();
     res.json(rows.map(serializeTxn));
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });

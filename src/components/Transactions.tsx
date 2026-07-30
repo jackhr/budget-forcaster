@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { plaidApi, type PlaidAccount, type PlaidStatus, type PlaidTransaction } from '../api/client';
 import { formatMoney } from '../lib/format';
 
-const DAY_OPTIONS = [30, 90, 180, 365];
+const DAY_OPTIONS: (number | 'all')[] = ['all', 30, 90, 180, 365, 730];
 
 function fmtDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
@@ -17,7 +17,7 @@ export default function Transactions() {
   const [status, setStatus] = useState<PlaidStatus | null>(null);
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState<number | 'all'>('all');
   const [txns, setTxns] = useState<PlaidTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -113,7 +113,7 @@ export default function Transactions() {
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>Transactions</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
-            Recent activity pulled live from Plaid.
+            Available activity cached from Plaid.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -124,8 +124,8 @@ export default function Transactions() {
               </option>
             ))}
           </select>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={selectStyle}>
-            {DAY_OPTIONS.map((d) => <option key={d} value={d}>Last {d} days</option>)}
+          <select value={days} onChange={(e) => setDays(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={selectStyle}>
+            {DAY_OPTIONS.map((d) => <option key={d} value={d}>{d === 'all' ? 'All available' : `Last ${d} days`}</option>)}
           </select>
           <button onClick={refresh} disabled={syncing || loading} title="Pull the latest from Plaid" style={{ ...selectStyle, cursor: 'pointer' }}>
             {syncing ? 'Refreshing…' : '↻ Refresh'}
