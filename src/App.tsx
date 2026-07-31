@@ -319,6 +319,15 @@ export default function App() {
     }
   }
 
+  // Debt Breakdown legend: bucket the chips into dropdowns by line-item group,
+  // in group order, with any ungrouped debts last. Empty groups are omitted.
+  const debtChipGroups = groups
+    .filter((g) => g.kind === 'debt')
+    .map((g) => ({ id: `g${g.id}`, name: g.name, seriesIds: debts.filter((d) => d.group_id === g.id).map((d) => d.id) }))
+    .filter((grp) => grp.seriesIds.length > 0);
+  const ungroupedDebtIds = debts.filter((d) => d.group_id == null).map((d) => d.id);
+  if (ungroupedDebtIds.length) debtChipGroups.push({ id: 'ungrouped', name: 'Ungrouped', seriesIds: ungroupedDebtIds });
+
   // Compare overlay from a saved scenario.
   const compareScenario = scenarios.find((s) => s.id === compareId) ?? null;
   const compareSeries = compareScenario ? scenarioSeries(compareScenario.snapshot as Snapshot, months) : null;
@@ -785,6 +794,7 @@ export default function App() {
                     ? new Map(debts.filter((d) => d.debt_type !== 'loan' && d.credit_limit != null).map((d) => [d.id, d.credit_limit as number]))
                     : undefined}
                   paidIds={breakdownSection === 'debt' ? paidThisMonth : undefined}
+                  chipGroups={breakdownSection === 'debt' ? debtChipGroups : undefined}
                 />
               </Suspense>
             ) : (

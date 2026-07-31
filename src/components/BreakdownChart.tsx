@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ComposedChart, Line, Bar, LabelList, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -25,7 +25,11 @@ interface Props {
   debtMonthInfo?: DebtMonthInfo; // per-debt charges + payment each month (Debt Breakdown tooltip)
   creditLimits?: Map<number, number>; // debt id -> credit limit (Debt Breakdown — toggleable lines)
   paidIds?: Set<number>;         // debt ids paid this month (Debt Breakdown — mark the chips)
+  chipGroups?: ChipGroup[];      // when set, the legend is grouped into per-group dropdowns (Debt Breakdown)
 }
+
+// A named bucket of series ids — renders as one legend dropdown (Debt Breakdown groups the chips by line-item group).
+interface ChipGroup { id: string; name: string; seriesIds: number[] }
 
 // Renders the future-expense name above its bar (Savings-chart style).
 function FutureLabel(props: { x: number; y: number; width: number; index: number; bars: FutureBar[] }) {
@@ -109,14 +113,26 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
   );
 }
 
-export default function BreakdownChart({ title, subtitle, breakdown, startMonth, months, onStartMonthChange, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo, creditLimits, paidIds }: Props) {
+export default function BreakdownChart({ title, subtitle, breakdown, startMonth, months, onStartMonthChange, onMonthsChange, futureBars, futureBarsActive, debtMonthInfo, creditLimits, paidIds, chipGroups }: Props) {
   const { labels, total, series } = breakdown;
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [showLimits, setShowLimits] = useState(false);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const legendRef = useRef<HTMLDivElement>(null);
   const hasLimits = !!creditLimits && creditLimits.size > 0;
 
-  // Reset visibility when switching sections (each section has a distinct title).
-  useEffect(() => { setHidden(new Set()); }, [title]);
+  // Reset visibility / open dropdown when switching sections (each section has a distinct title).
+  useEffect(() => { setHidden(new Set()); setOpenGroup(null); }, [title]);
+
+  // Close the open group dropdown on an outside click.
+  useEffect(() => {
+    if (!openGroup) return;
+    const onDown = (e: MouseEvent) => {
+      if (legendRef.current && !legendRef.current.contains(e.target as Node)) setOpenGroup(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [openGroup]);
 
   const data = labels.map((label, i) => {
     const row: Record<string, unknown> = { label, total: total[i] ?? 0, idx: i };
@@ -143,6 +159,114 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
   ];
   const anyHidden = hidden.size > 0;
 
+  // Per-series display info, keyed by debt id (used by the grouped dropdown legend).
+  const metaById = new Map(series.map((s, i) => [s.id, { name: s.name, color: colorOf(i), paid: paidIds?.has(s.id) }]));
+
+  // A single toggle chip (used for the flat legend and the standalone Total chip).
+  const renderChip = (c: { key: string; name: string; color: string; paid?: boolean }) => {
+    const off = hidden.has(c.key);
+    return (
+      <button
+        key={c.key}
+        onClick={() => toggle(c.key)}
+        title={off ? 'Show' : 'Hide'}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: off ? 'transparent' : 'var(--color-surface-2)',
+          border: `1px solid var(--color-border)`, borderRadius: 999,
+          padding: '3px 10px', fontSize: 12, fontWeight: c.key === TOTAL_KEY ? 700 : 500,
+          color: off ? 'var(--color-text-muted)' : 'var(--color-text)',
+          opacity: off ? 0.55 : 1, textDecoration: off ? 'line-through' : 'none', cursor: 'pointer',
+        }}
+      >
+        <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color === TOTAL_COLOR ? 'var(--color-text)' : c.color, flexShrink: 0 }} />
+        {c.name}
+        {c.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', fontWeight: 700 }}>✓</span>}
+      </button>
+    );
+  };
+
+  // A group dropdown: a button showing the group + visible count, opening a panel of per-debt toggles.
+  const renderGroup = (grp: ChipGroup) => {
+    const keys = grp.seriesIds.map((id) => `k${id}`);
+    const visibleCount = keys.filter((k) => !hidden.has(k)).length;
+    const allHidden = visibleCount === 0;
+    const open = openGroup === grp.id;
+    const setGroupHidden = (hide: boolean) => setHidden((prev) => {
+      const next = new Set(prev);
+      keys.forEach((k) => (hide ? next.add(k) : next.delete(k)));
+      return next;
+    });
+    return (
+      <div key={grp.id} style={{ position: 'relative' }}>
+        <button
+          onClick={() => setOpenGroup(open ? null : grp.id)}
+          title={open ? 'Close' : 'Show debts in this group'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: open ? 'var(--color-surface-2)' : (allHidden ? 'transparent' : 'var(--color-surface-2)'),
+            border: `1px solid var(--color-border)`, borderRadius: 999,
+            padding: '3px 10px', fontSize: 12, fontWeight: 600,
+            color: allHidden ? 'var(--color-text-muted)' : 'var(--color-text)', cursor: 'pointer',
+            opacity: allHidden ? 0.7 : 1,
+          }}
+        >
+          <span style={{ display: 'inline-flex', gap: 2 }}>
+            {grp.seriesIds.slice(0, 3).map((id) => (
+              <span key={id} style={{ width: 8, height: 8, borderRadius: 2, background: metaById.get(id)?.color, flexShrink: 0 }} />
+            ))}
+          </span>
+          {grp.name}
+          <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>{visibleCount}/{keys.length}</span>
+          <span style={{ fontSize: 9, opacity: 0.7 }}>{open ? '▲' : '▼'}</span>
+        </button>
+        {open && (
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 20, minWidth: 220,
+            background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8,
+            padding: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+          }}>
+            <button
+              onClick={() => setGroupHidden(!allHidden)}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
+                border: 'none', padding: '4px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              {allHidden ? 'Show all' : 'Hide all'}
+            </button>
+            <div style={{ height: 1, background: 'var(--color-border)', margin: '4px 0' }} />
+            {grp.seriesIds.map((id) => {
+              const key = `k${id}`;
+              const off = hidden.has(key);
+              const m = metaById.get(id);
+              return (
+                <button
+                  key={id}
+                  onClick={() => toggle(key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+                    background: 'transparent', border: 'none', padding: '5px 8px', borderRadius: 6,
+                    fontSize: 12, cursor: 'pointer', color: off ? 'var(--color-text-muted)' : 'var(--color-text)',
+                  }}
+                >
+                  <span style={{
+                    width: 12, height: 12, borderRadius: 3, flexShrink: 0,
+                    border: `1.5px solid ${m?.color ?? 'var(--color-border)'}`,
+                    background: off ? 'transparent' : m?.color,
+                  }} />
+                  <span style={{ flex: 1, textDecoration: off ? 'line-through' : 'none' }}>{m?.name}</span>
+                  {m?.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', fontWeight: 700 }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
@@ -159,30 +283,11 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
         </div>
       ) : (
         <>
-          {/* Toggle chips — click to hide/show each series */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 16 }}>
-            {chips.map((c) => {
-              const off = hidden.has(c.key);
-              return (
-                <button
-                  key={c.key}
-                  onClick={() => toggle(c.key)}
-                  title={off ? 'Show' : 'Hide'}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    background: off ? 'transparent' : 'var(--color-surface-2)',
-                    border: `1px solid var(--color-border)`, borderRadius: 999,
-                    padding: '3px 10px', fontSize: 12, fontWeight: c.key === TOTAL_KEY ? 700 : 500,
-                    color: off ? 'var(--color-text-muted)' : 'var(--color-text)',
-                    opacity: off ? 0.55 : 1, textDecoration: off ? 'line-through' : 'none',
-                  }}
-                >
-                  <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color === TOTAL_COLOR ? 'var(--color-text)' : c.color, flexShrink: 0 }} />
-                  {c.name}
-                  {c.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', fontWeight: 700 }}>✓</span>}
-                </button>
-              );
-            })}
+          {/* Legend — flat chips per series, or (Debt Breakdown) grouped dropdowns */}
+          <div ref={legendRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 16 }}>
+            {chipGroups
+              ? [renderChip(chips[0]), ...chipGroups.map(renderGroup)]
+              : chips.map(renderChip)}
             <button
               onClick={() => setHidden(anyHidden ? new Set() : new Set(chips.map((c) => c.key)))}
               style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, marginLeft: 4 }}
