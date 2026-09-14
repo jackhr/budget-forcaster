@@ -572,7 +572,10 @@ router.post('/resync', async (req, res) => {
       ? db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ?').all(itemId)
       : db.prepare('SELECT * FROM plaid_accounts').all();
     const setAcctById = db.prepare('UPDATE accounts SET balance = ? WHERE plaid_account_id = ?');
-    const setAcctByName = db.prepare('UPDATE accounts SET balance = ?, plaid_account_id = ? WHERE plaid_account_id IS NULL AND name = ?');
+    // A stored link can be orphaned when an institution is unlinked and relinked (Plaid issues
+    // new account ids), so the name fallback also reclaims rows whose link no longer resolves.
+    const unlinked = '(plaid_account_id IS NULL OR plaid_account_id NOT IN (SELECT account_id FROM plaid_accounts))';
+    const setAcctByName = db.prepare(`UPDATE accounts SET balance = ?, plaid_account_id = ? WHERE ${unlinked} AND name = ?`);
     const setDebtById = db.prepare(
       `UPDATE debts SET
        balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
@@ -595,7 +598,7 @@ router.post('/resync', async (req, res) => {
        payment_day = COALESCE(?, payment_day),
        last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
        last_payment_amount = ?, last_payment_date = ?, is_overdue = ?, plaid_aprs = ?, plaid_account_id = ?
-       WHERE plaid_account_id IS NULL AND name = ?`
+       WHERE ${unlinked} AND name = ?`
     );
     let updated = 0;
     const tx = db.transaction(() => {
@@ -635,6 +638,10 @@ router.delete('/items/:id', async (req, res) => {
     try { await client.itemRemove({ access_token: item.access_token }); } catch { /* ignore */ }
   }
   db.prepare('DELETE FROM plaid_transactions WHERE item_id = ?').run(item.item_id);
+  // Detach imported rows so relinking the institution reattaches them by name on resync.
+  for (const table of ['accounts', 'debts']) {
+    db.prepare(`UPDATE ${table} SET plaid_account_id = NULL WHERE plaid_account_id IN (SELECT account_id FROM plaid_accounts WHERE item_id = ?)`).run(item.item_id);
+  }
   db.prepare('DELETE FROM plaid_accounts WHERE item_id = ?').run(item.item_id);
   db.prepare('DELETE FROM plaid_items WHERE id = ?').run(req.params.id);
   res.status(204).end();
