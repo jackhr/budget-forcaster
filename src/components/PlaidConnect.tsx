@@ -48,8 +48,10 @@ export default function PlaidConnect({ onImported }: Props) {
     setBusy(true);
     try {
       if (liabilitiesItemId) {
+        const reconnecting = status?.items.find((i) => i.item_id === liabilitiesItemId)?.error_code != null;
         const r = await plaidApi.resync(liabilitiesItemId, true);
-        toast.success(`Enabled card details and resynced ${r.updated} balance${r.updated !== 1 ? 's' : ''}`);
+        const synced = `resynced ${r.updated} balance${r.updated !== 1 ? 's' : ''}`;
+        toast.success(reconnecting ? `Reconnected and ${synced}` : `Enabled card details and ${synced}`);
         onImported();
         await refreshAccounts();
       } else {
@@ -64,7 +66,7 @@ export default function PlaidConnect({ onImported }: Props) {
       setLinkToken(null);
       setLiabilitiesItemId(null);
     }
-  }, [liabilitiesItemId, onImported, refreshAccounts, refreshStatus, toast]);
+  }, [liabilitiesItemId, status, onImported, refreshAccounts, refreshStatus, toast]);
 
   const onExit = useCallback(() => {
     setLinkToken(null);
@@ -253,7 +255,11 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
           <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>· {itemAccounts.length} account{itemAccounts.length !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {(!item.liabilities_synced_at || item.liabilities_consent_required === 1) && (
+          {item.error_code ? (
+            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title={`Plaid needs you to log in again (${item.error_code})`} style={{ background: 'var(--color-primary)', color: '#fff', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>
+              {enabling ? 'Opening…' : 'Reconnect'}
+            </button>
+          ) : (!item.liabilities_synced_at || item.liabilities_consent_required === 1) && (
             <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title="Authorize minimum payment, APR, statement, and due-date details" style={{ background: 'transparent', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
               {enabling ? 'Opening…' : 'Enable liabilities'}
             </button>
@@ -269,7 +275,11 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
       {!collapsed && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 8 }}>
           {itemAccounts.length === 0 ? (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 12.5, padding: '4px 6px' }}>No accounts found for this login.</p>
+            <p style={{ color: item.error_code ? 'var(--color-expense)' : 'var(--color-text-muted)', fontSize: 12.5, padding: '4px 6px' }}>
+              {item.error_code
+                ? `${item.institution_name ?? 'This bank'} needs you to log in again before Plaid can load its accounts. Click Reconnect.`
+                : 'No accounts found for this login.'}
+            </p>
           ) : (
             itemAccounts.map((a) => (
               <AccountRow key={a.account_id} a={a} selected={selected.has(a.account_id)} onToggle={() => onToggleSelect(a.account_id)} />

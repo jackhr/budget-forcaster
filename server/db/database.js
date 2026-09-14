@@ -135,6 +135,10 @@ if (!plaidItemCols.some((c) => c.name === 'liabilities_synced_at')) {
 if (!plaidItemCols.some((c) => c.name === 'liabilities_consent_required')) {
   db.exec('ALTER TABLE plaid_items ADD COLUMN liabilities_consent_required INTEGER NOT NULL DEFAULT 0');
 }
+// Plaid ITEM_ERROR code (e.g. ITEM_LOGIN_REQUIRED) from the last failed call; null = healthy.
+if (!plaidItemCols.some((c) => c.name === 'error_code')) {
+  db.exec('ALTER TABLE plaid_items ADD COLUMN error_code TEXT');
+}
 
 // --- Migration: link imported rows back to their Plaid account (block re-import, enable resync) ---
 for (const table of ['accounts', 'debts']) {

@@ -16,7 +16,7 @@ function requireClient(res) {
 // Whether Plaid is configured + which institutions are linked (no secrets exposed).
 router.get('/status', (req, res) => {
   const items = db.prepare(
-    'SELECT id, item_id, institution_name, liabilities_synced_at, liabilities_consent_required, created_at FROM plaid_items ORDER BY created_at ASC'
+    'SELECT id, item_id, institution_name, liabilities_synced_at, liabilities_consent_required, error_code, created_at FROM plaid_items ORDER BY created_at ASC'
   ).all();
   res.json({ configured: isConfigured(), env: PLAID_ENV, items });
 });
@@ -74,6 +74,7 @@ router.post('/exchange_public_token', async (req, res) => {
 });
 
 // Existing Items need a Link update flow to collect consent for Liabilities.
+// The same update-mode token repairs an Item in an error state (ITEM_LOGIN_REQUIRED).
 router.post('/items/:id/liabilities_link_token', async (req, res) => {
   const client = requireClient(res);
   if (!client) return;
@@ -236,9 +237,24 @@ function importedSets() {
   };
 }
 
-// Cache is stale if any linked item has never synced or is older than the TTL.
+// Plaid ITEM_ERRORs (ITEM_LOGIN_REQUIRED, …) only clear after the user reconnects
+// through Link update mode. Remember the code so the UI can prompt for that.
+function recordItemError(item, e, what) {
+  const data = e?.response?.data;
+  if (data?.error_type === 'ITEM_ERROR' && data.error_code) {
+    db.prepare('UPDATE plaid_items SET error_code = ? WHERE id = ?').run(data.error_code, item.id);
+  }
+  console.error(`Plaid ${what} refresh failed for ${item.institution_name ?? item.item_id}:`, plaidError(e));
+}
+
+function clearItemError(item) {
+  if (item.error_code) db.prepare('UPDATE plaid_items SET error_code = NULL WHERE id = ?').run(item.id);
+}
+
+// Cache is stale if any healthy linked item has never synced or is older than the TTL.
+// Items in an error state are excluded, or they'd keep the cache permanently stale.
 function accountsStale() {
-  const items = db.prepare('SELECT accounts_synced_at FROM plaid_items').all();
+  const items = db.prepare('SELECT accounts_synced_at FROM plaid_items WHERE error_code IS NULL').all();
   if (items.length === 0) return false;
   const now = Date.now();
   return items.some((it) => {
@@ -263,7 +279,15 @@ async function refreshAccountsCache(client, itemId = null, forceLiabilities = fa
       ? db.prepare('SELECT * FROM plaid_items WHERE item_id = ?').all(itemId)
       : db.prepare('SELECT * FROM plaid_items').all();
     for (const item of items) {
-      const resp = await client.accountsBalanceGet({ access_token: item.access_token });
+      let resp;
+      try {
+        resp = await client.accountsBalanceGet({ access_token: item.access_token });
+      } catch (e) {
+        // One broken login must not stop the remaining items from refreshing.
+        recordItemError(item, e, 'accounts');
+        continue;
+      }
+      clearItemError(item);
       const shouldFetchLiabilities = liabilitiesStale(item)
         && (forceLiabilities || !item.liabilities_consent_required);
       const liabilities = shouldFetchLiabilities ? await fetchLiabilities(client, item) : null;
@@ -407,9 +431,17 @@ async function syncItem(client, item) {
 }
 
 async function syncItems(client, items) {
-  const totals = { added: 0, modified: 0, removed: 0 };
+  const totals = { added: 0, modified: 0, removed: 0, failed: 0 };
   for (const item of items) {
-    const r = await syncItem(client, item);
+    let r;
+    try {
+      r = await syncItem(client, item);
+    } catch (e) {
+      recordItemError(item, e, 'transactions');
+      totals.failed++;
+      continue;
+    }
+    clearItemError(item);
     totals.added += r.added; totals.modified += r.modified; totals.removed += r.removed;
   }
   return totals;
@@ -429,7 +461,7 @@ router.get('/transactions', async (req, res) => {
   try {
     const client = getClient();
     if (client) {
-      const fresh = db.prepare('SELECT * FROM plaid_items WHERE transactions_synced_at IS NULL').all();
+      const fresh = db.prepare('SELECT * FROM plaid_items WHERE transactions_synced_at IS NULL AND error_code IS NULL').all();
       if (fresh.length) await syncItems(client, fresh);
     }
     const rows = accountId

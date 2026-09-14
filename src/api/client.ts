@@ -127,6 +127,7 @@ export interface PlaidItem {
   institution_name: string | null;
   liabilities_synced_at: string | null;
   liabilities_consent_required: 0 | 1;
+  error_code: string | null; // Plaid ITEM_ERROR (e.g. ITEM_LOGIN_REQUIRED); fixed by reconnecting in update mode
   created_at: string;
 }
 export interface PlaidStatus { configured: boolean; env: string; items: PlaidItem[] }
