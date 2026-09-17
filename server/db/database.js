@@ -271,6 +271,19 @@ db.exec(`
   )
 `);
 
+// "Paid this month" overrides for debts and expenses, one row per entity per month.
+// Absent row = default (debt: Plaid detection, then autopay day; expense: unpaid).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS paid_status (
+    entity_type TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    month TEXT NOT NULL,
+    paid INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (entity_type, entity_id, month)
+  )
+`);
+
 // --- Migration: scheduled_payments from one-off (due_date) to recurring (frequency/start_date/end_date) ---
 const schedCols = db.prepare('PRAGMA table_info(scheduled_payments)').all();
 const hasStartDate = schedCols.some((c) => c.name === 'start_date');

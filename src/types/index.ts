@@ -127,6 +127,21 @@ export interface ScheduledPayment {
   updated_at: string;
 }
 
+export interface PaidStatusEntry {
+  id: number;
+  paid: boolean;
+  source: 'manual' | 'detected'; // detected = inferred from Plaid (debts only)
+  detail: string | null;
+}
+
+// "Paid this month" for the server's current month. Items not listed use their
+// default: debts fall back to the autopay day, expenses to unpaid.
+export interface PaidStatus {
+  month: string; // YYYY-MM
+  debts: PaidStatusEntry[];
+  expenses: PaidStatusEntry[];
+}
+
 export interface ForecastPoint {
   month: number;
   label: string;

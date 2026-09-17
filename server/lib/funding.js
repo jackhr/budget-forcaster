@@ -1,4 +1,5 @@
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annually', 'one-time'];
+const SUB_MONTHLY = ['weekly', 'biweekly', 'semimonthly'];
 const { normalizeDate } = require('./dates');
 
 function isAmount(v) {
@@ -28,9 +29,13 @@ function cleanFundingRules(input, { allowDebt = true } = {}) {
   for (const r of input) {
     const clean = cleanAllocations([r], { allowDebt })[0];
     if (!clean) continue;
+    let frequency = VALID_FREQUENCIES.includes(r.frequency) ? r.frequency : 'monthly';
+    // A percentage applies to each occurrence of the bill, so a sub-monthly
+    // frequency has no meaning for it; only monthly and longer gate months.
+    if (clean.alloc_type === 'percent' && SUB_MONTHLY.includes(frequency)) frequency = 'monthly';
     out.push({
       ...clean,
-      frequency: VALID_FREQUENCIES.includes(r.frequency) ? r.frequency : 'monthly',
+      frequency,
       start_date: normalizeDate(r.start_date, 'rule.start_date'),
       end_date: normalizeDate(r.end_date, 'rule.end_date'),
     });

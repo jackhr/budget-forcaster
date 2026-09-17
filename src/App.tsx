@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import type { Account, Debt, Expense, GroupKind, IncomeSource, ItemFormData, LineItemGroup, ScheduledPayment } from './types';
+import type { Account, Debt, Expense, GroupKind, IncomeSource, ItemFormData, LineItemGroup, PaidStatus, ScheduledPayment } from './types';
 import {
-  accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, scenariosApi, scheduledApi, settingsApi,
+  accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, paidApi, scenariosApi, scheduledApi, settingsApi,
   type Scenario,
 } from './api/client';
 import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
@@ -76,7 +76,7 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const pay = snap.scheduled_payments ?? [];
   const debts = snap.debts ?? [];
   const accts = snap.accounts ?? [];
-  const ep = buildExpensePlan(exp, accts, debts, months, infl);
+  const ep = buildExpensePlan(exp, accts, months, infl);
   const charges = [...buildDebtCharges(pay, months), ...ep.charges];
   const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges, buildDebtPaymentSchedule(debts, months));
   const cashOut = plan.outflow.map((v) => Math.round(v * 100) / 100);
@@ -84,6 +84,23 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const sv = buildSavings(inc, ep.ongoingCashOut, pay, cashOut, months, start);
   const nw = buildNetWorth(sv, plan.remaining);
   return { forecast: fc.map((p) => p.net), savings: sv.map((p) => p.balance), networth: nw.map((p) => p.netWorth) };
+}
+
+// One-time move of the old browser-only "paid this month" flags (localStorage
+// bf.debtPaid / bf.expensePaid, values "YYYY-MM:1|0") to the server. Only the
+// current month matters; anything already saved on the server wins.
+async function migrateLocalPaidFlags(status: PaidStatus): Promise<PaidStatus> {
+  let next = status;
+  for (const [key, type, list] of [['bf.debtPaid', 'debt', status.debts], ['bf.expensePaid', 'expense', status.expenses]] as const) {
+    let flags: Record<string, string>;
+    try { flags = JSON.parse(localStorage.getItem(key) || '{}'); } catch { flags = {}; }
+    for (const [id, value] of Object.entries(flags)) {
+      if (!value.startsWith(`${status.month}:`) || list.some((entry) => entry.id === Number(id) && entry.source === 'manual')) continue;
+      try { next = await paidApi.set(type, Number(id), value.endsWith(':1')); } catch { /* entity deleted; drop the flag */ }
+    }
+    try { localStorage.removeItem(key); } catch { /* storage unavailable */ }
+  }
+  return next;
 }
 
 function ChartFallback() {
@@ -118,13 +135,8 @@ export default function App() {
   const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
   const [activityMonth, setActivityMonth] = useState(() => Number(localStorage.getItem('bf.activityMonth')) || 0);
   const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
-  // Per-debt "paid this month" overrides, keyed by debt id -> "YYYY-MM:1" | "YYYY-MM:0".
-  const [paidOverrides, setPaidOverrides] = useState<Record<number, string>>(() => {
-    try { return JSON.parse(localStorage.getItem('bf.debtPaid') || '{}'); } catch { return {}; }
-  });
-  const [expensePaidOverrides, setExpensePaidOverrides] = useState<Record<number, string>>(() => {
-    try { return JSON.parse(localStorage.getItem('bf.expensePaid') || '{}'); } catch { return {}; }
-  });
+  // "Paid this month" for debts and expenses: manual overrides + Plaid detection, from the server.
+  const [paidStatus, setPaidStatus] = useState<PaidStatus | null>(null);
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,8 +150,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.breakdownMode', breakdownMode); }, [breakdownMode]);
   useEffect(() => { localStorage.setItem('bf.breakdownMonth', String(breakdownMonth)); }, [breakdownMonth]);
   useEffect(() => { localStorage.setItem('bf.activityMonth', String(activityMonth)); }, [activityMonth]);
-  useEffect(() => { localStorage.setItem('bf.debtPaid', JSON.stringify(paidOverrides)); }, [paidOverrides]);
-  useEffect(() => { localStorage.setItem('bf.expensePaid', JSON.stringify(expensePaidOverrides)); }, [expensePaidOverrides]);
   useEffect(() => { if (startMonth >= months) setStartMonth(Math.max(0, months - 1)); }, [startMonth, months]);
 
   const changeStartMonth = (value: number) => setStartMonth(Math.max(0, Math.min(value, months - 1)));
@@ -147,12 +157,14 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [inc, exp, sched, dbts, accts, grps, scen, settings] = await Promise.all([
+      const [inc, exp, sched, dbts, accts, grps, scen, settings, paid] = await Promise.all([
         incomeApi.getAll(), expensesApi.getAll(), scheduledApi.getAll(),
         debtsApi.getAll(), accountsApi.getAll(), groupsApi.getAll(), scenariosApi.getAll(), settingsApi.getAll(),
+        paidApi.get(),
       ]);
       setIncomeSources(inc); setExpenses(exp); setPayments(sched); setDebts(dbts);
       setAccounts(accts); setGroups(grps); setScenarios(scen);
+      setPaidStatus(await migrateLocalPaidFlags(paid));
       setInflation(parseFloat(settings.inflation_rate ?? '0') || 0);
       setDebtExtra(parseFloat(settings.debt_extra ?? '0') || 0);
       setDebtStrategy((settings.debt_strategy as DebtStrategy) || 'none');
@@ -180,21 +192,30 @@ export default function App() {
   const totalCash = accounts.reduce((sum, a) => sum + a.balance, 0);
   // Split-funded expenses: cash portions reduce accounts; credit-line portions charge cards.
   const monthKey = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
-  const isExpensePaidThisMonth = (e: Expense): boolean => expensePaidOverrides[e.id] === `${monthKey}:1`;
-  const toggleExpensePaid = (e: Expense) => setExpensePaidOverrides((prev) => ({ ...prev, [e.id]: `${monthKey}:${isExpensePaidThisMonth(e) ? 0 : 1}` }));
+  // Ignore a status fetched in a previous month (app left open across month end).
+  const currentPaid = paidStatus?.month === monthKey ? paidStatus : null;
+  const debtPaidEntry = (d: Debt) => currentPaid?.debts.find((entry) => entry.id === d.id);
+  const isExpensePaidThisMonth = (e: Expense): boolean => !!currentPaid?.expenses.find((entry) => entry.id === e.id)?.paid;
+  const toggleExpensePaid = (e: Expense) => guard(async () => {
+    setPaidStatus(await paidApi.set('expense', e.id, !isExpensePaidThisMonth(e)));
+  }, 'Could not update paid status');
   const expensesPaidThisMonth = new Set(expenses.filter(isExpensePaidThisMonth).map((e) => e.id));
-  const expensePlan = buildExpensePlan(expenses, accounts, debts, months, inflation, new Date(), expensesPaidThisMonth);
+  const expensePlan = buildExpensePlan(expenses, accounts, months, inflation, new Date(), expensesPaidThisMonth);
   // Future expenses charged to a card + expense card-portions both bill the debt over time.
   const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
   // Any active debt funding-plan amount overrides its monthly payment per month.
   const debtPayments = buildDebtPaymentSchedule(debts, months);
-  // "Paid this month": user override for the current month, else the autopay-day default.
-  const isPaidThisMonth = (d: Debt): boolean => {
-    const ov = paidOverrides[d.id];
-    if (ov && ov.startsWith(`${monthKey}:`)) return ov.endsWith(':1');
-    return debtPaidDefault(d);
+  // "Paid this month": manual override, then Plaid detection (both from the server), else the autopay-day default.
+  const isPaidThisMonth = (d: Debt): boolean => debtPaidEntry(d)?.paid ?? debtPaidDefault(d);
+  const paidDetailOf = (d: Debt): string | null => {
+    const entry = debtPaidEntry(d);
+    if (entry?.source === 'detected') return entry.detail;
+    if (entry?.source === 'manual') return 'Set manually';
+    return d.payment_day != null ? `Default from autopay day ${d.payment_day}` : null;
   };
-  const togglePaid = (d: Debt) => setPaidOverrides((prev) => ({ ...prev, [d.id]: `${monthKey}:${isPaidThisMonth(d) ? 0 : 1}` }));
+  const togglePaid = (d: Debt) => guard(async () => {
+    setPaidStatus(await paidApi.set('debt', d.id, !isPaidThisMonth(d)));
+  }, 'Could not update paid status');
   const paidThisMonth = new Set(debts.filter(isPaidThisMonth).map((d) => d.id));
   const plan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, debtCharges, debtPayments, paidThisMonth);
   const basePlan = simulateDebtPlan(debts, 0, 'none', months, debtCharges, debtPayments, paidThisMonth);
@@ -709,7 +730,7 @@ export default function App() {
           const [kind, idS] = sel.split(':');
           const id = Number(idS);
           const activityHorizon = activityMonth + 1;
-          const activityExpensePlan = buildExpensePlan(expenses, accounts, debts, activityHorizon, inflation, new Date(), expensesPaidThisMonth);
+          const activityExpensePlan = buildExpensePlan(expenses, accounts, activityHorizon, inflation, new Date(), expensesPaidThisMonth);
           const activityCharges = [...buildDebtCharges(payments, activityHorizon), ...activityExpensePlan.charges];
           const activityPayments = buildDebtPaymentSchedule(debts, activityHorizon);
           const activityPlan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, activityHorizon, activityCharges, activityPayments);
@@ -884,7 +905,7 @@ export default function App() {
           onReorder={reorderDebts} onReorderGroup={reorderGroups}
           plan={plan} basePlan={basePlan} extra={debtExtra} strategy={debtStrategy}
           onExtraChange={changeDebtExtra} onStrategyChange={changeDebtStrategy}
-          isPaidThisMonth={isPaidThisMonth} onTogglePaid={togglePaid}
+          isPaidThisMonth={isPaidThisMonth} paidDetail={paidDetailOf} onTogglePaid={togglePaid}
         />
         </>}
       </main>

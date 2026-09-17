@@ -1,4 +1,4 @@
-import type { Account, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, ScheduledPayment } from '../types';
+import type { Account, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, PaidStatus, ScheduledPayment } from '../types';
 
 const BASE = '/api';
 
@@ -109,6 +109,14 @@ export const debtsApi = {
     req<Debt>(`/debts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => req<void>(`/debts/${id}`, { method: 'DELETE' }),
   reorder: (ids: number[]) => reorder('debts', ids),
+};
+
+export const paidApi = {
+  get: () => req<PaidStatus>('/paid'),
+  set: (type: 'debt' | 'expense', id: number, paid: boolean) =>
+    req<PaidStatus>(`/paid/${type}/${id}`, { method: 'PUT', body: JSON.stringify({ paid }) }),
+  reset: (type: 'debt' | 'expense', id: number) =>
+    req<PaidStatus>(`/paid/${type}/${id}`, { method: 'DELETE' }),
 };
 
 export const settingsApi = {

@@ -19,6 +19,10 @@ interface Props {
   onSave: (rules: FundingRule[]) => void;
 }
 
+// A percentage applies to each occurrence of the bill, so only month-or-longer
+// frequencies mean anything for it (the server normalizes the rest to monthly).
+const PERCENT_FREQUENCIES: Frequency[] = ['monthly', 'quarterly', 'annually', 'one-time'];
+
 function encodeSource(type: AllocationSourceType, id: number): string {
   return `${type}:${id}`;
 }
@@ -154,7 +158,16 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={labelStyle}>Type</span>
-                <select value={rule.alloc_type} onChange={(e) => update(idx, { alloc_type: e.target.value as AllocationType })} style={inputStyle}>
+                <select
+                  value={rule.alloc_type}
+                  onChange={(e) => {
+                    const allocType = e.target.value as AllocationType;
+                    update(idx, allocType === 'percent' && !PERCENT_FREQUENCIES.includes(rule.frequency)
+                      ? { alloc_type: allocType, frequency: 'monthly' }
+                      : { alloc_type: allocType });
+                  }}
+                  style={inputStyle}
+                >
                   <option value="percent">%</option>
                   <option value="fixed">$</option>
                 </select>
@@ -200,7 +213,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
                   }}
                   style={inputStyle}
                 >
-                  {FREQUENCIES.map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
+                  {(rule.alloc_type === 'percent' ? PERCENT_FREQUENCIES : FREQUENCIES).map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
                 </select>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -237,7 +250,7 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
           </p>
         ) : (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            These rules are the complete payment plan. Active rules combine, and months without an active rule make no payment.
+            Rules override the debt’s monthly payment while their dates are active, and active rules combine. Outside every rule’s dates, the normal monthly payment is made from the debt’s default account.
           </p>
         )}
         {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Make sure the end date is not before the start date.</p>}

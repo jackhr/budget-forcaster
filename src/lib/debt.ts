@@ -127,11 +127,12 @@ interface DebtState {
 // 'avalanche' = highest APR first; 'snowball' = smallest balance first. Both roll freed
 // payments forward and apply the global `extra` to the current target debt.
 //
-// paymentSchedule (optional) overrides a debt's monthly_payment per month when a
-// funding plan exists. A zero entry is authoritative and makes no payment that month.
+// paymentSchedule (optional) overrides a debt's monthly_payment in months covered by
+// a funding rule window. A zero entry is authoritative; a null entry means no override.
 //
 // paidThisMonth (optional) = debt ids already paid this month: they make no payment
-// in month 0 (the current balance already reflects it), then resume normally.
+// in month 0 under any strategy (the current balance already reflects it), then
+// resume normally.
 export function simulateDebtPlan(
   debts: Debt[],
   extra: number,
@@ -215,9 +216,12 @@ export function simulateDebtPlan(
     } else {
       // Active funding plans pay their exact amount and do not receive or contribute
       // avalanche/snowball rollover. Unscheduled debts share their normal budget.
-      let budget = states.filter((d) => overrideOf(d, m) == null).reduce((s, d) => s + d.min, 0) + extra;
+      // A debt already paid this month made its payment outside the plan: it pays
+      // nothing in month 0, contributes nothing to the budget, and takes no extra.
+      const paidNow = (d: DebtState) => m === 0 && !!paidThisMonth?.has(d.id);
+      let budget = states.filter((d) => overrideOf(d, m) == null && !paidNow(d)).reduce((s, d) => s + d.min, 0) + extra;
       for (const d of states) {
-        if (d.bal <= 0.005) continue;
+        if (d.bal <= 0.005 || paidNow(d)) continue;
         const override = overrideOf(d, m);
         if (override != null) {
           const pay = Math.min(override, d.bal);
@@ -233,7 +237,7 @@ export function simulateDebtPlan(
         }
       }
       // Throw whatever's left at the target debt(s) in priority order.
-      const order = [...states].filter((d) => d.bal > 0.005 && overrideOf(d, m) == null).sort((a, b) =>
+      const order = [...states].filter((d) => d.bal > 0.005 && overrideOf(d, m) == null && !paidNow(d)).sort((a, b) =>
         strategy === 'avalanche' ? b.rate - a.rate : a.bal - b.bal,
       );
       for (const d of order) {

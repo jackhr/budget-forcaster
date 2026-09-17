@@ -36,9 +36,10 @@ export const FREQUENCY_LABELS: Record<Frequency, string> = {
 const LUMP_FREQUENCIES: Frequency[] = ['quarterly', 'annually', 'one-time'];
 
 // Actual cash an income source delivers in a given month (lumps for quarterly/annual/one-time).
-// Honors an optional start_date; the frequency cycle is anchored to that start.
+// Honors an optional start_date; the frequency cycle is anchored to that start,
+// even when it is in the past (an annual bonus keeps its real month).
 function incomeCashAtMonth(src: IncomeSource, monthIndex: number, now: Date): number {
-  const startOff = src.start_date ? Math.max(0, monthOffset(src.start_date, now)) : 0;
+  const startOff = src.start_date ? monthOffset(src.start_date, now) : 0;
   if (monthIndex < startOff) return 0;
   const since = monthIndex - startOff;
   const a = src.monthly_amount;
@@ -148,24 +149,37 @@ function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number,
   }
 }
 
-// Effective monthly payment per debt per month. When a debt has funding rules, the
-// rules are its complete payment plan: active rules accumulate and months without
-// an active rule make no payment. Debts without rules use monthly_payment/strategy.
+// Whether a funding rule's date window covers a month. A one-time rule's window is
+// just its start month. Frequency is ignored here: a quarterly rule is still "in
+// window" during its off months (and contributes 0 then).
+function ruleInWindow(rule: FundingRule, monthIndex: number, now: Date): boolean {
+  const startOff = rule.start_date ? monthOffset(rule.start_date, now) : 0;
+  if (monthIndex < startOff) return false;
+  const endOff = rule.frequency === 'one-time'
+    ? startOff
+    : rule.end_date ? monthOffset(rule.end_date, now) : Infinity;
+  return monthIndex <= endOff;
+}
+
+// Effective monthly payment per debt per month. Funding rules are temporary
+// overrides: in a month covered by at least one rule window, the in-window rules
+// set the payment (they accumulate). Outside every window the entry is null, so
+// the debt reverts to monthly_payment and takes part in the strategy as normal.
 export function buildDebtPaymentSchedule(debts: Debt[], months: number, now: Date = new Date()): Map<number, (number | null)[]> {
   const map = new Map<number, (number | null)[]>();
   for (const d of debts) {
     const rules = d.funding_rules ?? [];
-    // null means this debt has no funding plan, so monthly payment/strategy apply.
+    // null means no override this month, so monthly payment/strategy apply.
     const arr: (number | null)[] = new Array(months).fill(null);
-    if (rules.length > 0) {
-      for (let m = 0; m < months; m++) {
-        let total = 0;
-        for (const r of rules) {
-          const v = fundingRuleValue(r, d.monthly_payment, m, now);
-          if (v > 0) total += v;
-        }
-        arr[m] = round2(total);
+    for (let m = 0; m < months && rules.length > 0; m++) {
+      const inWindow = rules.filter((r) => ruleInWindow(r, m, now));
+      if (inWindow.length === 0) continue;
+      let total = 0;
+      for (const r of inWindow) {
+        const v = fundingRuleValue(r, d.monthly_payment, m, now);
+        if (v > 0) total += v;
       }
+      arr[m] = round2(total);
     }
     map.set(d.id, arr);
   }
@@ -193,7 +207,9 @@ function debtPaymentByAccount(
     remaining -= take;
   };
 
-  const rules = debt.funding_rules ?? [];
+  // Only rules whose window covers this month apply; outside every window the debt
+  // is paid like a debt without rules (allocations, account_id, then primary).
+  const rules = (debt.funding_rules ?? []).filter((rule) => ruleInWindow(rule, monthIndex, now));
   const allocs = debt.funding_allocations ?? [];
   const activeRules = rules.map((rule) => ({
     rule,
@@ -211,7 +227,7 @@ function debtPaymentByAccount(
     add('account', debt.account_id != null && accountIds.has(debt.account_id) ? debt.account_id : primaryId, amount);
   }
 
-  // A funding plan is authoritative; never invent a primary-account remainder.
+  // In-window rules are authoritative for their month; never invent a primary-account remainder.
   if (rules.length === 0 && remaining > 0.005 && primaryId != null) {
     byAccount.set(primaryId, (byAccount.get(primaryId) ?? 0) + remaining);
   }
@@ -381,7 +397,6 @@ export interface ExpensePlan {
 export function buildExpensePlan(
   expenses: Expense[],
   accounts: Account[],
-  debts: Debt[],
   months: number,
   inflation = 0,
   now: Date = new Date(),
@@ -389,7 +404,6 @@ export function buildExpensePlan(
 ): ExpensePlan {
   const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
   const accountIds = new Set(accounts.map((a) => a.id));
-  const debtIds = new Set(debts.map((d) => d.id));
   const ongoingCashOut = new Array(months).fill(0);
   const outByAccount = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
   const charges: DebtCharge[] = [];
@@ -403,7 +417,9 @@ export function buildExpensePlan(
       const funding = paymentFundingFromSources(amount, m, now, e.funding_rules, e.funding_allocations, () => ({ cash: amount, parts: [] }));
       let allocatedCash = 0;
       for (const part of funding.parts) {
-        if (part.source_type === 'debt' && part.source_id != null && debtIds.has(part.source_id)) {
+        if (part.source_type === 'debt' && part.source_id != null) {
+          // A charge to a missing debt is still pushed so the plan flags it as
+          // charge overflow ("Invalid funding target") instead of it vanishing.
           charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount), label: e.name, kind: 'expense' });
         } else if (part.source_type === 'account' && part.source_id != null && accountIds.has(part.source_id)) {
           outByAccount.get(part.source_id)![m] += part.amount;

@@ -98,6 +98,7 @@ router.delete('/:id', (req, res) => {
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  db.prepare("DELETE FROM paid_status WHERE entity_type = 'expense' AND entity_id = ?").run(id);
   db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
   res.status(204).end();
 });

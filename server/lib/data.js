@@ -1,15 +1,30 @@
 // Shared helpers for full-dataset export/import (used by /export, /import, and scenarios).
 
-// Groups first so group_id references resolve naturally on import.
+// Groups first so group_id references resolve naturally on import. Dependent
+// tables (occurrences, paid status) come after the rows they reference.
 const TABLES = [
   'accounts',
   'line_item_groups',
   'income_sources',
+  'income_occurrences',
   'expenses',
   'scheduled_payments',
   'debts',
   'app_settings',
+  'paid_status',
 ];
+
+// Whether a dependent row still points at an existing parent after an import.
+function referenceExists(db, table, row) {
+  if (table === 'income_occurrences') {
+    return !!db.prepare('SELECT 1 FROM income_sources WHERE id = ?').get(row.income_id);
+  }
+  if (table === 'paid_status') {
+    const parent = row.entity_type === 'debt' ? 'debts' : row.entity_type === 'expense' ? 'expenses' : null;
+    return !!parent && !!db.prepare(`SELECT 1 FROM ${parent} WHERE id = ?`).get(row.entity_id);
+  }
+  return true;
+}
 
 function exportData(db) {
   const out = {};
@@ -17,11 +32,20 @@ function exportData(db) {
   return out;
 }
 
+// Replace the plan with a snapshot. Tables the snapshot doesn't mention (older
+// backups and scenarios predate income_occurrences/paid_status) keep their current
+// rows, minus any whose parent no longer exists. Without this, deleting
+// income_sources would cascade away every received/skipped payday.
 function importData(db, data) {
   const tx = db.transaction(() => {
+    const kept = {};
+    for (const t of TABLES) {
+      if (data?.[t] === undefined) kept[t] = db.prepare(`SELECT * FROM ${t}`).all();
+    }
     for (const t of TABLES) db.exec(`DELETE FROM ${t}`);
     for (const t of TABLES) {
-      const rows = Array.isArray(data?.[t]) ? data[t] : [];
+      const incoming = Array.isArray(data?.[t]) ? data[t] : [];
+      const rows = kept[t] ? kept[t].filter((row) => referenceExists(db, t, row)) : incoming;
       for (const row of rows) {
         const cols = Object.keys(row);
         if (cols.length === 0) continue;

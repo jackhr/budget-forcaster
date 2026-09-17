@@ -270,10 +270,22 @@ function liabilitiesStale(item) {
   return Date.now() - t > LIABILITIES_TTL_MS;
 }
 
-let accountsRefreshing = false;
-async function refreshAccountsCache(client, itemId = null, forceLiabilities = false) {
-  if (accountsRefreshing) return; // collapse concurrent refreshes
-  accountsRefreshing = true;
+// One refresh at a time. A background refresh is skipped while one is running;
+// an explicit refresh (resync) waits for it and then runs its own, so it never
+// copies a cache that is mid-update.
+let accountsRefresh = null;
+async function refreshAccountsCache(client, itemId = null, forceLiabilities = false, { background = false } = {}) {
+  if (accountsRefresh && background) return;
+  while (accountsRefresh) await accountsRefresh;
+  accountsRefresh = runAccountsRefresh(client, itemId, forceLiabilities);
+  try {
+    await accountsRefresh;
+  } finally {
+    accountsRefresh = null;
+  }
+}
+
+async function runAccountsRefresh(client, itemId, forceLiabilities) {
   try {
     const items = itemId
       ? db.prepare('SELECT * FROM plaid_items WHERE item_id = ?').all(itemId)
@@ -333,8 +345,6 @@ async function refreshAccountsCache(client, itemId = null, forceLiabilities = fa
     }
   } catch (e) {
     console.error('Plaid accounts refresh failed:', plaidError(e));
-  } finally {
-    accountsRefreshing = false;
   }
 }
 
@@ -346,7 +356,7 @@ router.get('/accounts', async (req, res) => {
       if (cached === 0) {
         await refreshAccountsCache(client); // nothing to show yet — populate once
       } else if (accountsStale()) {
-        refreshAccountsCache(client); // serve cache now, refresh in the background
+        refreshAccountsCache(client, null, false, { background: true }); // serve cache now, refresh in the background
       }
     }
     const rows = db.prepare('SELECT * FROM plaid_accounts ORDER BY type, name').all();
@@ -499,6 +509,16 @@ function destinationFor(type) {
   return 'account';
 }
 
+// Plaid often reports a $0 minimum (statement paid, or no statement yet). Fall back
+// to the last payment actually made; 0 remains only when nothing is known, and the
+// debt row then shows "never pays off" until the user sets a payment.
+function importPayment(liability) {
+  const min = Number(liability?.minimum_payment_amount);
+  if (Number.isFinite(min) && min > 0) return min;
+  const last = Number(liability?.last_payment_amount);
+  return Number.isFinite(last) && last > 0 ? last : 0;
+}
+
 function dueDay(date) {
   if (!date) return null;
   const day = Number(String(date).slice(8, 10));
@@ -545,7 +565,7 @@ router.post('/import_accounts', async (req, res) => {
         const limit = dest === 'credit_card' && Number.isFinite(Number(s.credit_limit)) ? Number(s.credit_limit) : null;
         const liability = plaidId ? db.prepare('SELECT * FROM plaid_accounts WHERE account_id = ?').get(plaidId) : null;
         insertDebt.run(
-          name, balance, liability?.apr ?? 0, limit, liability?.minimum_payment_amount ?? 0, dest,
+          name, balance, liability?.apr ?? 0, limit, importPayment(liability), dest,
           dueDay(liability?.next_payment_due_date), plaidId,
           liability?.last_statement_balance ?? null, liability?.last_statement_issue_date ?? null,
           liability?.next_payment_due_date ?? null, liability?.last_payment_amount ?? null,
@@ -580,8 +600,8 @@ router.post('/resync', async (req, res) => {
       `UPDATE debts SET
        balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
        monthly_payment = CASE
-         WHEN ? = 0 AND COALESCE(?, credit_limit) IS NOT NULL THEN monthly_payment
-         ELSE COALESCE(?, monthly_payment)
+         WHEN COALESCE(?, 0) <= 0 THEN monthly_payment
+         ELSE ?
        END,
        payment_day = COALESCE(?, payment_day),
        last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
@@ -592,8 +612,8 @@ router.post('/resync', async (req, res) => {
       `UPDATE debts SET
        balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
        monthly_payment = CASE
-         WHEN ? = 0 AND COALESCE(?, credit_limit) IS NOT NULL THEN monthly_payment
-         ELSE COALESCE(?, monthly_payment)
+         WHEN COALESCE(?, 0) <= 0 THEN monthly_payment
+         ELSE ?
        END,
        payment_day = COALESCE(?, payment_day),
        last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
@@ -612,7 +632,7 @@ router.post('/resync', async (req, res) => {
         if (!n) n = setAcctByName.run(current, pa.account_id, label).changes;
         const liabilityArgs = [
           owed, pa.credit_limit, pa.apr,
-          pa.minimum_payment_amount, pa.credit_limit, pa.minimum_payment_amount,
+          pa.minimum_payment_amount, pa.minimum_payment_amount,
           dueDay(pa.next_payment_due_date),
           pa.last_statement_balance, pa.last_statement_issue_date, pa.next_payment_due_date,
           pa.last_payment_amount, pa.last_payment_date, pa.is_overdue, pa.aprs ?? '[]',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
+import { buildForecast, buildIncomeBreakdown, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
 import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
 
@@ -56,9 +56,22 @@ describe('buildForecast', () => {
   });
 });
 
+describe('lump income anchoring', () => {
+  it('keeps a past-dated annual income in its real month', () => {
+    const bonus = income({ monthly_amount: 1000, frequency: 'annually', start_date: '2025-12-01' });
+    const values = buildIncomeBreakdown([bonus], 13, NOW).series[0].values;
+    expect(values.map((v, i) => (v > 0 ? i : -1)).filter((i) => i >= 0)).toEqual([11]); // Dec 2026 only
+  });
+
+  it('never repeats a past one-time income', () => {
+    const gift = income({ monthly_amount: 500, frequency: 'one-time', start_date: '2025-11-15' });
+    expect(buildIncomeBreakdown([gift], 12, NOW).total.every((v) => v === 0)).toBe(true);
+  });
+});
+
 describe('buildExpensePlan', () => {
   it('applies inflation to ongoing expenses over time', () => {
-    const ep = buildExpensePlan([expense({ monthly_amount: 1000 })], [acct(1, 'Cash', 0, true)], [], 13, 12, NOW);
+    const ep = buildExpensePlan([expense({ monthly_amount: 1000 })], [acct(1, 'Cash', 0, true)], 13, 12, NOW);
     expect(ep.ongoingCashOut[0]).toBeCloseTo(1000, 5);
     expect(ep.ongoingCashOut[12]).toBeCloseTo(1120, 0); // +12% after a year
   });
@@ -67,7 +80,7 @@ describe('buildExpensePlan', () => {
     const cash = [acct(1, 'Cash', 0, true)];
     // Quarterly $300 from Mar 2026 (offset 2) through Aug 2026 (offset 7): bills at offset 2 and 5 only.
     const exp = [expense({ monthly_amount: 300, frequency: 'quarterly', start_date: '2026-03-01', end_date: '2026-08-01' })];
-    const ep = buildExpensePlan(exp, cash, [], 10, 0, NOW);
+    const ep = buildExpensePlan(exp, cash, 10, 0, NOW);
     expect(ep.ongoingCashOut[0]).toBe(0);
     expect(ep.ongoingCashOut[1]).toBe(0);
     expect(ep.ongoingCashOut[2]).toBe(300); // Mar
@@ -97,7 +110,7 @@ describe('buildExpensePlan', () => {
         { source_type: 'account', source_id: 1, alloc_type: 'fixed', value: 200 },
       ],
     })];
-    const ep = buildExpensePlan(exp, accounts, debts, 1, 0);
+    const ep = buildExpensePlan(exp, accounts, 1, 0);
     // fixed $200 to cash, then 50% ($500) to the card, remainder $300 to primary (cash).
     expect(ep.ongoingCashOut[0]).toBe(500);          // 200 + 300
     expect(ep.outByAccount.get(1)![0]).toBe(500);
@@ -108,7 +121,7 @@ describe('buildExpensePlan', () => {
     const accounts = [acct(1, 'Cash', 1000, true)];
     const card: Debt = { id: 5, name: 'Visa', balance: 0, apr: 24, credit_limit: null, monthly_payment: 1000, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
     const exp = [expense({ id: 1, monthly_amount: 400, funding_allocations: [{ source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 100 }] })];
-    const ep = buildExpensePlan(exp, accounts, [card], 2, 0);
+    const ep = buildExpensePlan(exp, accounts, 2, 0);
     expect(ep.ongoingCashOut[0]).toBe(0); // 100% on the card -> no cash out
     const sv = buildSavings([], ep.ongoingCashOut, [], simulateDebtPlan([card], 0, 'none', 2, ep.charges).outflow, 2, 1000, NOW);
     expect(sv[0].expenses).toBe(0);       // the expense doesn't dip cash
@@ -122,11 +135,21 @@ describe('buildExpensePlan', () => {
       expense({ id: 1, monthly_amount: 200 }),
       expense({ id: 2, monthly_amount: 300, funding_allocations: [{ source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 100 }] }),
     ];
-    const ep = buildExpensePlan(expenses, accounts, [card], 2, 0, NOW, new Set([1, 2]));
+    const ep = buildExpensePlan(expenses, accounts, 2, 0, NOW, new Set([1, 2]));
 
     expect(ep.ongoingCashOut).toEqual([0, 200]);
     expect(ep.charges).toMatchObject([{ debtId: 5, monthIndex: 1, amount: 300 }]);
     expect(buildExpenseBreakdown(expenses, 2, 0, NOW, new Set([1, 2])).total).toEqual([0, 500]);
+  });
+});
+
+describe('expense charged to a missing card', () => {
+  it('surfaces the charge as overflow instead of dropping it', () => {
+    const exp = [expense({ monthly_amount: 90, start_date: '2026-01-01', funding_allocations: [{ source_type: 'debt', source_id: 99, alloc_type: 'percent', value: 100 }] })];
+    const ep = buildExpensePlan(exp, [acct(1, 'Cash', 0, true)], 1, 0, NOW);
+    expect(ep.ongoingCashOut[0]).toBe(0);
+    expect(ep.charges).toEqual([{ debtId: 99, monthIndex: 0, amount: 90, label: 'E', kind: 'expense' }]);
+    expect(simulateDebtPlan([], 0, 'none', 1, ep.charges).chargeOverflow[0]).toBe(90);
   });
 });
 
@@ -177,7 +200,7 @@ describe('buildAccountSeries', () => {
       income({ id: 10, monthly_amount: 2000, account_id: 1 }),
       income({ id: 11, monthly_amount: 300, account_id: 2 }),
     ];
-    const ep = buildExpensePlan([expense({ monthly_amount: 800 })], accounts, [], 3, 0);
+    const ep = buildExpensePlan([expense({ monthly_amount: 800 })], accounts, 3, 0);
     const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 3, 1500, NOW);
     const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), new Map(), NOW);
 
@@ -198,7 +221,7 @@ describe('buildAccountSeries', () => {
   it('sends unassigned income to the primary account', () => {
     const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Other', 0)];
     const sources = [income({ id: 9, monthly_amount: 100, account_id: null })];
-    const ep = buildExpensePlan([], accounts, [], 2, 0);
+    const ep = buildExpensePlan([], accounts, 2, 0);
     const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 2, 0, NOW);
     const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), new Map(), NOW);
     expect(bd.series.find((s) => s.id === 1)!.values[0]).toBe(100);
@@ -298,7 +321,7 @@ describe('debt pay-from account', () => {
     };
 
     const schedule = buildDebtPaymentSchedule([percentDebt, mixedDebt], 3, NOW);
-    expect(schedule.get(1)).toEqual([0, 50, 50]); // a funding plan is authoritative, including before its first active rule
+    expect(schedule.get(1)).toEqual([null, 50, 50]); // before its window opens the debt keeps its normal payment
     expect(schedule.get(2)).toEqual([75, 75, 75]); // later this month counts as active now
   });
 
@@ -340,13 +363,13 @@ describe('debt pay-from account', () => {
     const plan = simulateDebtPlan([debt], 0, 'none', 2, [], schedule);
     const map = buildDebtOutByAccount([debt], plan, accounts, NOW);
 
-    expect(plan.outflowByDebt.get(1)).toEqual([0, 50]);
-    expect(map.get(1)).toEqual([0, 0]);
+    expect(plan.outflowByDebt.get(1)).toEqual([100, 50]);
+    expect(map.get(1)).toEqual([100, 0]); // normal payment from primary before the plan starts
     expect(map.get(2)).toEqual([0, 50]);
-    expect(buildAccountActivity(2, accounts, [], [], [], [debt], plan, 2, 0, NOW).outByMonth).toEqual([0, 50]);
+    expect(buildAccountActivity(2, accounts, [], [], [], [debt], plan, 2, 0, NOW).outByMonth).toEqual([0, 50]); // account 2 only funds the plan
   });
 
-  it('does not use the existing pay-from account before a future funding plan starts', () => {
+  it('uses the existing pay-from account until a future funding plan starts', () => {
     const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0), acct(3, 'Future', 0)];
     const debt: Debt = {
       id: 1, name: 'Future plan', balance: 1000, apr: 0, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
@@ -362,8 +385,40 @@ describe('debt pay-from account', () => {
     const map = buildDebtOutByAccount([debt], plan, accounts, NOW);
 
     expect(map.get(1)).toEqual([0, 0]);
-    expect(map.get(2)).toEqual([0, 0]);
+    expect(map.get(2)).toEqual([100, 0]);
     expect(map.get(3)).toEqual([0, 200]);
+  });
+
+  it('reverts to the normal payment and pay-from account after a funding rule ends', () => {
+    const accounts = [acct(1, 'Checking', 0, true), acct(2, 'Bills', 0), acct(3, 'Boost', 0)];
+    const debt: Debt = {
+      id: 1, name: 'Card', balance: 5000, apr: 0, credit_limit: null, monthly_payment: 300, debt_type: 'credit_card', payment_day: null,
+      group_id: null, account_id: 2, funding_allocations: [], funding_rules: [
+        { source_type: 'account', source_id: 3, alloc_type: 'fixed', value: 500, frequency: 'monthly', start_date: '2026-01-01', end_date: '2026-02-28' },
+      ],
+      created_at: '', updated_at: '',
+    };
+    const schedule = buildDebtPaymentSchedule([debt], 4, NOW);
+    const plan = simulateDebtPlan([debt], 0, 'none', 4, [], schedule);
+    const map = buildDebtOutByAccount([debt], plan, accounts, NOW);
+
+    expect(schedule.get(1)).toEqual([500, 500, null, null]);
+    expect(plan.outflowByDebt.get(1)).toEqual([500, 500, 300, 300]);
+    expect(map.get(3)).toEqual([500, 500, 0, 0]);
+    expect(map.get(2)).toEqual([0, 0, 300, 300]);
+  });
+
+  it('lets a debt rejoin avalanche rollover once its funding rule window closes', () => {
+    const debt: Debt = {
+      id: 1, name: 'Card', balance: 5000, apr: 20, credit_limit: null, monthly_payment: 100, debt_type: 'credit_card', payment_day: null,
+      group_id: null, account_id: null, funding_allocations: [], funding_rules: [
+        { source_type: 'account', source_id: 1, alloc_type: 'fixed', value: 250, frequency: 'one-time', start_date: '2026-01-10', end_date: null },
+      ],
+      created_at: '', updated_at: '',
+    };
+    const plan = simulateDebtPlan([debt], 50, 'avalanche', 2, [], buildDebtPaymentSchedule([debt], 2, NOW));
+    expect(plan.outflowByDebt.get(1)![0]).toBe(250); // one-time override, no extra
+    expect(plan.outflowByDebt.get(1)![1]).toBe(150); // normal payment + extra
   });
 
   it('attributes each debt payment to its pay-from account', () => {

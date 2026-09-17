@@ -164,4 +164,20 @@ describe('simulateDebtPlan paidThisMonth', () => {
     expect(plan.remainingByDebt.get(1)![0]).toBeCloseTo(1000, 5); // balance unchanged in month 0
     expect(plan.outflowByDebt.get(1)![1]).toBeCloseTo(200, 5);  // resumes next month
   });
+
+  it('skips a paid debt under avalanche without giving its payment to other debts', () => {
+    const paid = makeDebt({ id: 1, balance: 1000, apr: 0, monthly_payment: 200 });
+    const other = makeDebt({ id: 2, balance: 1000, apr: 10, monthly_payment: 100 });
+    const plan = simulateDebtPlan([paid, other], 50, 'avalanche', 2, [], undefined, new Set([1]));
+    expect(plan.outflowByDebt.get(1)![0]).toBe(0);
+    expect(plan.outflowByDebt.get(2)![0]).toBeCloseTo(150, 5); // its own payment + extra only
+    expect(plan.outflowByDebt.get(1)![1]).toBeCloseTo(200, 5);
+    expect(plan.outflowByDebt.get(2)![1]).toBeCloseTo(150, 5);
+  });
+
+  it('skips a paid debt with a funding-plan override under snowball', () => {
+    const d = makeDebt({ id: 1, balance: 1000, apr: 0, monthly_payment: 100 });
+    const plan = simulateDebtPlan([d], 0, 'snowball', 2, [], new Map([[1, [300, 300]]]), new Set([1]));
+    expect(plan.outflowByDebt.get(1)).toEqual([0, 300]);
+  });
 });

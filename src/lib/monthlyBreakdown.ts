@@ -156,6 +156,19 @@ function incomeOccurrenceDates(item: IncomeSource, year: number, month: number):
     });
 }
 
+// Month-level window check, matching forecast.ts: a one-time rule covers only its
+// start month; a null start is always active; a null end runs forever.
+function ruleCoversMonth(rule: FundingRule, year: number, month: number): boolean {
+  const target = year * 12 + month;
+  const monthIndexOf = (date: string) => {
+    const [y, m] = date.split('-').map(Number);
+    return y * 12 + (m - 1);
+  };
+  const start = rule.start_date ? monthIndexOf(rule.start_date) : -Infinity;
+  const end = rule.frequency === 'one-time' ? start : rule.end_date ? monthIndexOf(rule.end_date) : Infinity;
+  return target >= start && target <= end;
+}
+
 function sourceName(rule: FundingRule, accounts: Account[], debts: Debt[]): string {
   if (rule.source_type === 'account') return accounts.find((account) => account.id === rule.source_id)?.name ?? 'Unknown account';
   return debts.find((debt) => debt.id === rule.source_id)?.name ?? 'Unknown card';
@@ -291,8 +304,11 @@ export function buildMonthBreakdown(
 
   for (const debt of debts) {
     const paid = monthOffset === 0 && !!paidDebtIds?.has(debt.id);
-    if (debt.funding_rules.length > 0) {
+    // Funding rules override the payment only in months their window covers;
+    // otherwise the debt makes its normal monthly payment.
+    if (debt.funding_rules.some((rule) => ruleCoversMonth(rule, year, month))) {
       debt.funding_rules.forEach((rule, ruleIndex) => {
+        if (!ruleCoversMonth(rule, year, month)) return;
         const amount = rule.alloc_type === 'fixed' ? rule.value : debt.monthly_payment * Math.min(100, rule.value) / 100;
         for (const occurrence of occurrenceDates(rule.frequency, rule.start_date, rule.end_date, year, month, debt.payment_day ?? 1)) {
           const changes: LiquidityChange[] = [];
@@ -334,7 +350,8 @@ export function buildMonthBreakdown(
   const liquidity: LiquiditySeries[] = [
     ...accounts.map((account) => ({ key: `account:${account.id}`, name: account.name, kind: 'account' as const, start: account.balance, max: Infinity })),
     ...debts.filter((debt) => debt.debt_type === 'credit_card' && debt.credit_limit != null).map((debt) => ({
-      key: `card:${debt.id}`, name: debt.name, kind: 'card' as const, start: Math.max(0, debt.credit_limit! - debt.balance), max: debt.credit_limit!,
+      // Over-limit cards start negative: that credit is owed, not available.
+      key: `card:${debt.id}`, name: debt.name, kind: 'card' as const, start: debt.credit_limit! - debt.balance, max: debt.credit_limit!,
     })),
   ].map((source) => {
     // Current balances are an as-of-today snapshot. Reconstruct this month's
@@ -347,7 +364,8 @@ export function buildMonthBreakdown(
     let value = liquidityStart?.get(source.key) ?? (source.start - changesThroughToday);
     const values = daily.map((point) => {
       value += point.events.flatMap((event) => event.liquidityChanges).filter((change) => change.key === source.key).reduce((sum, change) => sum + change.amount, 0);
-      return round2(Math.max(0, Math.min(source.max, value)));
+      // No floor: a projected overdraft (or over-limit card) must show as negative.
+      return round2(Math.min(source.max, value));
     });
     return { key: source.key, name: source.name, kind: source.kind, values };
   });

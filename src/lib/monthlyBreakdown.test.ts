@@ -83,6 +83,30 @@ describe('buildMonthBreakdown', () => {
     expect(result.totalOut).toBe(125);
   });
 
+  it('falls back to the normal debt payment in months outside every funding rule window', () => {
+    const planned = debt({
+      payment_day: 9,
+      funding_rules: [
+        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 400, frequency: 'monthly', start_date: '2026-03-01', end_date: '2026-05-31' },
+      ],
+    });
+
+    const result = buildMonthBreakdown([], [], [], [planned], accounts, 0, NOW);
+
+    expect(result.events.map((event) => [event.day, event.amount, event.detail])).toEqual([[9, 100, 'from Checking']]);
+  });
+
+  it('shows a projected overdraft as negative liquidity', () => {
+    const poor: Account[] = [{ ...accounts[0], balance: 50 }];
+    const bill: Expense = {
+      id: 1, name: 'Rent', monthly_amount: 300, frequency: 'monthly', start_date: '2026-06-20', end_date: null,
+      group_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
+    };
+    const result = buildMonthBreakdown([], [bill], [], [], poor, 0, NOW);
+    const checking = result.liquidity.find((series) => series.key === 'account:1')!;
+    expect(checking.values[19]).toBe(-250);
+  });
+
   it('marks unspecified dates and includes paid current-month obligations in totals', () => {
     const expense: Expense = {
       id: 4, name: 'Legacy bill', monthly_amount: 80, frequency: 'monthly', start_date: null, end_date: null,

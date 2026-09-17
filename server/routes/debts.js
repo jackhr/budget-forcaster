@@ -42,8 +42,11 @@ router.post('/reorder', (req, res) => {
 
 router.post('/', (req, res) => {
   const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules, debt_type, payment_day } = req.body;
-  if (!name || !isAmount(balance) || balance < 0 || !isAmount(monthly_payment) || monthly_payment <= 0) {
-    return res.status(400).json({ error: 'name, a non-negative balance and a monthly_payment greater than zero are required' });
+  if (!name || !isAmount(balance) || balance < 0 || !isAmount(monthly_payment) || monthly_payment < 0) {
+    return res.status(400).json({ error: 'name, a non-negative balance and a non-negative monthly_payment are required' });
+  }
+  if (balance > 0 && monthly_payment <= 0) {
+    return res.status(400).json({ error: 'monthly_payment must be greater than zero while a balance is owed' });
   }
   let cleanedRules;
   try {
@@ -75,8 +78,12 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const effectiveMonthlyPayment = monthly_payment ?? existing.monthly_payment;
-  if (!isAmount(effectiveMonthlyPayment) || effectiveMonthlyPayment <= 0) {
-    return res.status(400).json({ error: 'monthly_payment must be greater than zero' });
+  const effectiveBalance = balance ?? existing.balance;
+  if (!isAmount(effectiveMonthlyPayment) || effectiveMonthlyPayment < 0) {
+    return res.status(400).json({ error: 'monthly_payment must be a non-negative number' });
+  }
+  if (effectiveBalance > 0 && effectiveMonthlyPayment <= 0) {
+    return res.status(400).json({ error: 'monthly_payment must be greater than zero while a balance is owed' });
   }
   let cleanedRules = existing.funding_rules;
   try {
@@ -122,6 +129,7 @@ router.delete('/:id', (req, res) => {
   ).run(id);
   removeFundingAllocations(db, 'expenses', 'debt', id);
   removeFundingAllocations(db, 'scheduled_payments', 'debt', id);
+  db.prepare("DELETE FROM paid_status WHERE entity_type = 'debt' AND entity_id = ?").run(id);
   db.prepare('DELETE FROM debts WHERE id = ?').run(id);
   res.status(204).end();
 });
