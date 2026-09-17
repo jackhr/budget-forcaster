@@ -24,7 +24,7 @@ export default function PlaidConnect({ onImported }: Props) {
   const { collapsed: sectionCollapsed, toggle: toggleSection } = useCollapsed('connect-bank');
 
   // Only not-yet-imported, selected accounts can be imported.
-  const importCount = accounts.filter((a) => selected.has(a.account_id) && !a.imported).length;
+  const importCount = accounts.filter((a) => selected.has(a.account_id) && !a.imported && !a.replaced).length;
 
   const refreshStatus = useCallback(async () => {
     try { setStatus(await plaidApi.status()); } catch (e) { console.error(e); }
@@ -35,7 +35,7 @@ export default function PlaidConnect({ onImported }: Props) {
       const a = await plaidApi.accounts();
       setAccounts(a);
       // Pre-select everything that hasn't been imported yet (imported rows resync, not re-import).
-      setSelected(new Set(a.filter((x) => !x.imported).map((x) => x.account_id)));
+      setSelected(new Set(a.filter((x) => !x.imported && !x.replaced).map((x) => x.account_id)));
     } catch (e) {
       toast.error(`Could not load Plaid balances: ${e instanceof Error ? e.message : 'error'}`);
     }
@@ -48,10 +48,11 @@ export default function PlaidConnect({ onImported }: Props) {
     setBusy(true);
     try {
       if (liabilitiesItemId) {
-        const reconnecting = status?.items.find((i) => i.item_id === liabilitiesItemId)?.error_code != null;
+        const item = status?.items.find((i) => i.item_id === liabilitiesItemId);
         const r = await plaidApi.resync(liabilitiesItemId, true);
         const synced = `resynced ${r.updated} balance${r.updated !== 1 ? 's' : ''}`;
-        toast.success(reconnecting ? `Reconnected and ${synced}` : `Enabled card details and ${synced}`);
+        const moved = r.reattached ? ` · ${r.reattached} replaced card${r.reattached !== 1 ? 's' : ''} now tracked under the new number` : '';
+        toast.success(`${item?.error_code ? 'Reconnected' : `Updated ${item?.institution_name ?? 'bank'}`} and ${synced}${moved}`);
         onImported();
         await refreshAccounts();
       } else {
@@ -107,7 +108,7 @@ export default function PlaidConnect({ onImported }: Props) {
 
   async function importSelected() {
     // Only ever import accounts that aren't already imported.
-    const chosen = accounts.filter((a) => selected.has(a.account_id) && !a.imported);
+    const chosen = accounts.filter((a) => selected.has(a.account_id) && !a.imported && !a.replaced);
     if (chosen.length === 0) return;
     await toastGuard(toast, async () => {
       const r = await plaidApi.importAccounts(chosen.map((a) => ({
@@ -256,12 +257,16 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {item.error_code ? (
-            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title={`Plaid needs you to log in again (${item.error_code})`} style={{ background: 'var(--color-primary)', color: '#fff', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>
+            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title={`Log in again (${item.error_code}). Also check any new or replacement cards so Plaid can see them.`} style={{ background: 'var(--color-primary)', color: '#fff', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>
               {enabling ? 'Opening…' : 'Reconnect'}
             </button>
-          ) : (!item.liabilities_synced_at || item.liabilities_consent_required === 1) && (
+          ) : (!item.liabilities_synced_at || item.liabilities_consent_required === 1) ? (
             <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title="Authorize minimum payment, APR, statement, and due-date details" style={{ background: 'transparent', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
               {enabling ? 'Opening…' : 'Enable liabilities'}
+            </button>
+          ) : (
+            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title="Choose which accounts this login shares — use this when a card was reissued with a new number" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
+              {enabling ? 'Opening…' : 'Update accounts'}
             </button>
           )}
           {hasImported && (
@@ -292,15 +297,16 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
 }
 
 function AccountRow({ a, selected, onToggle }: { a: PlaidAccount; selected: boolean; onToggle: () => void }) {
+  const locked = a.imported || a.replaced;
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: a.imported ? 'default' : 'pointer', opacity: a.imported ? 0.6 : 1 }}>
-      <input type="checkbox" checked={selected && !a.imported} disabled={a.imported} onChange={onToggle} />
+    <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1 }}>
+      <input type="checkbox" checked={selected && !locked} disabled={locked} onChange={onToggle} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span>
           <span style={{ fontWeight: 500 }}>{a.name}</span>
           {a.mask && <span style={{ color: 'var(--color-text-muted)' }}> ••{a.mask}</span>}
           <span style={{ color: 'var(--color-text-muted)', fontSize: 12 }}> · {a.subtype ?? a.type}</span>
-          {a.imported ? <ImportedBadge /> : <DestBadge type={a.type} />}
+          {a.replaced ? <ReplacedBadge /> : a.imported ? <ImportedBadge /> : <DestBadge type={a.type} />}
         </span>
         {(a.apr != null || a.minimum_payment_amount != null || a.next_payment_due_date) && (
           <span style={{ display: 'block', color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
@@ -332,6 +338,17 @@ function DestBadge({ type }: { type: string }) {
       background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
     }}>
       {label}
+    </span>
+  );
+}
+
+function ReplacedBadge() {
+  return (
+    <span title="This card number was reissued; the imported debt now follows the new number" style={{
+      fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
+      color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', border: '1px dashed var(--color-border)',
+    }}>
+      Replaced
     </span>
   );
 }

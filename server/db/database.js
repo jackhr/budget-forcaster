@@ -140,6 +140,12 @@ if (!plaidItemCols.some((c) => c.name === 'error_code')) {
   db.exec('ALTER TABLE plaid_items ADD COLUMN error_code TEXT');
 }
 
+// Plaid's detailed personal_finance_category (e.g. FOOD_AND_DRINK_GROCERIES vs _RESTAURANT).
+const plaidTxnCols = db.prepare('PRAGMA table_info(plaid_transactions)').all();
+if (!plaidTxnCols.some((c) => c.name === 'category_detailed')) {
+  db.exec('ALTER TABLE plaid_transactions ADD COLUMN category_detailed TEXT');
+}
+
 // --- Migration: link imported rows back to their Plaid account (block re-import, enable resync) ---
 for (const table of ['accounts', 'debts']) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();

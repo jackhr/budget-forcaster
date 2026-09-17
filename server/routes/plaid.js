@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { getClient, isConfigured, PLAID_ENV } = require('../lib/plaid');
+const { importName, reattachReplacedCards, replacedAccountIds } = require('../lib/plaidAccounts');
 
 function requireClient(res) {
   const client = getClient();
@@ -73,8 +74,11 @@ router.post('/exchange_public_token', async (req, res) => {
   }
 });
 
-// Existing Items need a Link update flow to collect consent for Liabilities.
-// The same update-mode token repairs an Item in an error state (ITEM_LOGIN_REQUIRED).
+// Link update mode for an existing Item. One token covers three jobs: collecting
+// Liabilities consent, repairing an Item in an error state (ITEM_LOGIN_REQUIRED), and
+// letting the user share accounts the Item doesn't have yet. The last matters when a
+// bank reissues a card with a new number: the new card is a new Plaid account that
+// was never shared, so the old one keeps reporting $0 until it's selected here.
 router.post('/items/:id/liabilities_link_token', async (req, res) => {
   const client = requireClient(res);
   if (!client) return;
@@ -86,6 +90,7 @@ router.post('/items/:id/liabilities_link_token', async (req, res) => {
       client_name: 'Budget Forecaster',
       access_token: item.access_token,
       additional_consented_products: ['liabilities'],
+      update: { account_selection_enabled: true },
       country_codes: ['US'],
       language: 'en',
     });
@@ -198,7 +203,7 @@ async function fetchLiabilities(client, item) {
   }
 }
 
-function serializeAccount(r, imported = false) {
+function serializeAccount(r, imported = false, replaced = false) {
   return {
     item_id: r.item_id,
     institution_name: r.institution_name,
@@ -216,12 +221,8 @@ function serializeAccount(r, imported = false) {
     minimum_payment_amount: r.minimum_payment_amount,
     next_payment_due_date: r.next_payment_due_date,
     imported,
+    replaced, // an older card number whose imported row now follows the reissued card
   };
-}
-
-// The local name we give an imported row, matching the client's import label.
-function importName(name, mask) {
-  return `${name || 'Account'}${mask ? ` ••${mask}` : ''}`.slice(0, 60);
 }
 
 // Sets of what's already imported: by Plaid account id (exact link) and by the
@@ -362,7 +363,8 @@ router.get('/accounts', async (req, res) => {
     const rows = db.prepare('SELECT * FROM plaid_accounts ORDER BY type, name').all();
     const { byId, byName } = importedSets();
     const isImported = (pa) => byId.has(pa.account_id) || byName.has(importName(pa.name, pa.mask));
-    res.json(rows.map((r) => serializeAccount(r, isImported(r))));
+    const replaced = replacedAccountIds(db);
+    res.json(rows.map((r) => serializeAccount(r, isImported(r), replaced.has(r.account_id))));
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });
   }
@@ -374,11 +376,12 @@ router.get('/accounts', async (req, res) => {
 // first sync (or an explicit refresh) hits Plaid.
 const upsertTxn = db.prepare(`
   INSERT INTO plaid_transactions
-    (transaction_id, item_id, account_id, date, name, amount, currency, pending, category, logo_url, updated_at)
-  VALUES (@transaction_id, @item_id, @account_id, @date, @name, @amount, @currency, @pending, @category, @logo_url, datetime('now'))
+    (transaction_id, item_id, account_id, date, name, amount, currency, pending, category, category_detailed, logo_url, updated_at)
+  VALUES (@transaction_id, @item_id, @account_id, @date, @name, @amount, @currency, @pending, @category, @category_detailed, @logo_url, datetime('now'))
   ON CONFLICT(transaction_id) DO UPDATE SET
     account_id = excluded.account_id, date = excluded.date, name = excluded.name, amount = excluded.amount,
-    currency = excluded.currency, pending = excluded.pending, category = excluded.category, logo_url = excluded.logo_url,
+    currency = excluded.currency, pending = excluded.pending, category = excluded.category,
+    category_detailed = excluded.category_detailed, logo_url = excluded.logo_url,
     updated_at = datetime('now')
 `);
 const deleteTxn = db.prepare('DELETE FROM plaid_transactions WHERE transaction_id = ?');
@@ -394,6 +397,7 @@ function txnRow(item_id, t) {
     currency: t.iso_currency_code,
     pending: t.pending ? 1 : 0,
     category: t.personal_finance_category?.primary || (t.category && t.category[0]) || null,
+    category_detailed: t.personal_finance_category?.detailed || null,
     logo_url: t.logo_url || (t.counterparties && t.counterparties[0]?.logo_url) || null,
   };
 }
@@ -408,6 +412,7 @@ function serializeTxn(r) {
     currency: r.currency,
     pending: Boolean(r.pending),
     category: r.category,
+    category_detailed: r.category_detailed,
     logo_url: r.logo_url,
   };
 }
@@ -488,10 +493,13 @@ router.get('/transactions', async (req, res) => {
 });
 
 // Force a refresh of the cache from Plaid (pull deltas for every linked item).
+// `full: true` restarts each healthy item's cursor to re-pull its whole history,
+// which backfills fields added to the cache later (e.g. category_detailed).
 router.post('/transactions/sync', async (req, res) => {
   const client = requireClient(res);
   if (!client) return;
   try {
+    if (req.body?.full === true) db.prepare('UPDATE plaid_items SET cursor = NULL WHERE error_code IS NULL').run();
     const items = db.prepare('SELECT * FROM plaid_items').all();
     const totals = await syncItems(client, items);
     res.json({ ok: true, ...totals });
@@ -543,6 +551,7 @@ router.post('/import_accounts', async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const { byId, byName } = importedSets();
+    const replaced = replacedAccountIds(db);
     let madePrimary = hasPrimary;
     let accountsCreated = 0;
     let debtsCreated = 0;
@@ -551,7 +560,7 @@ router.post('/import_accounts', async (req, res) => {
       const name = String(s.name || 'Account').slice(0, 60);
       const plaidId = s.account_id ? String(s.account_id) : null;
       // Never import the same Plaid account twice — resync updates it instead.
-      if ((plaidId && byId.has(plaidId)) || byName.has(name)) { skipped++; continue; }
+      if ((plaidId && byId.has(plaidId)) || byName.has(name) || (plaidId && replaced.has(plaidId))) { skipped++; continue; }
       const dest = destinationFor(s.type);
       if (dest === 'account') {
         const balance = Number(s.balance) || 0;
@@ -621,7 +630,9 @@ router.post('/resync', async (req, res) => {
        WHERE ${unlinked} AND name = ?`
     );
     let updated = 0;
+    let reattached = 0;
     const tx = db.transaction(() => {
+      reattached = reattachReplacedCards(db, itemId);
       for (const pa of cached) {
         const label = importName(pa.name, pa.mask);
         const current = pa.current ?? 0;
@@ -643,7 +654,7 @@ router.post('/resync', async (req, res) => {
       }
     });
     tx();
-    res.json({ ok: true, updated });
+    res.json({ ok: true, updated, reattached });
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });
   }

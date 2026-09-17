@@ -156,6 +156,7 @@ export interface PlaidAccount {
   minimum_payment_amount: number | null;
   next_payment_due_date: string | null;
   imported: boolean; // already imported as a local account/debt
+  replaced: boolean; // an old card number whose imported row now follows the reissued card
 }
 
 export interface PlaidTransaction {
@@ -167,6 +168,7 @@ export interface PlaidTransaction {
   currency: string | null;
   pending: boolean;
   category: string | null;
+  category_detailed: string | null; // e.g. FOOD_AND_DRINK_GROCERIES
   logo_url: string | null;
 }
 
@@ -182,12 +184,12 @@ export const plaidApi = {
   accounts: () => req<PlaidAccount[]>('/plaid/accounts'),
   transactions: (accountId: string | null, days: number | 'all' = 'all') =>
     req<PlaidTransaction[]>(`/plaid/transactions?days=${days}${accountId ? `&account_id=${encodeURIComponent(accountId)}` : ''}`),
-  syncTransactions: () =>
-    req<{ ok: boolean; added: number; modified: number; removed: number }>('/plaid/transactions/sync', { method: 'POST' }),
+  syncTransactions: (full = false) =>
+    req<{ ok: boolean; added: number; modified: number; removed: number }>('/plaid/transactions/sync', { method: 'POST', body: JSON.stringify({ full }) }),
   importAccounts: (accounts: { account_id: string; name: string; balance: number; type: string; mask?: string | null; credit_limit?: number | null }[]) =>
     req<{ ok: boolean; created: number; accountsCreated: number; debtsCreated: number; skipped: number }>('/plaid/import_accounts', { method: 'POST', body: JSON.stringify({ accounts }) }),
   resync: (itemId?: string, forceLiabilities = false) =>
-    req<{ ok: boolean; updated: number }>('/plaid/resync', {
+    req<{ ok: boolean; updated: number; reattached: number }>('/plaid/resync', {
       method: 'POST',
       body: JSON.stringify({ ...(itemId ? { item_id: itemId } : {}), ...(forceLiabilities ? { force_liabilities: true } : {}) }),
     }),

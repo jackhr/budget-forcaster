@@ -34,7 +34,9 @@ Code: `server/routes/plaid.js`, `server/lib/plaid.js`, `src/components/PlaidConn
      - `monthly_payment` = Plaid minimum **only when it's > 0**. A $0 or missing minimum keeps the existing payment, for cards and loans alike, because a $0 minimum usually means a paid statement, not "stop paying".
      - The liability cache fields are overwritten.
    - **Matching:** first by `plaid_account_id`. Otherwise by generated name, for rows with no link **or a dangling link** (commit `4ed3786`), and in that case the link is backfilled.
-5. **Unlink** (`DELETE /items/:id`): removes the item at Plaid (best effort) and deletes its cached transactions and accounts. **Imported rows are kept** with `plaid_account_id = NULL`, so a relink reattaches them by name on the next resync.
+   - **Reissued cards:** when a bank replaces a card number, Plaid reports the new card as a *new* account (same name, new mask), and the old one usually goes to $0 or disappears. Before copying balances, resync runs `server/lib/plaidAccounts.js:reattachReplacedCards`. It moves an imported row to the new account when exactly one row matches: same name ignoring the `••mask`, same table, and the row's link is dangling or points at a **$0** same-named account of the same Item while the new one carries a balance. The row is renamed to the new mask. That direction rule stops it from ever flipping back. The retired account is served with `replaced: true`, shown as "Replaced", and can't be imported.
+5. **Update accounts / Reconnect** (`POST /items/:id/liabilities_link_token`): opens Link in update mode with `update.account_selection_enabled`. One token covers Liabilities consent, repairing an `ITEM_LOGIN_REQUIRED` Item, and **sharing accounts the Item doesn't have yet**. A reissued card is invisible to Plaid until it's selected here (seen 2026-09: Citi Double Cash ••8260 → ••5268 reported $0 for a month). The UI shows "Reconnect" for errored Items, "Enable liabilities" when consent is missing, and "Update accounts" otherwise. A forced resync follows.
+6. **Unlink** (`DELETE /items/:id`): removes the item at Plaid (best effort) and deletes its cached transactions and accounts. **Imported rows are kept** with `plaid_account_id = NULL`, so a relink reattaches them by name on the next resync.
 
 ## Liabilities
 
@@ -52,7 +54,8 @@ A Plaid `ITEM_ERROR` (e.g. `ITEM_LOGIN_REQUIRED`) is saved to `plaid_items.error
 - Cached in `plaid_transactions` through cursor-based `/transactions/sync` (added, modified, removed), paged 500 at a time. The first sync pulls up to 730 days.
 - `GET /transactions?account_id&days` reads from the cache (`days` = `all` by default, or 1–730). Items that have **never** synced (and aren't errored) are synced first. `POST /transactions/sync` forces deltas for all items.
 - **Sign convention (Plaid):** a positive `amount` is money **out** (a purchase or charge); a negative amount is money **in** (a refund, payment, or deposit).
-- The stored `name` is the merchant name when present. `category` is Plaid's `personal_finance_category.primary` (e.g. `INCOME`), else the legacy category.
+- The stored `name` is the merchant name when present. `category` is Plaid's `personal_finance_category.primary` (e.g. `INCOME`), else the legacy category. `category_detailed` is `personal_finance_category.detailed` (e.g. `FOOD_AND_DRINK_GROCERIES` vs `FOOD_AND_DRINK_RESTAURANT`). Use it for spending breakdowns; the primary category lumps groceries and dining together, and Walmart/Costco/Target land in `GENERAL_MERCHANDISE_SUPERSTORES`.
+- `POST /transactions/sync {full: true}` resets every healthy Item's cursor and re-pulls its history, to backfill columns added to the cache later. Coverage per account only goes back to when that account was linked (up to 730 days).
 - The Transactions tab defaults to the first credit account and "all" history. Browsing only.
 
 ## Debt payment detection
