@@ -2,6 +2,8 @@
 
 Local-first personal finance forecaster. React + TypeScript (Vite) front end, Express + better-sqlite3 back end. Single user, no auth — everything is local. Optional Plaid integration pulls in real balances, transactions, and liability details.
 
+**Business rules, product intent, and known bugs live in [docs/business-logic/](docs/business-logic/README.md).** This file is the architecture map. Before changing any money math or behavior, read `docs/business-logic/10-known-gaps-and-decisions.md` (settled decisions, and gaps between current and intended behavior). The repo is public: never put real household data in code, docs, tests, or commit messages.
+
 ## Run / test
 
 ```bash
