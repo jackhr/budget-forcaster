@@ -7,7 +7,7 @@ Everything is recomputed on each render in `src/App.tsx` from the loaded state. 
 ```
 accounts ─┐
           ├─ totalCash = Σ balance
-expenses ─┼─ buildExpensePlan(expenses, accounts, debts, months, inflation, now, paidExpenses)
+expenses ─┼─ buildExpensePlan(expenses, accounts, months, inflation, now, paidExpenses)
           │     → ongoingCashOut[m], outByAccount, charges(kind:'expense')
 payments ─┼─ buildDebtCharges(payments) → charges(kind:'future')
 debts ────┼─ buildDebtPaymentSchedule(debts) → per-debt override[m] | null
@@ -47,7 +47,7 @@ These are tested. Don't break them:
 
 Starting balances are **today's**, but month 0 applies the **whole calendar month's** flows. Anything that has already happened this month would be counted twice (already in the balance, and subtracted again) unless it's flagged:
 
-- Debts and expenses → **paid this month**
+- Debts and expenses → **paid this month** (manual, or Plaid-detected for debts)
 - Twice-monthly income → **received / skipped / detected** occurrences
 
 Weekly, biweekly, monthly, and lump income have **no** such adjustment, so a paycheck that already landed this month is counted again in month 0. This is part of why the day-level engine is the intended source of truth. The Month view instead reconstructs the month's opening balance by reversing events dated on or before today.
@@ -70,8 +70,8 @@ Weekly, biweekly, monthly, and lump income have **no** such adjustment, so a pay
 
 ## View state (not data)
 
-Stored in localStorage under `bf.*`: tab, horizon, window start, breakdown section, mode, month, include-future flag, activity month, paid overrides, and collapsed sections and groups. Everything that changes *numbers* should eventually be server-side ([10 G4](10-known-gaps-and-decisions.md#g4)). Pure view preferences can stay in localStorage.
+Stored in localStorage under `bf.*`: tab, horizon, window start, breakdown section, mode, month, include-future flag, activity month, and collapsed sections and groups. These are pure view preferences. Anything that changes *numbers* belongs on the server ("paid this month" moved there in `75bbb3b`).
 
 ## Scenario compare
 
-`App.tsx:scenarioSeries` re-runs a **reduced** pipeline on a snapshot: no paid-this-month and no income occurrences (the snapshot lacks them). If the snapshot has no accounts, it falls back to legacy `starting_balance`. The overlay is net, savings, and net worth only. Small month-0 differences from the live view are expected.
+`App.tsx:scenarioSeries` re-runs a **reduced** pipeline on a snapshot: no paid-this-month and no income occurrences (snapshots store them, but the compare pipeline doesn't apply them). If the snapshot has no accounts, it falls back to legacy `starting_balance`. The overlay is net, savings, and net worth only. Small month-0 differences from the live view are expected.

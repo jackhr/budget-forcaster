@@ -42,7 +42,7 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 - `end_date` is **always forced to NULL** on write (the migration also nulls existing values). Expenses are ongoing by definition. Time-boxed costs belong in future expenses (for now; see [10 G2](10-known-gaps-and-decisions.md#g2)).
 - Funding: `funding_allocations` / `funding_rules`, with account or card sources. See [05](05-funding.md).
 - **Inflation applies**: the amount compounds by `app_settings.inflation_rate`.
-- Can be marked **paid this month** (browser-only), which skips month 0.
+- Can be marked **paid this month** (manually; stored in `paid_status`), which skips month 0.
 - Reorderable and groupable (`kind = 'expense'`).
 
 ## Future expense (`scheduled_payments`): *temporary* costs
@@ -58,7 +58,7 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 
 - `balance`: amount owed today, ≥ 0.
 - `apr`: annual %, e.g. `19.9`. Monthly rate = `apr / 1200`.
-- `monthly_payment`: the normal payment. **Required > 0** by the API, even if a funding plan exists. (A Plaid import can insert 0 when Plaid has no minimum; see [10 G9](10-known-gaps-and-decisions.md#g9).)
+- `monthly_payment`: the normal payment. It's also the payment in any month no funding rule window covers. **Required > 0 while `balance > 0`**; a $0 balance may carry $0. A Plaid import can still insert 0 when Plaid knows no payment at all, and the row then shows "never pays off" until the user sets one ([10 G9](10-known-gaps-and-decisions.md#g9)).
 - `debt_type`:
   - `credit_card`: revolving. Chargeable. `credit_limit` is optional (null = no limit; no utilization or over-limit checks).
   - `loan`: installment. Not chargeable. The editor hides the limit.
@@ -66,8 +66,17 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 - `payment_day`: autopay day 1–31, optional. It drives the "paid this month" default and the day placement in the Month view.
 - Who pays: `funding_rules` → `funding_allocations` → `account_id` → primary. **Debts can only be paid from accounts, never from another card** (`allowDebt: false` on write). See [05](05-funding.md#debt-payments).
 - Plaid liability cache fields (`last_statement_balance`, `next_payment_due_date`, `last_payment_*`, `is_overdue`, `plaid_aprs`) are informational, filled by import and resync.
-- **Delete:** removed from every expense and future expense allocation and rule. Legacy future-expense sources pointing at it are reset to `cash`. So a bill that was charged to that card **becomes a cash bill from primary**.
+- **Paid this month:** see [Paid status](#paid-status-paid_status). Plaid-linked debts can be detected as paid.
+- **Delete:** removed from every expense and future expense allocation and rule. Its `paid_status` rows are deleted. Legacy future-expense sources pointing at it are reset to `cash`. So a bill that was charged to that card **becomes a cash bill from primary**.
 - Reorderable and groupable (`kind = 'debt'`).
+
+## Paid status (`paid_status`)
+
+- One row per `(entity_type, entity_id, month)`: `entity_type` ∈ `debt | expense`, `month` = `YYYY-MM`, `paid` = 0/1. **A row is a manual override.** No row means the default.
+- `GET /api/paid` returns the **server's current month**: manual rows, plus Plaid-detected debts that have no manual row (`source: 'detected'`, with a `detail` reason). `PUT /api/paid/:type/:id {paid}` sets an override; `DELETE` clears it.
+- Client precedence: manual → detected → autopay-day default (debts) / unpaid (expenses). A status fetched in an earlier month is ignored.
+- Rows are deleted with their debt or expense. Included in export and scenarios.
+- Old localStorage flags (`bf.debtPaid`, `bf.expensePaid`) migrate to the server once, on load.
 
 ## Group (`line_item_groups`)
 
@@ -87,10 +96,10 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 
 ## Scenario (`scenarios`)
 
-- A full JSON snapshot of the **plan tables**: `accounts, line_item_groups, income_sources, expenses, scheduled_payments, debts, app_settings` (`server/lib/data.js:TABLES`).
-- **Not included:** `income_occurrences`, the Plaid cache tables, and other scenarios.
+- A full JSON snapshot of `server/lib/data.js:TABLES`: `accounts, line_item_groups, income_sources, income_occurrences, expenses, scheduled_payments, debts, app_settings, paid_status`.
+- **Not included:** the Plaid cache tables and other scenarios.
 - **Compare** re-runs a simplified pipeline over the snapshot (no paid-this-month, no occurrences) and overlays net, savings, and net worth.
-- **Restore** is destructive: it deletes those tables and re-inserts the snapshot with the same ids. Export/Import use the same code. Side effect: restoring wipes income occurrences through the FK cascade ([10 G8](10-known-gaps-and-decisions.md#g8)).
+- **Restore** is destructive: it deletes those tables and re-inserts the snapshot with the same ids. Export/Import use the same code. A table **missing from the snapshot** (older backups) keeps its current rows, minus rows whose parent no longer exists ([10 G8](10-known-gaps-and-decisions.md#g8)).
 
 ## Warnings the header computes
 

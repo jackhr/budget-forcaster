@@ -27,17 +27,14 @@ simulateDebtPlan(debts, extra, strategy, months, charges, paymentSchedule?, paid
 3. **Payments** by strategy:
    - **`none`:** each debt pays `min(minOf(d), balance)`, where `minOf` = 0 in month 0 if paid this month, else the scheduled override, else `monthly_payment`. `extra` is ignored (App also passes 0).
    - **`avalanche` / `snowball`:**
-     - `budget = Σ monthly_payment of debts without an active override this month (including already-paid-off debts) + extra`. Because paid-off debts still count, their payment **rolls over** to the others and the total monthly debt budget stays constant.
-     - Debts **with an override** pay exactly `min(override, balance)` from outside the budget.
+     - `budget = Σ monthly_payment of debts without an override this month and not paid this month (including already-paid-off debts) + extra`. Because paid-off debts still count, their payment **rolls over** to the others and the total monthly debt budget stays constant.
+     - A debt **paid this month** (month 0 only) pays nothing, adds nothing to the budget, and isn't a target for the leftover.
+     - Debts **with an override** (a funding rule window covers the month) pay exactly `min(override, balance)` from outside the budget.
      - Other debts pay `min(monthly_payment, balance, budget)` in list order (sort order).
      - The leftover budget goes to target debts, sorted by **highest APR** (avalanche) or **smallest current balance** (snowball), each taking `min(budget, balance)`.
 4. **Record:** over-limit check on the post-payment balance (cards with a limit only; first month only), payoff month, remaining balances, and rounding.
 
 `debtFreeMonthIndex` is the first month every debt is ≤ $0.005 (−1 if already debt-free).
-
-### Known issue
-
-**Paid this month is ignored under avalanche and snowball.** `minOf` is only used in the `none` branch, so a debt marked paid still pays in month 0 when a strategy is active, and this month's payment is double counted. Confirmed by test. See [10 G6](10-known-gaps-and-decisions.md#g6).
 
 ### Where the plan is used (App.tsx)
 
@@ -65,14 +62,18 @@ A charge is a card-funded portion of an expense or future expense (see [05](05-f
 
 Purpose: account balances are as-of-today, but month 0 would otherwise subtract the whole month's payment. If the payment already cleared, it's already reflected in the balances, so skip it.
 
-- **Debt default:** paid if `payment_day ≤ today's day-of-month`. Unpaid if there's no autopay day or it's still upcoming (`debtPaidDefault`).
-- **Expense default:** unpaid.
-- **User override:** stored in localStorage (`bf.debtPaid`, `bf.expensePaid`) as `{id: "YYYY-MM:1|0"}`. Stale months are ignored, so overrides reset each month.
+- **Precedence for debts:**
+  1. A manual override for this month (`paid_status`).
+  2. Plaid detection, for linked debts ([09](09-plaid.md#debt-payment-detection)).
+  3. The autopay-day default: paid if `payment_day ≤ today's day-of-month`, unpaid if there's no autopay day or it's still upcoming (`debtPaidDefault`).
+- **Expenses:** a manual override, else unpaid.
+- The debt row's paid button tooltip says which source decided it.
+- Overrides are keyed by month, so a new month starts from the defaults again.
 - **Effects when paid:**
-  - Debt: no month-0 payment, and the balance is unchanged in month 0 (`none` strategy only, see G6).
+  - Debt: no month-0 payment under any strategy, and the balance is unchanged in month 0.
   - Expense: no month-0 cash or charge.
   - Activity and the Month view still list the item, marked paid. Activity excludes it from totals; the Month view includes it (history + forecast).
-- **Intended:** persist server-side and eventually set it automatically from Plaid transactions ([10 G4](10-known-gaps-and-decisions.md#g4)).
+- **Still open:** auto-detecting paid expenses ([10 G4](10-known-gaps-and-decisions.md#g4)).
 
 ## Net worth
 

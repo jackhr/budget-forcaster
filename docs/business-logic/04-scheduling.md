@@ -31,7 +31,7 @@ Weekly and biweekly are **averaged**, so the monthly engine never shows a "3-pay
 
 **Anchoring differs by entity:**
 - **Expenses and future expenses:** anchored to the real start month, even if it's in the past. A quarterly bill that started 5 months ago lands at months 1, 4, 7, …
-- **Income:** `startOff` is **clamped to ≥ 0**. A past start date is treated as starting *this month*, so a lump (quarterly, annual, or one-time) with a past `start_date` is re-anchored to month 0. **This is a confirmed bug:** an annual bonus dated Jan 1 will show up next February, and every February after. See [10 G5](10-known-gaps-and-decisions.md#g5).
+- **Income:** same, anchored to the real start month even when it's in the past. An annual bonus dated last January lands next January. (Before `75bbb3b` it slid to the current month; see [10 G5](10-known-gaps-and-decisions.md#g5).)
 - **Null start date:** anchored to month 0.
 
 **Past one-time items** (start before month 0) never appear.
@@ -54,8 +54,9 @@ Weekly and biweekly are **averaged**, so the monthly engine never shows a "3-pay
 `fundingRuleValue(rule, billAmount, m)`: the rule is active only when `startOff ≤ m ≤ endOff` (month-level; null start = always, null end = forever). Then:
 
 - **Fixed rule:** contributes `value` at the rule's own frequency (weekly ×52/12, quarterly every 3rd month from the rule's start, and so on).
-- **Percent rule:** contributes `billAmount × min(value, 100)/100`, gated by frequency only for quarterly, annually, and one-time. Weekly, biweekly, and semimonthly percent rules act like monthly ([10 G10](10-known-gaps-and-decisions.md#g10)).
+- **Percent rule:** contributes `billAmount × min(value, 100)/100`: a percentage of each occurrence of the bill. Its frequency only gates months (quarterly, annually, one-time). Only monthly-or-longer frequencies are offered, and the server normalizes sub-monthly percent rules to monthly ([10 G10](10-known-gaps-and-decisions.md#g10)).
 - **A one-time rule** has no end date. The UI clears it on save.
+- **Rule window** (`forecast.ts:ruleInWindow`, `monthlyBreakdown.ts:ruleCoversMonth`): `start month ≤ m ≤ end month`, where a one-time rule's window is just its start month. It ignores frequency, so a quarterly rule is "in window" during its off months and contributes 0 then. For **debts**, a month outside every rule's window uses the normal monthly payment ([05](05-funding.md#debt-payments)).
 
 Rule dates are day-precision in the UI but **month-precision in the monthly math**. A rule starting on the 25th of this month is active for all of month 0.
 
@@ -65,7 +66,7 @@ Rule dates are day-precision in the UI but **month-precision in the monthly math
 - Monthly, quarterly, and annual land on the start date's day-of-month, clamped to month length.
 - With no start date, the item is placed on `fallbackDay` (day 1, or the debt's `payment_day`) and marked **"Date not set"** (`dateSpecified: false`).
 - Debts with no funding rules get one payment on `payment_day` (or day 1).
-- Debts with funding rules get one event per rule occurrence (the rule's frequency and dates), with `payment_day` as the fallback day.
+- Debts with funding rules: in a month some rule window covers, one event per in-window rule occurrence (the rule's frequency and dates, with `payment_day` as the fallback day). In other months, the normal payment on `payment_day`.
 - **Inflation is not applied** in the day engine ([10 G1](10-known-gaps-and-decisions.md#g1)).
 
 ## Horizon and windows

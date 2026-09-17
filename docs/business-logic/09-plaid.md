@@ -6,7 +6,7 @@ Code: `server/routes/plaid.js`, `server/lib/plaid.js`, `src/components/PlaidConn
 
 **Plaid data is a cache, not the plan.** Importing *copies* values into `accounts` and `debts`, and the user can edit them freely afterwards. A resync overwrites balance-type fields. Plaid tables are never exported or included in scenarios. The whole feature is optional: without credentials, `/status` reports `configured: false` and the rest of the app works.
 
-**Intended direction** (owner-confirmed): Plaid should be the balance source (current behavior), and should also **auto-reconcile actuals**, marking bills and debt payments paid and income received from transactions. It should also back a **server-persisted** "paid this month". See [10 G4](10-known-gaps-and-decisions.md#g4).
+**Direction** (owner-confirmed): Plaid is the balance source, and **auto-reconciles actuals**. Done: debt payments ([below](#debt-payment-detection)) and twice-monthly paychecks ([below](#income-detection)). Still open: bills (expenses), and income of other frequencies ([10 G4](10-known-gaps-and-decisions.md#g4)).
 
 ## Configuration
 
@@ -23,15 +23,15 @@ Code: `server/routes/plaid.js`, `server/lib/plaid.js`, `src/components/PlaidConn
    - `depository`, `investment`, and anything else → **account**, `balance = current`. It becomes primary only if no primary exists.
    - `credit` → **debt** `credit_card`: `balance = max(0, current)`, `credit_limit = limit`.
    - `loan` → **debt** `loan`: no limit.
-   - Debt APR, minimum payment, and due day come from the cached Liabilities data when available. Otherwise APR = 0 and payment = 0.
+   - Debt APR and due day come from the cached Liabilities data when available (otherwise APR = 0). Payment = the Plaid minimum if > 0, else the last payment amount, else 0. A 0 shows "never pays off" until the user sets a payment.
    - Name = `"<Plaid name> ••<mask>"`, truncated to 60 characters.
    - **No double import:** an account is skipped if its `plaid_account_id` **or** its generated name already exists in `accounts` or `debts`.
-4. **Resync** (`POST /resync`, per item or all; manual, plus automatic after a Liabilities or reconnect update flow). Refreshes the cache, then for each cached Plaid account:
+4. **Resync** (`POST /resync`, per item or all; manual, plus automatic after a Liabilities or reconnect update flow). Refreshes the cache (waiting for any in-flight background refresh first, so it never copies a half-updated cache), then for each cached Plaid account:
    - Account rows: `balance = current`.
    - Debt rows:
      - `balance = max(0, current)`.
      - `credit_limit`, `apr`, and `payment_day` (from the next due date) are updated only when Plaid has a value.
-     - `monthly_payment` = Plaid minimum, **except when the minimum is 0 and the card has a limit**. Then the existing payment is kept, because a $0 minimum usually means a paid statement, not "stop paying" (commit `82ac06c`).
+     - `monthly_payment` = Plaid minimum **only when it's > 0**. A $0 or missing minimum keeps the existing payment, for cards and loans alike, because a $0 minimum usually means a paid statement, not "stop paying".
      - The liability cache fields are overwritten.
    - **Matching:** first by `plaid_account_id`. Otherwise by generated name, for rows with no link **or a dangling link** (commit `4ed3786`), and in that case the link is backfilled.
 5. **Unlink** (`DELETE /items/:id`): removes the item at Plaid (best effort) and deletes its cached transactions and accounts. **Imported rows are kept** with `plaid_account_id = NULL`, so a relink reattaches them by name on the next resync.
@@ -54,6 +54,16 @@ A Plaid `ITEM_ERROR` (e.g. `ITEM_LOGIN_REQUIRED`) is saved to `plaid_items.error
 - **Sign convention (Plaid):** a positive `amount` is money **out** (a purchase or charge); a negative amount is money **in** (a refund, payment, or deposit).
 - The stored `name` is the merchant name when present. `category` is Plaid's `personal_finance_category.primary` (e.g. `INCOME`), else the legacy category.
 - The Transactions tab defaults to the first credit account and "all" history. Browsing only.
+
+## Debt payment detection
+
+In `server/lib/paidDetection.js:detectDebtPayment`, run by `GET /api/paid` for every **Plaid-linked** debt without a manual override for the current month. Computed on read, never stored. The first matching rule wins:
+
+1. **Paid this month:** liabilities `last_payment_date` is in the current month.
+2. **Paid early:** `next_payment_due_date` is after this month, the due date that fell *in* this month (next due − 1 month) exists, and `last_payment_date` is within the 30 days before that due date. Example: a card due on the 2nd, paid 08-28, next due 10-02 → September's payment is covered.
+3. **Payment transaction:** a transaction on the linked account this month with `amount < 0` and category `LOAN_PAYMENTS`.
+
+A detected debt is paid for month 0 ([06](06-debt.md#paid-this-month)). The reason string (e.g. "Plaid: paid $X on DATE") shows in the paid button's tooltip. A manual override always wins, so a wrong detection is fixed by clicking the button. Liability data refreshes at most every 24h, while transactions sync on their own schedule.
 
 ## Income detection
 

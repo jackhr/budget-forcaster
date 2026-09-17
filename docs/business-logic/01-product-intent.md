@@ -34,9 +34,6 @@ These are decisions about where the app is heading. Don't contradict them; prefe
 
 - **Day-level is the source of truth.** The monthly engine averages sub-monthly items (weekly = ×52/12) and ignores specific dates. The day-level Month view uses real dates. When the two disagree, the **day-level answer is right**. The monthly averaging is an approximation to replace over time. See [10](10-known-gaps-and-decisions.md#g1).
 - **Expenses vs Future Expenses should become "ongoing vs temporary".** The split is a historical accident. The intended model is *ongoing* expenses (open-ended) vs *temporary* expenses (time-boxed, with an end date, or one-off). A refactor toward that is welcome. See [10](10-known-gaps-and-decisions.md#g2).
-- **Debt funding rules are temporary overrides.** Outside a rule's date window, a debt reverts to its normal monthly payment. *Current code does the opposite.* See [10](10-known-gaps-and-decisions.md#g3).
-- **Plaid should do more:**
-  - **Balance source.** Refresh balances, APRs, minimums, and due dates. Manual values are fine until a resync overwrites them.
-  - **Auto-reconcile actuals.** Use transactions to mark bills and debt payments paid and income received. Today only twice-monthly income detection does this.
-  - **Persist "paid this month" server-side.** It currently lives in browser localStorage. See [10](10-known-gaps-and-decisions.md#g4).
+- **Plaid should reconcile more of month 0.** Plaid is the balance source (refreshing balances, APRs, minimums, and due dates), and it already detects debt payments and twice-monthly paychecks. Still to come: auto-detecting paid **expenses**, and received income for **all** frequencies. See [10 G4](10-known-gaps-and-decisions.md#g4).
+- **Debt funding rules are temporary overrides** (settled and implemented): outside a rule's date window, a debt makes its normal monthly payment. See [10 Decisions](10-known-gaps-and-decisions.md#decisions).
 - **Credit-limit behavior is settled:** cards absorb the full charge and get flagged over limit. Don't reintroduce caps or spill-to-cash. See [10](10-known-gaps-and-decisions.md#decisions).

@@ -6,7 +6,7 @@ Every outflow answers "paid from where?". Sources are **accounts** (cash leaves)
 |---|---|---|---|
 | Card sources allowed | yes | yes | **no** (accounts only) |
 | Uncovered remainder | primary account | primary account | depends; see [Debt payments](#debt-payments) |
-| Rules change the *amount* paid | no, only routing | no, only routing | **yes**, rules set the payment |
+| Rules change the *amount* paid | no, only routing | no, only routing | **yes**, in months their date window covers |
 | Legacy fallback | none (primary) | `funding_source_type/id` | `account_id` → primary |
 | Engine | `buildExpensePlan` | `paymentFundingAtAmount`, `buildDebtCharges`, `buildScheduledOutByAccount` | `buildDebtPaymentSchedule`, `debtPaymentByAccount` |
 
@@ -41,7 +41,7 @@ Consequences:
 - Card portions become `DebtCharge { debtId, monthIndex, amount, label, kind: 'expense' | 'future' }` and feed `simulateDebtPlan`. **They are not cash out.**
 - Account portions for a known account are cash out of that account.
 - A portion pointing at a deleted account falls into the remainder (primary).
-- A card portion pointing at a deleted debt: for **expenses** it silently vanishes ([10 G7](10-known-gaps-and-decisions.md#g7)); for **future expenses** it becomes charge overflow, the header's "Invalid funding target".
+- A card portion pointing at a deleted debt becomes charge overflow, the header's "Invalid funding target". This applies to expenses and future expenses alike ([10 G7](10-known-gaps-and-decisions.md#g7)).
 - A card portion pointing at a **loan** → charge overflow (flagged, paid by nobody).
 
 ## Credit cards as funding sources
@@ -58,19 +58,20 @@ Consequences:
 ### Amount (`buildDebtPaymentSchedule`)
 
 - **No rules:** the payment is `monthly_payment`, possibly changed by the strategy ([06](06-debt.md)). Allocations and `account_id` only decide which account pays, never how much.
-- **Rules exist (current):** for every month, payment = the sum of the active rules' values.
-  - Fixed rules add `value` at their frequency.
+- **Rules are temporary overrides.** In a month that at least one rule's **date window** covers ([04](04-scheduling.md#funding-rules-when-a-rule-is-active)), payment = the sum of the in-window rules' values:
+  - Fixed rules add `value` at their frequency (0 in off months).
   - Percent rules add `monthly_payment × pct/100` (each capped at 100%; separate rules may stack past 100%).
-  - **A month with no active rule pays $0.** The debt also opts out of avalanche/snowball rollover that month.
-- **Intended (owner-confirmed):** rules are **temporary overrides**. Outside every rule's window, the debt should revert to `monthly_payment` from its default account. See [10 G3](10-known-gaps-and-decisions.md#g3). Commit `b1dbfe1` deliberately made the current "authoritative" behavior, but the owner has since clarified the intent.
+  - That month the debt pays exactly this amount and opts out of avalanche/snowball rollover.
+- **In a month no rule window covers**, the schedule entry is `null`: the debt pays `monthly_payment` like a debt without rules, and takes part in the strategy.
+- Example: $300 normal payment, plus a rule "$500/mo from Savings, Oct → Dec". Oct–Dec pay $500 from Savings; January onward pays $300 from the default account. ([10 G3](10-known-gaps-and-decisions.md#g3) has the history.)
 
 ### Routing (`debtPaymentByAccount`)
 
 Given the actual payment `P` for a month (after strategy):
 
-- **Rules exist:** fixed rules then percent rules are attributed to their accounts, each capped at what's left of `P`. **No remainder goes to primary.** (`P` never exceeds the rules' total, because rule-driven debts don't receive rollover. It can be less, when the balance is nearly paid off.)
-- **Allocations exist:** fixed then percent of `P`, and the **remainder goes to primary**.
-- **Neither:** all of `P` from `account_id` if it's a valid account, else primary.
+- **In-window rules exist this month:** fixed rules then percent rules are attributed to their accounts, each capped at what's left of `P`. **No remainder goes to primary.** (`P` never exceeds the rules' total, because rule-driven debts don't receive rollover. It can be less, when the balance is nearly paid off.)
+- **Otherwise, allocations exist:** fixed then percent of `P`, and the **remainder goes to primary**.
+- **Otherwise:** all of `P` from `account_id` if it's a valid account, else primary.
 
 Payments to unknown accounts are dropped from per-account views. Total debt outflow (`plan.outflow`) still counts them, which reduces total cash.
 
@@ -80,7 +81,7 @@ Editors store a single-source choice as **one allocation at 100%**: `[{source, p
 
 The funding modal edits **rules only**. Opening it on a legacy allocation converts the allocations into monthly rules with no dates, and saving replaces them with rules.
 
-Helper text in the modal reflects the difference: for expenses and future expenses, "any unallocated remainder is paid from the primary account". For debts, "these rules are the complete payment plan… months without an active rule make no payment". That second message should change when G3 is fixed.
+Helper text in the modal reflects the difference: for expenses and future expenses, "any unallocated remainder is paid from the primary account". For debts, rules "override the debt's monthly payment while their dates are active… Outside every rule's dates, the normal monthly payment is made from the debt's default account". Percent rules only offer monthly, quarterly, annual, and one-time frequencies.
 
 ## Invariants when changing funding code
 
