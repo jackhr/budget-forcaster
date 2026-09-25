@@ -8,7 +8,6 @@ import type {
   IncomeSource,
   NetWorthPoint,
   SavingsPoint,
-  ScheduledPayment,
 } from '../types';
 import type { DebtCharge, DebtPlan } from './debt';
 
@@ -99,25 +98,6 @@ function monthLabel(now: Date, offset: number): string {
 export function monthOffset(dueDate: string, now: Date = new Date()): number {
   const [y, m] = dueDate.split('-').map(Number);
   return (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth());
-}
-
-// Cash a scheduled payment draws in a given month, honoring its frequency and start/end window.
-function paymentCashAtMonth(p: ScheduledPayment, monthIndex: number, now: Date): number {
-  const startOff = monthOffset(p.start_date, now);
-  if (monthIndex < startOff) return 0;
-  const endOff = p.end_date ? monthOffset(p.end_date, now) : Infinity;
-  if (monthIndex > endOff) return 0;
-
-  const since = monthIndex - startOff;
-  switch (p.frequency) {
-    case 'one-time': return since === 0 ? p.amount : 0;
-    case 'weekly': return p.amount * (52 / 12);
-    case 'biweekly': return p.amount * (26 / 12);
-    case 'semimonthly': return p.amount * 2;
-    case 'monthly': return p.amount;
-    case 'quarterly': return since % 3 === 0 ? p.amount : 0;
-    case 'annually': return since % 12 === 0 ? p.amount : 0;
-  }
 }
 
 function fundingRuleValue(rule: FundingRule, amount: number, monthIndex: number, now: Date): number {
@@ -300,24 +280,10 @@ function paymentFundingFromSources(
   };
 }
 
-function paymentFundingAtAmount(p: ScheduledPayment, amount: number, monthIndex: number, now: Date): PaymentFunding {
-  return paymentFundingFromSources(amount, monthIndex, now, p.funding_rules, p.funding_allocations, () => {
-    if (p.funding_source_type === 'debt' && p.funding_source_id != null) {
-      return { cash: 0, parts: [{ source_type: 'debt', source_id: p.funding_source_id, amount }] };
-    }
-    if (p.funding_source_type === 'account' && p.funding_source_id != null) {
-      return { cash: amount, parts: [{ source_type: 'account', source_id: p.funding_source_id, amount }] };
-    }
-    return { cash: amount, parts: [] };
-  });
-}
-
 interface MonthCashflow {
   income: number;
   incomeLump: number;
   ongoing: number;
-  scheduledOut: number;
-  scheduledLabel: string;
 }
 
 // One month's actual cash movement, shared by both the forecast and savings views
@@ -325,7 +291,6 @@ interface MonthCashflow {
 function cashflowAtMonth(
   sources: IncomeSource[],
   ongoingExpense: number,
-  payments: ScheduledPayment[],
   monthIndex: number,
   now: Date,
 ): MonthCashflow {
@@ -337,52 +302,13 @@ function cashflowAtMonth(
     if (c > 0 && LUMP_FREQUENCIES.includes(s.frequency)) incomeLump += c;
   }
 
-  let scheduledOut = 0;
-  const names: string[] = [];
-  for (const p of payments) {
-    const c = paymentCashAtMonth(p, monthIndex, now);
-    const funding = c > 0 ? paymentFundingAtAmount(p, c, monthIndex, now) : null;
-    if (funding && funding.cash > 0) {
-      scheduledOut += funding.cash;
-      names.push(p.name);
-    }
-  }
-
-  return {
-    income,
-    incomeLump,
-    ongoing: ongoingExpense,
-    scheduledOut,
-    scheduledLabel: names.join(', '),
-  };
+  return { income, incomeLump, ongoing: ongoingExpense };
 }
 
 // Compound an annual inflation rate (%) to a given month.
 function inflationFactor(annualPct: number, monthIndex: number): number {
   if (!annualPct) return 1;
   return Math.pow(1 + annualPct / 100, monthIndex / 12);
-}
-
-// Charges that debt-funded future expenses add to their card over the horizon.
-export function buildDebtCharges(
-  payments: ScheduledPayment[],
-  months: number,
-  now: Date = new Date(),
-): DebtCharge[] {
-  const charges: DebtCharge[] = [];
-  for (const p of payments) {
-    for (let m = 0; m < months; m++) {
-      const c = paymentCashAtMonth(p, m, now);
-      if (c <= 0) continue;
-      const funding = paymentFundingAtAmount(p, c, m, now);
-      for (const part of funding.parts) {
-        if (part.source_type === 'debt' && part.source_id != null && part.amount > 0) {
-          charges.push({ debtId: part.source_id, monthIndex: m, amount: round2(part.amount), label: p.name, kind: 'future' });
-        }
-      }
-    }
-  }
-  return charges;
 }
 
 export interface ExpensePlan {
@@ -442,14 +368,13 @@ export function buildExpensePlan(
 export function buildForecast(
   sources: IncomeSource[],
   ongoingCashOut: number[],
-  payments: ScheduledPayment[],
   debtOutflow: number[],
   months: number,
   now: Date = new Date(),
 ): ForecastPoint[] {
   return Array.from({ length: months }, (_, i) => {
-    const cf = cashflowAtMonth(sources, ongoingCashOut[i] ?? 0, payments, i, now);
-    const expensesTotal = cf.ongoing + cf.scheduledOut + (debtOutflow[i] ?? 0);
+    const cf = cashflowAtMonth(sources, ongoingCashOut[i] ?? 0, i, now);
+    const expensesTotal = cf.ongoing + (debtOutflow[i] ?? 0);
     return {
       month: i + 1,
       label: monthLabel(now, i),
@@ -463,7 +388,6 @@ export function buildForecast(
 export function buildSavings(
   sources: IncomeSource[],
   ongoingCashOut: number[],
-  payments: ScheduledPayment[],
   debtOutflow: number[],
   months: number,
   startingBalance: number,
@@ -471,9 +395,9 @@ export function buildSavings(
 ): SavingsPoint[] {
   let balance = startingBalance;
   return Array.from({ length: months }, (_, i) => {
-    const cf = cashflowAtMonth(sources, ongoingCashOut[i] ?? 0, payments, i, now);
+    const cf = cashflowAtMonth(sources, ongoingCashOut[i] ?? 0, i, now);
     const debtOut = debtOutflow[i] ?? 0;
-    const net = cf.income - cf.ongoing - cf.scheduledOut - debtOut;
+    const net = cf.income - cf.ongoing - debtOut;
     balance += net;
     return {
       month: i + 1,
@@ -481,8 +405,6 @@ export function buildSavings(
       income: round2(cf.income),
       incomeLump: round2(cf.incomeLump),
       expenses: round2(cf.ongoing),
-      scheduledOut: round2(cf.scheduledOut),
-      scheduledLabel: cf.scheduledLabel,
       debtOut: round2(debtOut),
       net: round2(net),
       balance: round2(balance),
@@ -519,50 +441,9 @@ export function buildExpenseBreakdown(expenses: Expense[], months: number, infla
   return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
 }
 
-// Per-future-expense amount over the horizon, honoring frequency + window (+ total).
-export function buildFutureExpenseBreakdown(payments: ScheduledPayment[], months: number, now: Date = new Date()): Breakdown {
-  const series = payments.map((p) => ({
-    id: p.id, name: p.name,
-    values: Array.from({ length: months }, (_, i) => round2(paymentCashAtMonth(p, i, now))),
-  }));
-  return { labels: labelsFor(months, now), total: totalsOf(series, months), series };
-}
-
 // Per-account balance over time. Income lands in its assigned account (or the primary
 // account when unassigned); the primary account bears all general outflows.
 // The series sum equals the savings balance, so `total` mirrors the Savings chart.
-// Per-account cash outflow from future expenses (account-funded -> that account;
-// debt-funded skipped; legacy cash/income -> primary account).
-export function buildScheduledOutByAccount(
-  payments: ScheduledPayment[],
-  accounts: Account[],
-  months: number,
-  now: Date = new Date(),
-): Map<number, number[]> {
-  const primaryId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
-  const accountIds = new Set(accounts.map((a) => a.id));
-  const map = new Map<number, number[]>(accounts.map((a) => [a.id, new Array(months).fill(0)]));
-  for (const p of payments) {
-    for (let m = 0; m < months; m++) {
-      const c = paymentCashAtMonth(p, m, now);
-      if (c <= 0) continue;
-      const funding = paymentFundingAtAmount(p, c, m, now);
-      let allocatedCash = 0;
-      for (const part of funding.parts) {
-        if (part.source_type !== 'account' || part.source_id == null || !accountIds.has(part.source_id)) continue;
-        map.get(part.source_id)![m] += part.amount;
-        allocatedCash += part.amount;
-      }
-      const remainder = funding.cash - allocatedCash;
-      if (remainder > 0.005 && primaryId != null) {
-        map.get(primaryId)![m] += remainder;
-      }
-    }
-  }
-  for (const arr of map.values()) for (let m = 0; m < months; m++) arr[m] = round2(arr[m]);
-  return map;
-}
-
 // Per-account cash outflow from debt payments (each debt paid from its account; null -> primary).
 export function buildDebtOutByAccount(
   debts: Debt[],
@@ -595,7 +476,6 @@ export function buildAccountSeries(
   sources: IncomeSource[],
   savings: SavingsPoint[],
   expenseOutByAccount: Map<number, number[]>,
-  scheduledOutByAccount: Map<number, number[]>,
   debtOutByAccount: Map<number, number[]>,
   now: Date = new Date(),
 ): Breakdown {
@@ -606,13 +486,12 @@ export function buildAccountSeries(
     const mine = sources.filter((s) =>
       s.account_id === acct.id || (s.account_id == null && acct.id === primaryId));
     const expenseOut = expenseOutByAccount.get(acct.id);
-    const scheduledOut = scheduledOutByAccount.get(acct.id);
     const debtOut = debtOutByAccount.get(acct.id);
     let bal = acct.balance;
     const values = Array.from({ length: months }, (_, i) => {
       const inflow = mine.reduce((sum, s) => sum + incomeCashAtMonth(s, i, now), 0);
-      // Each account bears its allocated expense, future-expense, and debt-payment cash.
-      const outflow = (expenseOut?.[i] ?? 0) + (scheduledOut?.[i] ?? 0) + (debtOut?.[i] ?? 0);
+      // Each account bears its allocated expense and debt-payment cash.
+      const outflow = (expenseOut?.[i] ?? 0) + (debtOut?.[i] ?? 0);
       bal += inflow - outflow;
       return round2(bal);
     });
@@ -640,7 +519,7 @@ export function buildNetWorth(savings: SavingsPoint[], debtRemaining: number[]):
 export interface AccountActivityItem {
   key: string;
   name: string;
-  kind: 'income' | 'expense' | 'future' | 'debt' | 'interest';
+  kind: 'income' | 'expense' | 'debt' | 'interest';
   direction: 'in' | 'out';
   frequency: Frequency;
   detail: string;
@@ -718,7 +597,6 @@ export function buildAccountActivity(
   accounts: Account[],
   sources: IncomeSource[],
   expenses: Expense[],
-  payments: ScheduledPayment[],
   debts: Debt[],
   plan: DebtPlan,
   months: number,
@@ -781,23 +659,6 @@ export function buildAccountActivity(
     finalize(`exp${e.id}`, e.name, 'expense', 'out', e.frequency,
       fundingDetailForAccount(e.funding_allocations, e.funding_rules, accountId, isPrimary),
       e.start_date, e.end_date, series, paid);
-  }
-
-  for (const p of payments) {
-    const series = Array.from({ length: months }, (_, m) => {
-      const c = paymentCashAtMonth(p, m, now);
-      if (c <= 0) return 0;
-      return accountPortionOfFunding(paymentFundingAtAmount(p, c, m, now), accountId, isPrimary);
-    });
-    let detail: string;
-    if ((p.funding_rules?.length) || (p.funding_allocations?.length)) {
-      detail = fundingDetailForAccount(p.funding_allocations, p.funding_rules, accountId, isPrimary);
-    } else if (p.funding_source_type === 'account' && p.funding_source_id === accountId) {
-      detail = 'Paid from here';
-    } else {
-      detail = isPrimary ? 'Paid from here (default)' : 'Funded';
-    }
-    finalize(`fut${p.id}`, p.name, 'future', 'out', p.frequency, detail, p.start_date, p.end_date, series);
   }
 
   for (const d of debts) {
@@ -864,19 +725,19 @@ export function buildDebtActivity(
     });
   };
 
-  // Charges grouped by source obligation (an expense or future expense billed here).
-  const bySource = new Map<string, { name: string; kind: 'expense' | 'future'; series: number[] }>();
+  // Charges grouped by the expense that billed them here.
+  const bySource = new Map<string, { name: string; series: number[] }>();
   for (const c of charges) {
     if (c.debtId !== debt.id || c.monthIndex < 0 || c.monthIndex >= months) continue;
-    const key = `${c.kind ?? 'future'}:${c.label ?? 'Charge'}`;
+    const key = c.label ?? 'Charge';
     let entry = bySource.get(key);
-    if (!entry) { entry = { name: c.label ?? 'Charge', kind: (c.kind ?? 'future'), series: new Array(months).fill(0) }; bySource.set(key, entry); }
+    if (!entry) { entry = { name: key, series: new Array(months).fill(0) }; bySource.set(key, entry); }
     entry.series[c.monthIndex] += c.amount;
   }
   for (const [key, src] of bySource) {
     const occ = src.series.filter((v) => v > 0.005).length;
     const freq: Frequency = occ <= 1 ? 'one-time' : 'monthly';
-    push(`chg${key}`, src.name, src.kind, 'in', freq, src.kind === 'expense' ? 'Expense charged here' : 'Future expense charged here', src.series.map(round2));
+    push(`chg${key}`, src.name, 'expense', 'in', freq, 'Expense charged here', src.series.map(round2));
   }
 
   const interest = plan.interestByDebt.get(debt.id);
@@ -912,9 +773,7 @@ export function buildAccountSavings(
   accountId: number,
   accounts: Account[],
   sources: IncomeSource[],
-  payments: ScheduledPayment[],
   expenseOutByAccount: Map<number, number[]>,
-  scheduledOutByAccount: Map<number, number[]>,
   debtOutByAccount: Map<number, number[]>,
   months: number,
   now: Date = new Date(),
@@ -924,7 +783,6 @@ export function buildAccountSavings(
   const isPrimary = accountId === primaryId;
   const mine = sources.filter((s) => s.account_id === accountId || (s.account_id == null && isPrimary));
   const expOut = expenseOutByAccount.get(accountId) ?? [];
-  const schOut = scheduledOutByAccount.get(accountId) ?? [];
   const debtOut = debtOutByAccount.get(accountId) ?? [];
   let bal = account?.balance ?? 0;
   return Array.from({ length: months }, (_, i) => {
@@ -935,21 +793,14 @@ export function buildAccountSavings(
       income += c;
       if (c > 0 && LUMP_FREQUENCIES.includes(s.frequency)) incomeLump += c;
     }
-    const names: string[] = [];
-    for (const p of payments) {
-      const c = paymentCashAtMonth(p, i, now);
-      if (c <= 0) continue;
-      if (accountPortionOfFunding(paymentFundingAtAmount(p, c, i, now), accountId, isPrimary) > 0.005) names.push(p.name);
-    }
     const expenses = expOut[i] ?? 0;
-    const scheduledOut = schOut[i] ?? 0;
     const dOut = debtOut[i] ?? 0;
-    const net = income - expenses - scheduledOut - dOut;
+    const net = income - expenses - dOut;
     bal += net;
     return {
       month: i + 1, label: monthLabel(now, i),
       income: round2(income), incomeLump: round2(incomeLump),
-      expenses: round2(expenses), scheduledOut: round2(scheduledOut), scheduledLabel: names.join(', '),
+      expenses: round2(expenses),
       debtOut: round2(dOut), net: round2(net), balance: round2(bal),
     };
   });

@@ -15,8 +15,7 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 - **At least one account must exist.** Deleting the last account returns 400.
 - **Delete re-routes, never cascades:**
   - Income assigned to the account → `account_id = NULL` (primary).
-  - Future expenses whose legacy source is this account → `funding_source_type = 'cash'` (primary).
-  - The account is removed from every expense, future expense, and debt `funding_allocations`/`funding_rules`. Their remainders then fall to primary (or, for debts, see [05](05-funding.md#debt-payments)).
+  - The account is removed from every expense and debt `funding_allocations`/`funding_rules`. Their remainders then fall to primary (or, for debts, see [05](05-funding.md#debt-payments)).
   - Debts with this `account_id` → `NULL` (primary).
 - Negative balances are allowed (overdraft).
 - Reorderable. Not groupable.
@@ -24,7 +23,7 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 ## Income source (`income_sources`)
 
 - `monthly_amount` = **amount per payment**, not per month. A $2,000 biweekly paycheck is stored as 2000.
-- `frequency`: `weekly | biweekly | semimonthly | monthly | quarterly | annually | one-time`. `semimonthly` is income-only in the UI. Expenses and future expenses don't offer it, though the math tolerates it.
+- `frequency`: `weekly | biweekly | semimonthly | monthly | quarterly | annually | one-time`. `semimonthly` is income-only in the UI. Expenses don't offer it, though the math tolerates it.
 - `start_date` is optional. Null means "active now" and anchors the cycle to the current month. See [04](04-scheduling.md) for how lumps are anchored (and a confirmed bug).
 - `account_id`: where the money lands. Null means primary.
 - `payday_1` / `payday_2`: only for `semimonthly`. Defaults are 15 and 31, and **31 means the last day of the month**. The server nulls them for other frequencies.
@@ -39,20 +38,11 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 
 - `monthly_amount` = **amount per occurrence** at `frequency`.
 - `start_date` is **required** on create and update. It is the first occurrence and anchors the cycle. Old rows got `date('now')` via migration.
-- `end_date` is **always forced to NULL** on write (the migration also nulls existing values). Expenses are ongoing by definition. Time-boxed costs belong in future expenses (for now; see [10 G2](10-known-gaps-and-decisions.md#g2)).
+- `end_date` is **always forced to NULL** on write (the migration also nulls existing values). Expenses are ongoing by definition. A one-off cost is a `one-time` expense with a future `start_date`; a *time-boxed recurring* cost can't be expressed yet (see [10 G2](10-known-gaps-and-decisions.md#g2)).
 - Funding: `funding_allocations` / `funding_rules`, with account or card sources. See [05](05-funding.md).
 - **Inflation applies**: the amount compounds by `app_settings.inflation_rate`.
 - Can be marked **paid this month** (manually; stored in `paid_status`), which skips month 0.
 - Reorderable and groupable (`kind = 'expense'`).
-
-## Future expense (`scheduled_payments`): *temporary* costs
-
-- `amount` = per occurrence. `frequency` defaults to `one-time`.
-- `start_date` is required. `end_date` is optional and inclusive (null = runs for the whole horizon). One-time ignores `end_date`.
-- **No inflation.** Not reorderable (listed by `start_date`). Not groupable.
-- Funding precedence: `funding_rules` → `funding_allocations` → legacy `funding_source_type/id`.
-  - `funding_source_type` is `cash | income | debt | account`. `cash` and `income` both mean primary. The editors still write the legacy fields, mirroring the first allocation, for compatibility.
-- Deleting an income source or debt resets matching legacy sources to `cash`.
 
 ## Debt (`debts`)
 
@@ -67,7 +57,7 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 - Who pays: `funding_rules` → `funding_allocations` → `account_id` → primary. **Debts can only be paid from accounts, never from another card** (`allowDebt: false` on write). See [05](05-funding.md#debt-payments).
 - Plaid liability cache fields (`last_statement_balance`, `next_payment_due_date`, `last_payment_*`, `is_overdue`, `plaid_aprs`) are informational, filled by import and resync.
 - **Paid this month:** see [Paid status](#paid-status-paid_status). Plaid-linked debts can be detected as paid.
-- **Delete:** removed from every expense and future expense allocation and rule. Its `paid_status` rows are deleted. Legacy future-expense sources pointing at it are reset to `cash`. So a bill that was charged to that card **becomes a cash bill from primary**.
+- **Delete:** removed from every expense allocation and rule. Its `paid_status` rows are deleted. So a bill that was charged to that card **becomes a cash bill from primary**.
 - Reorderable and groupable (`kind = 'debt'`).
 
 ## Paid status (`paid_status`)
@@ -96,13 +86,13 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 
 ## Scenario (`scenarios`)
 
-- A full JSON snapshot of `server/lib/data.js:TABLES`: `accounts, line_item_groups, income_sources, income_occurrences, expenses, scheduled_payments, debts, app_settings, paid_status`.
+- A full JSON snapshot of `server/lib/data.js:TABLES`: `accounts, line_item_groups, income_sources, income_occurrences, expenses, debts, app_settings, paid_status`.
 - **Not included:** the Plaid cache tables and other scenarios.
 - **Compare** re-runs a simplified pipeline over the snapshot (no paid-this-month, no occurrences) and overlays net, savings, and net worth.
 - **Restore** is destructive: it deletes those tables and re-inserts the snapshot with the same ids. Export/Import use the same code. A table **missing from the snapshot** (older backups) keeps its current rows, minus rows whose parent no longer exists ([10 G8](10-known-gaps-and-decisions.md#g8)).
 
 ## Warnings the header computes
 
-- **Possible double-counting:** the same name (trimmed, case-insensitive) appears more than once across expenses, future expenses, and debts. Typical mistake: entering a card payment as an expense *and* tracking the card as a debt. Dismissable per session.
+- **Possible double-counting:** the same name (trimmed, case-insensitive) appears more than once across expenses and debts. Typical mistake: entering a card payment as an expense *and* tracking the card as a debt. Dismissable per session.
 - **Invalid funding target:** `plan.chargeOverflow > 0` in any month, meaning something is charged to a loan or a missing debt.
 - **Load error:** the API is unreachable.

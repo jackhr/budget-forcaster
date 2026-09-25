@@ -10,14 +10,13 @@
 | **Occurrence** (income) | One scheduled payday of a twice-monthly income, which can be overridden: moved to another day in the same month, marked received, or skipped. | `income_occurrences` |
 | **Detected** | Inferred from Plaid at read time, never stored. A twice-monthly payday matched to a deposit, or a debt payment found in liability data or transactions. | `server/routes/income.js:serialize`, `server/lib/paidDetection.js` |
 | **Expense** | An ongoing recurring cost. `monthly_amount` is **per occurrence**. Inflation applies. | `expenses` |
-| **Future expense** / **scheduled payment** | A cost with a start date and optional end date, one-off or recurring. Same thing, two names: the UI says "Future Expenses", the DB says `scheduled_payments`. No inflation. | `scheduled_payments` |
 | **Debt** | A credit card or loan with a balance, APR, and monthly payment. | `debts` |
 | **Credit card** (`credit_card`) | Revolving debt. **Can be charged**, meaning it can fund expenses. May have a `credit_limit`. | `debts.debt_type` |
 | **Loan** (`loan`) | Installment debt. **Cannot be charged.** Has no credit limit. | `debts.debt_type` |
-| **Funding / "Paid from"** | Which accounts and/or cards pay for an expense, future expense, or debt payment. | [05](05-funding.md) |
+| **Funding / "Paid from"** | Which accounts and/or cards pay for an expense or debt payment. | [05](05-funding.md) |
 | **Allocation** | A simple split: `{source, percent or fixed, value}`, with no dates. | `funding_allocations` |
 | **Funding rule** | An allocation plus `frequency`, `start_date`, and `end_date`. If any rules exist, they replace the allocations. On a debt, rules override the payment only in months their date window covers. | `funding_rules` |
-| **Remainder** | The part of a bill no allocation or rule covered. For expenses and future expenses it's paid from the primary account. | [05](05-funding.md) |
+| **Remainder** | The part of a bill no allocation or rule covered. For expenses it's paid from the primary account. | [05](05-funding.md) |
 | **Charge** | The card-funded portion of a bill. It adds to the card's balance instead of leaving cash, and is repaid through the debt payment. | `debt.ts:DebtCharge` |
 | **Charge overflow** / **Invalid funding target** | A charge aimed at a loan or a missing debt. Not paid by anyone, only flagged in the header. | `DebtPlan.chargeOverflow` |
 | **Over limit** | A card's month-end balance exceeds its credit limit. Allowed, and flagged. | `DebtPlan.overLimitByDebt` |

@@ -8,7 +8,6 @@ const TABLES = [
   'income_sources',
   'income_occurrences',
   'expenses',
-  'scheduled_payments',
   'debts',
   'app_settings',
   'paid_status',

@@ -1,4 +1,4 @@
-import type { Account, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, PaidStatus, ScheduledPayment } from '../types';
+import type { Account, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, PaidStatus } from '../types';
 
 const BASE = '/api';
 
@@ -17,7 +17,6 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 
 type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at' | 'occurrences'>;
 type ExpenseInput = Omit<Expense, 'id' | 'created_at' | 'updated_at'>;
-type ScheduledInput = Omit<ScheduledPayment, 'id' | 'created_at' | 'updated_at'>;
 
 const reorder = (resource: string, ids: number[]) =>
   req<{ ok: boolean }>(`/${resource}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) });
@@ -44,15 +43,6 @@ export const expensesApi = {
     req<Expense>(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => req<void>(`/expenses/${id}`, { method: 'DELETE' }),
   reorder: (ids: number[]) => reorder('expenses', ids),
-};
-
-export const scheduledApi = {
-  getAll: () => req<ScheduledPayment[]>('/scheduled'),
-  create: (data: ScheduledInput) =>
-    req<ScheduledPayment>('/scheduled', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: number, data: Partial<ScheduledInput>) =>
-    req<ScheduledPayment>(`/scheduled/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  delete: (id: number) => req<void>(`/scheduled/${id}`, { method: 'DELETE' }),
 };
 
 export const groupsApi = {

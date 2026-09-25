@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
+import type { Account, Debt, Expense, IncomeSource } from '../types';
 import { buildMonthBreakdown } from './monthlyBreakdown';
 
 const NOW = new Date(2026, 5, 12);
@@ -24,7 +24,7 @@ describe('buildMonthBreakdown', () => {
       created_at: '', updated_at: '',
     }];
 
-    const result = buildMonthBreakdown(income, [], [], [], [{ ...accounts[0], balance: 2100 }], 0, NOW);
+    const result = buildMonthBreakdown(income, [], [], [{ ...accounts[0], balance: 2100 }], 0, NOW);
 
     expect(result.events.map((event) => [event.day, event.paid])).toEqual([[12, true], [30, false]]);
     expect(result.totalIn).toBe(4100);
@@ -39,7 +39,7 @@ describe('buildMonthBreakdown', () => {
       start_date: null, group_id: null, account_id: 1, occurrences: [], created_at: '', updated_at: '',
     }];
 
-    const result = buildMonthBreakdown(income, [], [], [], accounts, 2, NOW); // August 2026; Aug 15 is Saturday
+    const result = buildMonthBreakdown(income, [], [], accounts, 2, NOW); // August 2026; Aug 15 is Saturday
 
     expect(result.events.map((event) => event.day)).toEqual([14, 31]);
   });
@@ -50,12 +50,10 @@ describe('buildMonthBreakdown', () => {
     ];
     const expenses: Expense[] = [
       { id: 1, name: 'Rent', monthly_amount: 1200, frequency: 'monthly', start_date: '2026-01-03', end_date: null, group_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
-    ];
-    const future: ScheduledPayment[] = [
-      { id: 1, name: 'Trip', amount: 300, frequency: 'one-time', start_date: '2026-06-18', end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
+      { id: 2, name: 'Trip', monthly_amount: 300, frequency: 'one-time', start_date: '2026-06-18', end_date: null, group_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' },
     ];
 
-    const result = buildMonthBreakdown(income, expenses, future, [debt()], accounts, 0, NOW);
+    const result = buildMonthBreakdown(income, expenses, [debt()], accounts, 0, NOW);
 
     expect(result.events.map((event) => [event.name, event.day])).toEqual([
       ['Rent', 3], ['Paycheck', 5], ['Trip', 18], ['Paycheck', 19], ['Card', 20],
@@ -74,7 +72,7 @@ describe('buildMonthBreakdown', () => {
       ],
     });
 
-    const result = buildMonthBreakdown([], [], [], [planned], accounts, 0, NOW);
+    const result = buildMonthBreakdown([], [], [planned], accounts, 0, NOW);
 
     expect(result.events.map((event) => [event.day, event.amount, event.detail])).toEqual([
       [10, 75, 'from Checking'],
@@ -91,7 +89,7 @@ describe('buildMonthBreakdown', () => {
       ],
     });
 
-    const result = buildMonthBreakdown([], [], [], [planned], accounts, 0, NOW);
+    const result = buildMonthBreakdown([], [], [planned], accounts, 0, NOW);
 
     expect(result.events.map((event) => [event.day, event.amount, event.detail])).toEqual([[9, 100, 'from Checking']]);
   });
@@ -102,7 +100,7 @@ describe('buildMonthBreakdown', () => {
       id: 1, name: 'Rent', monthly_amount: 300, frequency: 'monthly', start_date: '2026-06-20', end_date: null,
       group_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
     };
-    const result = buildMonthBreakdown([], [bill], [], [], poor, 0, NOW);
+    const result = buildMonthBreakdown([], [bill], [], poor, 0, NOW);
     const checking = result.liquidity.find((series) => series.key === 'account:1')!;
     expect(checking.values[19]).toBe(-250);
   });
@@ -113,7 +111,7 @@ describe('buildMonthBreakdown', () => {
       group_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
     };
 
-    const result = buildMonthBreakdown([], [expense], [], [], accounts, 0, NOW, undefined, new Set([4]));
+    const result = buildMonthBreakdown([], [expense], [], accounts, 0, NOW, undefined, new Set([4]));
 
     expect(result.events[0]).toMatchObject({ day: 1, dateSpecified: false, paid: true });
     expect(result.daily[0].events[0]).toMatchObject({ name: 'Legacy bill', paid: true });
@@ -142,7 +140,7 @@ describe('buildMonthBreakdown', () => {
       },
     ];
 
-    const result = buildMonthBreakdown(income, expenses, [], [card], cashAccounts, 0, NOW);
+    const result = buildMonthBreakdown(income, expenses, [card], cashAccounts, 0, NOW);
     const total = result.liquidity.find((series) => series.key === 'total')!;
     const allCash = result.liquidity.find((series) => series.key === 'accounts')!;
     const checking = result.liquidity.find((series) => series.key === 'account:1')!;

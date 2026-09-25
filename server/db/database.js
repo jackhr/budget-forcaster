@@ -26,17 +26,6 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS scheduled_payments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    amount REAL NOT NULL,
-    frequency TEXT NOT NULL DEFAULT 'one-time',
-    start_date TEXT NOT NULL,
-    end_date TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
   CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -290,44 +279,10 @@ db.exec(`
   )
 `);
 
-// --- Migration: scheduled_payments from one-off (due_date) to recurring (frequency/start_date/end_date) ---
-const schedCols = db.prepare('PRAGMA table_info(scheduled_payments)').all();
-const hasStartDate = schedCols.some((c) => c.name === 'start_date');
-if (!hasStartDate) {
-  if (!schedCols.some((c) => c.name === 'frequency')) {
-    db.exec("ALTER TABLE scheduled_payments ADD COLUMN frequency TEXT NOT NULL DEFAULT 'one-time'");
-  }
-  db.exec('ALTER TABLE scheduled_payments ADD COLUMN start_date TEXT');
-  db.exec('ALTER TABLE scheduled_payments ADD COLUMN end_date TEXT');
-  if (schedCols.some((c) => c.name === 'due_date')) {
-    db.exec('UPDATE scheduled_payments SET start_date = due_date WHERE start_date IS NULL');
-    db.exec('ALTER TABLE scheduled_payments DROP COLUMN due_date');
-  }
-}
-
-// --- Migration: funding source (what a future expense is paid from) ---
-const schedFundingCols = db.prepare('PRAGMA table_info(scheduled_payments)').all();
-if (!schedFundingCols.some((c) => c.name === 'funding_source_type')) {
-  db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_source_type TEXT NOT NULL DEFAULT 'cash'");
-  db.exec('ALTER TABLE scheduled_payments ADD COLUMN funding_source_id INTEGER');
-}
-if (!schedFundingCols.some((c) => c.name === 'funding_allocations')) {
-  db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_allocations TEXT NOT NULL DEFAULT '[]'");
-}
-if (!schedFundingCols.some((c) => c.name === 'funding_rules')) {
-  db.exec("ALTER TABLE scheduled_payments ADD COLUMN funding_rules TEXT NOT NULL DEFAULT '[]'");
-}
+// --- Migration: drop the retired "Future Expenses" table ---
+db.exec('DROP TABLE IF EXISTS scheduled_payments');
 
 // --- Seed example data on first run ---
-function relativeMonth(offset) {
-  const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + offset);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}-01`;
-}
-
 const incomeCount = db.prepare('SELECT COUNT(*) as count FROM income_sources').get();
 if (incomeCount.count === 0) {
   const insertIncome = db.prepare(
@@ -359,20 +314,6 @@ if (expenseCount.count === 0) {
   );
   insertGrouped.run('Amex', 450, groupId);
   insertGrouped.run('Visa', 300, groupId);
-}
-
-const scheduledCount = db.prepare('SELECT COUNT(*) as count FROM scheduled_payments').get();
-if (scheduledCount.count === 0) {
-  const insertScheduled = db.prepare(
-    'INSERT INTO scheduled_payments (name, amount, frequency, start_date, end_date) VALUES (?, ?, ?, ?, ?)'
-  );
-  // One-off future expenses
-  insertScheduled.run('Summer Vacation', 4000, 'one-time', relativeMonth(6), null);
-  insertScheduled.run('New Car Down Payment', 8000, 'one-time', relativeMonth(18), null);
-  // Recurring known commitments
-  insertScheduled.run('Credit Card Payment', 350, 'monthly', relativeMonth(0), relativeMonth(24));
-  insertScheduled.run('Car Loan', 420, 'monthly', relativeMonth(1), relativeMonth(48));
-  insertScheduled.run('Insurance Premium', 600, 'annually', relativeMonth(3), null);
 }
 
 const startingBalance = db.prepare("SELECT value FROM app_settings WHERE key = 'starting_balance'").get();

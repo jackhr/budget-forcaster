@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import type { Account, Debt, Expense, GroupKind, IncomeSource, ItemFormData, LineItemGroup, PaidStatus, ScheduledPayment } from './types';
+import type { Account, Debt, Expense, GroupKind, IncomeSource, ItemFormData, LineItemGroup, PaidStatus } from './types';
 import {
-  accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, paidApi, scenariosApi, scheduledApi, settingsApi,
+  accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, paidApi, scenariosApi, settingsApi,
   type Scenario,
 } from './api/client';
-import { buildForecast, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
+import { buildForecast, buildSavings, buildNetWorth, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
 import { buildMonthBreakdown } from './lib/monthlyBreakdown';
 import { simulateDebtPlan, debtPaidDefault, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
@@ -12,7 +12,6 @@ import { useToast } from './components/Toast';
 import SummaryCards from './components/SummaryCards';
 import LineItemTable from './components/LineItemTable';
 import SavingsSummary from './components/SavingsSummary';
-import ScheduledPayments, { fundingLabel } from './components/ScheduledPayments';
 import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import PlaidConnect from './components/PlaidConnect';
@@ -44,7 +43,7 @@ const TABS: [Tab, string][] = [
   ['outflows', 'Outflows'],
   ['transactions', 'Transactions'],
 ];
-type BreakdownSection = 'account' | 'income' | 'expense' | 'future' | 'debt';
+type BreakdownSection = 'account' | 'income' | 'expense' | 'debt';
 type BreakdownMode = 'range' | 'month';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
@@ -55,7 +54,6 @@ function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
 interface Snapshot {
   income_sources?: IncomeSource[];
   expenses?: Expense[];
-  scheduled_payments?: ScheduledPayment[];
   debts?: Debt[];
   accounts?: Account[];
   app_settings?: { key: string; value: string }[];
@@ -73,15 +71,13 @@ function scenarioSeries(snap: Snapshot, months: number) {
   const strat = (s.debt_strategy as DebtStrategy) ?? 'none';
   const inc = snap.income_sources ?? [];
   const exp = snap.expenses ?? [];
-  const pay = snap.scheduled_payments ?? [];
   const debts = snap.debts ?? [];
   const accts = snap.accounts ?? [];
   const ep = buildExpensePlan(exp, accts, months, infl);
-  const charges = [...buildDebtCharges(pay, months), ...ep.charges];
-  const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, charges, buildDebtPaymentSchedule(debts, months));
+  const plan = simulateDebtPlan(debts, strat === 'none' ? 0 : extra, strat, months, ep.charges, buildDebtPaymentSchedule(debts, months));
   const cashOut = plan.outflow.map((v) => Math.round(v * 100) / 100);
-  const fc = buildForecast(inc, ep.ongoingCashOut, pay, cashOut, months);
-  const sv = buildSavings(inc, ep.ongoingCashOut, pay, cashOut, months, start);
+  const fc = buildForecast(inc, ep.ongoingCashOut, cashOut, months);
+  const sv = buildSavings(inc, ep.ongoingCashOut, cashOut, months, start);
   const nw = buildNetWorth(sv, plan.remaining);
   return { forecast: fc.map((p) => p.net), savings: sv.map((p) => p.balance), networth: nw.map((p) => p.netWorth) };
 }
@@ -115,7 +111,6 @@ export default function App() {
   const toast = useToast();
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [payments, setPayments] = useState<ScheduledPayment[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [groups, setGroups] = useState<LineItemGroup[]>([]);
@@ -129,7 +124,6 @@ export default function App() {
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'forecast');
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
-  const [breakdownIncludeFuture, setBreakdownIncludeFuture] = useState(() => localStorage.getItem('bf.breakdownFuture') !== '0');
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>(() => (localStorage.getItem('bf.breakdownMode') as BreakdownMode) || 'range');
   const [breakdownMonth, setBreakdownMonth] = useState(() => Number(localStorage.getItem('bf.breakdownMonth')) || 0);
   const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
@@ -146,7 +140,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('bf.startMonth', String(startMonth)); }, [startMonth]);
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
-  useEffect(() => { localStorage.setItem('bf.breakdownFuture', breakdownIncludeFuture ? '1' : '0'); }, [breakdownIncludeFuture]);
   useEffect(() => { localStorage.setItem('bf.breakdownMode', breakdownMode); }, [breakdownMode]);
   useEffect(() => { localStorage.setItem('bf.breakdownMonth', String(breakdownMonth)); }, [breakdownMonth]);
   useEffect(() => { localStorage.setItem('bf.activityMonth', String(activityMonth)); }, [activityMonth]);
@@ -157,12 +150,12 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [inc, exp, sched, dbts, accts, grps, scen, settings, paid] = await Promise.all([
-        incomeApi.getAll(), expensesApi.getAll(), scheduledApi.getAll(),
+      const [inc, exp, dbts, accts, grps, scen, settings, paid] = await Promise.all([
+        incomeApi.getAll(), expensesApi.getAll(),
         debtsApi.getAll(), accountsApi.getAll(), groupsApi.getAll(), scenariosApi.getAll(), settingsApi.getAll(),
         paidApi.get(),
       ]);
-      setIncomeSources(inc); setExpenses(exp); setPayments(sched); setDebts(dbts);
+      setIncomeSources(inc); setExpenses(exp); setDebts(dbts);
       setAccounts(accts); setGroups(grps); setScenarios(scen);
       setPaidStatus(await migrateLocalPaidFlags(paid));
       setInflation(parseFloat(settings.inflation_rate ?? '0') || 0);
@@ -201,8 +194,8 @@ export default function App() {
   }, 'Could not update paid status');
   const expensesPaidThisMonth = new Set(expenses.filter(isExpensePaidThisMonth).map((e) => e.id));
   const expensePlan = buildExpensePlan(expenses, accounts, months, inflation, new Date(), expensesPaidThisMonth);
-  // Future expenses charged to a card + expense card-portions both bill the debt over time.
-  const debtCharges = [...buildDebtCharges(payments, months), ...expensePlan.charges];
+  // Expense card-portions bill the debt over time.
+  const debtCharges = expensePlan.charges;
   // Any active debt funding-plan amount overrides its monthly payment per month.
   const debtPayments = buildDebtPaymentSchedule(debts, months);
   // "Paid this month": manual override, then Plaid detection (both from the server), else the autopay-day default.
@@ -222,8 +215,8 @@ export default function App() {
   // Cash out for debts = the actual payments. Charges aimed at a loan/unknown
   // target are not paid from cash; valid cards accept charges even over limit.
   const debtCashOut = plan.outflow.map((v) => Math.round(v * 100) / 100);
-  const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months);
-  const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, payments, debtCashOut, months, totalCash);
+  const forecast = buildForecast(incomeSources, expensePlan.ongoingCashOut, debtCashOut, months);
+  const savings = buildSavings(incomeSources, expensePlan.ongoingCashOut, debtCashOut, months, totalCash);
   const netWorth = buildNetWorth(savings, plan.remaining);
 
   // Payoff markers (one debt name per month it clears).
@@ -240,41 +233,15 @@ export default function App() {
 
   // Shared per-account outflow maps (used by Savings switcher, Account tab, Breakdown).
   const primaryAccountId = (accounts.find((a) => a.is_primary) ?? accounts[0])?.id ?? null;
-  const scheduledOutByAccount = buildScheduledOutByAccount(payments, accounts, months);
   const debtOutByAccount = buildDebtOutByAccount(debts, plan, accounts);
   // Uncovered funding (the over-limit card excess) is not paid from any account, so
   // nothing is attributed here — it shows up as a flag, not as cash leaving.
 
-  // Combined overview series: monthly flows, balances, and future-expense totals.
-  const futureBd = buildFutureExpenseBreakdown(payments, months);
-  const futureTotals = futureBd.total;
-  // Future-expense bars for the Accounts chart. Bars use the *total* expense
-  // amount (so card-funded ones still show, not just cash draws), with the
-  // names + funding source(s) shown in the tooltip.
-  const cardOpts = debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id }));
-  const acctOpts = accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }));
-  const futureExpenseBars = futureBd.labels.map((_, i) => {
-    const active = futureBd.series.filter((s) => (s.values[i] ?? 0) > 0);
-    const items = active.map((s) => {
-      const p = payments.find((pp) => pp.id === s.id);
-      return {
-        label: s.name,
-        value: s.values[i] ?? 0,
-        from: p ? fundingLabel(p, acctOpts, cardOpts) : '',
-      };
-    });
-    return {
-      value: futureTotals[i] ?? 0,
-      label: active.map((s) => s.name).join(', '),
-      from: [...new Set(items.map((item) => item.from).filter(Boolean))].join(', '),
-      items,
-    };
-  });
+  // Combined overview series: monthly flows and balances.
   const overviewData = savings.map((s, i) => ({
     label: s.label,
     income: s.income,
     expenses: s.expenses,
-    future: futureTotals[i] ?? 0,
     cash: s.balance,
     debt: plan.remaining[i] ?? 0,
   }));
@@ -284,21 +251,9 @@ export default function App() {
   let breakdownTitle: string;
   let breakdownSubtitle: string;
   if (breakdownSection === 'account') {
-    let sav = savings, sched = scheduledOutByAccount, debtOut = debtOutByAccount;
-    if (!breakdownIncludeFuture) {
-      // Re-run the cash pipeline with no future expenses (drops their cash draws
-      // and any card charges they'd add to the debt plan).
-      const planNF = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, months, expensePlan.charges, debtPayments, paidThisMonth);
-      const debtCashOutNF = planNF.outflow.map((v) => Math.round(v * 100) / 100);
-      sav = buildSavings(incomeSources, expensePlan.ongoingCashOut, [], debtCashOutNF, months, totalCash);
-      sched = buildScheduledOutByAccount([], accounts, months);
-      debtOut = buildDebtOutByAccount(debts, planNF, accounts);
-    }
-    breakdown = buildAccountSeries(accounts, incomeSources, sav, expensePlan.outByAccount, sched, debtOut);
+    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, debtOutByAccount);
     breakdownTitle = 'Accounts Over Time';
-    breakdownSubtitle = breakdownIncludeFuture
-      ? 'Balance of each account/savings pile over time, alongside total cash'
-      : 'Balance of each account/savings pile over time — future expenses excluded';
+    breakdownSubtitle = 'Balance of each account/savings pile over time, alongside total cash';
   } else if (breakdownSection === 'income') {
     breakdown = buildIncomeBreakdown(incomeSources, months);
     breakdownTitle = 'Income Breakdown';
@@ -307,10 +262,6 @@ export default function App() {
     breakdown = buildExpenseBreakdown(expenses, months, inflation, new Date(), expensesPaidThisMonth);
     breakdownTitle = 'Expense Breakdown';
     breakdownSubtitle = 'Each expense per month (inflation-adjusted), alongside the combined total';
-  } else if (breakdownSection === 'future') {
-    breakdown = buildFutureExpenseBreakdown(payments, months);
-    breakdownTitle = 'Future Expense Breakdown';
-    breakdownSubtitle = 'Each future expense per month, alongside the combined total';
   } else {
     breakdown = {
       labels: savings.map((s) => s.label),
@@ -321,8 +272,8 @@ export default function App() {
     breakdownSubtitle = 'Remaining balance of each debt over time, alongside total debt';
   }
 
-  // Per-debt, per-month detail for the Debt Breakdown tooltip: which expenses /
-  // future expenses were charged that month, and the payment applied.
+  // Per-debt, per-month detail for the Debt Breakdown tooltip: which expenses
+  // were charged that month, and the payment applied.
   let debtMonthInfo: Map<number, { charges: { label: string; amount: number; kind: string }[]; payment: number }[]> | undefined;
   if (breakdownSection === 'debt') {
     debtMonthInfo = new Map();
@@ -335,7 +286,7 @@ export default function App() {
     for (const c of debtCharges) {
       const arr = debtMonthInfo.get(c.debtId);
       if (arr && c.monthIndex >= 0 && c.monthIndex < months) {
-        arr[c.monthIndex].charges.push({ label: c.label ?? 'Charge', amount: c.amount, kind: c.kind ?? 'future' });
+        arr[c.monthIndex].charges.push({ label: c.label ?? 'Charge', amount: c.amount, kind: c.kind ?? 'expense' });
       }
     }
   }
@@ -371,20 +322,20 @@ export default function App() {
   const visibleMap = (map: Map<number, number[]>) =>
     new Map([...map].map(([id, values]) => [id, visible(values)]));
   let monthlyBreakdown = buildMonthBreakdown(
-    incomeSources, expenses, payments, debts, accounts, 0, new Date(), paidThisMonth, expensesPaidThisMonth,
+    incomeSources, expenses, debts, accounts, 0, new Date(), paidThisMonth, expensesPaidThisMonth,
   );
   for (let monthIndex = 1; monthIndex <= breakdownMonth; monthIndex++) {
     const priorEndingLiquidity = new Map(monthlyBreakdown.liquidity
       .filter((series) => series.kind === 'account' || series.kind === 'card')
       .map((series) => [series.key, series.values[series.values.length - 1] ?? 0]));
     monthlyBreakdown = buildMonthBreakdown(
-      incomeSources, expenses, payments, debts, accounts, monthIndex, new Date(), undefined, undefined, priorEndingLiquidity,
+      incomeSources, expenses, debts, accounts, monthIndex, new Date(), undefined, undefined, priorEndingLiquidity,
     );
   }
 
   // This month's outflow breakdown.
   const m0 = savings[0];
-  const moneyOut = m0 ? m0.expenses + m0.scheduledOut + m0.debtOut : 0;
+  const moneyOut = m0 ? m0.expenses + m0.debtOut : 0;
 
   // Uncovered funding: charges aimed at a loan or missing debt target aren't paid
   // from anywhere. Valid cards accept the full charge and surface over-limit state.
@@ -394,7 +345,7 @@ export default function App() {
 
   // Duplicate-name detection across expense-like things.
   const nameCounts = new Map<string, number>();
-  for (const x of [...expenses, ...payments, ...debts]) {
+  for (const x of [...expenses, ...debts]) {
     const k = x.name.trim().toLowerCase();
     nameCounts.set(k, (nameCounts.get(k) ?? 0) + 1);
   }
@@ -450,20 +401,6 @@ export default function App() {
     setExpenses((prev) => reorderBy(prev, ids));
     await expensesApi.reorder(ids);
   }, 'Could not reorder expenses');
-
-  type PaymentInput = Omit<ScheduledPayment, 'id' | 'created_at' | 'updated_at'>;
-  const addPayment = (data: PaymentInput) => guard(async () => {
-    const item = await scheduledApi.create(data);
-    setPayments((prev) => [...prev, item]);
-  }, 'Could not add future expense');
-  const updatePayment = (id: number, data: PaymentInput) => guard(async () => {
-    const item = await scheduledApi.update(id, data);
-    setPayments((prev) => prev.map((p) => (p.id === id ? item : p)));
-  }, 'Could not update future expense');
-  const deletePayment = (id: number) => guard(async () => {
-    await scheduledApi.delete(id);
-    setPayments((prev) => prev.filter((p) => p.id !== id));
-  }, 'Could not delete future expense');
 
   type DebtInput = Omit<Debt, 'id' | 'created_at' | 'updated_at'>;
   const addDebt = (data: DebtInput) => guard(async () => {
@@ -641,7 +578,7 @@ export default function App() {
         )}
         {!error && duplicates.length > 0 && !dupDismissed && (
           <div style={{ background: '#3b2f12', border: '1px solid #854d0e', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#fde68a', flexBasis: '100%', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-            <span>⚠ Possible double-counting — the name{duplicates.length > 1 ? 's' : ''} “{duplicates.join('”, “')}” appear in more than one of Expenses / Future Expenses / Debts.</span>
+            <span>⚠ Possible double-counting — the name{duplicates.length > 1 ? 's' : ''} “{duplicates.join('”, “')}” appear in both Expenses and Debts.</span>
             <button onClick={() => setDupDismissed(true)} style={{ background: 'transparent', color: '#fde68a' }}>dismiss</button>
           </div>
         )}
@@ -665,7 +602,7 @@ export default function App() {
           const selectedId = (savingsAccountId != null && accounts.some((a) => a.id === savingsAccountId)) ? savingsAccountId : null;
           const acct = selectedId != null ? accounts.find((a) => a.id === selectedId) : undefined;
           const fullData = selectedId != null
-            ? buildAccountSavings(selectedId, accounts, incomeSources, payments, expensePlan.outByAccount, scheduledOutByAccount, debtOutByAccount, months)
+            ? buildAccountSavings(selectedId, accounts, incomeSources, expensePlan.outByAccount, debtOutByAccount, months)
             : savings;
           const data = visible(fullData);
           const currentBalance = selectedId != null ? (acct?.balance ?? 0) : totalCash;
@@ -731,7 +668,7 @@ export default function App() {
           const id = Number(idS);
           const activityHorizon = activityMonth + 1;
           const activityExpensePlan = buildExpensePlan(expenses, accounts, activityHorizon, inflation, new Date(), expensesPaidThisMonth);
-          const activityCharges = [...buildDebtCharges(payments, activityHorizon), ...activityExpensePlan.charges];
+          const activityCharges = activityExpensePlan.charges;
           const activityPayments = buildDebtPaymentSchedule(debts, activityHorizon);
           const activityPlan = simulateDebtPlan(debts, debtStrategy === 'none' ? 0 : debtExtra, debtStrategy, activityHorizon, activityCharges, activityPayments);
           // "Paid this month" only applies when the activity is showing the current month.
@@ -753,7 +690,7 @@ export default function App() {
           }
           const acct = accounts.find((a) => a.id === id)!;
           const activityExpensePaid = activityMonth === 0 ? expensesPaidThisMonth : undefined;
-          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, payments, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth, activityPaid, activityExpensePaid);
+          const activity = buildAccountActivity(id, accounts, incomeSources, expenses, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth, activityPaid, activityExpensePaid);
           return (
             <Suspense fallback={<ChartFallback />}>
               <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? '★ primary — pays the bills' : 'savings pile'} activity={activity} />
@@ -780,7 +717,7 @@ export default function App() {
               </div>
               {breakdownMode === 'range' && (
                 <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
-                  {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['future', 'Future'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
+                  {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
                     <button
                       key={id}
                       onClick={() => setBreakdownSection(id)}
@@ -797,19 +734,11 @@ export default function App() {
                 </div>
               )}
             </div>
-            {breakdownMode === 'range' && breakdownSection === 'account' && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-muted)', cursor: 'pointer', width: 'fit-content' }}>
-                <input type="checkbox" checked={breakdownIncludeFuture} onChange={(e) => setBreakdownIncludeFuture(e.target.checked)} />
-                Include future expenses
-              </label>
-            )}
             {breakdownMode === 'range' ? (
               <Suspense fallback={<ChartFallback />}>
                 <BreakdownChart
                   title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={visibleBreakdown}
                   startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth}
-                  futureBars={breakdownSection === 'account' ? visible(futureExpenseBars) : undefined}
-                  futureBarsActive={breakdownIncludeFuture}
                   debtMonthInfo={breakdownSection === 'debt' ? visibleDebtMonthInfo : undefined}
                   creditLimits={breakdownSection === 'debt'
                     ? new Map(debts.filter((d) => d.debt_type !== 'loan' && d.credit_limit != null).map((d) => [d.id, d.credit_limit as number]))
@@ -831,7 +760,6 @@ export default function App() {
               accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
               labels={visible(savings.map((s) => s.label))}
               expenseOut={visibleMap(expensePlan.outByAccount)}
-              scheduledOut={visibleMap(scheduledOutByAccount)}
               debtOut={visibleMap(debtOutByAccount)}
               startMonth={startMonth}
               months={months}
@@ -853,7 +781,6 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: '12px 18px', fontSize: 13 }}>
             <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 11 }}>This month out</span>
             <span>Expenses <strong style={{ color: 'var(--color-expense)' }}>{formatMoney(m0.expenses, { whole: true })}</strong></span>
-            <span>Future <strong style={{ color: 'var(--color-net-neg)' }}>{formatMoney(m0.scheduledOut, { whole: true })}</strong></span>
             <span>Debt <strong style={{ color: 'var(--color-net-neg)' }}>{formatMoney(m0.debtOut, { whole: true })}</strong></span>
             <span style={{ marginLeft: 'auto' }}>Total out <strong>{formatMoney(moneyOut, { whole: true })}</strong> · Net <strong style={{ color: m0.net >= 0 ? 'var(--color-income)' : 'var(--color-expense)' }}>{formatMoney(m0.net, { whole: true })}</strong></span>
           </div>
@@ -891,12 +818,6 @@ export default function App() {
             onReorder={reorderExpenses} onReorderGroup={reorderGroups}
           />
         </div>
-        <ScheduledPayments
-          payments={payments}
-          accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-          debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, group_id: d.group_id, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null, overLimit: d.credit_limit != null && d.balance > d.credit_limit + 0.005 }))}
-          onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment}
-        />
         <Debts
           debts={debts} groups={groups}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}

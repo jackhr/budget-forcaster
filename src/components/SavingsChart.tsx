@@ -1,6 +1,6 @@
 import {
   ComposedChart, Area, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, ReferenceLine, LabelList,
+  Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import type { SavingsPoint } from '../types';
 import { formatCompactMoney, formatMoney } from '../lib/format';
@@ -46,30 +46,12 @@ function CustomTooltip({ active, payload, label }: {
       <p style={{ color: 'var(--color-expense)', marginBottom: 4 }}>
         Expenses: <strong>{formatMoney(p.expenses)}</strong>
       </p>
-      {p.scheduledOut > 0 && (
-        <p style={{ color: 'var(--color-net-neg)' }}>
-          {p.scheduledLabel || 'Scheduled'}: <strong>−{formatMoney(p.scheduledOut)}</strong>
-        </p>
-      )}
       {p.debtOut > 0 && (
         <p style={{ color: 'var(--color-net-neg)' }}>
           Debt payments: <strong>−{formatMoney(p.debtOut)}</strong>
         </p>
       )}
     </div>
-  );
-}
-
-// Renders the future-expense name above its bar.
-function PaymentLabel(props: { x: number; y: number; width: number; index: number; data: SavingsPoint[] }) {
-  const { x, y, width, index, data } = props;
-  const point = data[index];
-  if (!point || point.scheduledOut <= 0) return null;
-  const name = point.scheduledLabel.length > 14 ? point.scheduledLabel.slice(0, 13) + '…' : point.scheduledLabel;
-  return (
-    <text x={x + width / 2} y={y - 4} fill="var(--color-net-neg)" fontSize={10} textAnchor="middle">
-      {name}
-    </text>
   );
 }
 
@@ -88,7 +70,7 @@ export default function SavingsChart({ data, startMonth, months, onStartMonthCha
         <div>
           <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Accumulated Savings</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginTop: 2 }}>
-            Running balance over {duration} month{duration !== 1 ? 's' : ''} — green bars are lump income, red bars are future expenses
+            Running balance over {duration} month{duration !== 1 ? 's' : ''} — green bars are lump income
           </p>
         </div>
         <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
@@ -141,20 +123,6 @@ export default function SavingsChart({ data, startMonth, months, onStartMonthCha
             />
           ))}
           <Bar dataKey="incomeLump" name="Lump Income" fill="var(--color-income)" barSize={12} radius={[3, 3, 0, 0]} />
-          <Bar dataKey="scheduledOut" name="Future Expense" fill="var(--color-net-neg)" barSize={12} radius={[3, 3, 0, 0]}>
-            <LabelList
-              dataKey="scheduledOut"
-              content={(props: { x?: string | number; y?: string | number; width?: string | number; index?: number }) => (
-                <PaymentLabel
-                  x={Number(props.x) || 0}
-                  y={Number(props.y) || 0}
-                  width={Number(props.width) || 0}
-                  index={props.index ?? 0}
-                  data={data}
-                />
-              )}
-            />
-          </Bar>
           <Area
             type="monotone"
             dataKey="balance"

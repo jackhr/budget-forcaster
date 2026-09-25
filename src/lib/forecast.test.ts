@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildForecast, buildIncomeBreakdown, buildSavings, buildNetWorth, buildDebtCharges, buildExpensePlan, buildDebtPaymentSchedule, buildExpenseBreakdown, buildFutureExpenseBreakdown, buildAccountSeries, buildScheduledOutByAccount, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
+import { buildForecast, buildIncomeBreakdown, buildSavings, buildNetWorth, buildExpensePlan, buildDebtPaymentSchedule, buildExpenseBreakdown, buildAccountSeries, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, monthOffset } from './forecast';
 import { simulateDebtPlan } from './debt';
-import type { Account, Debt, Expense, IncomeSource, ScheduledPayment } from '../types';
+import type { Account, Debt, Expense, IncomeSource } from '../types';
 
 const NOW = new Date(2026, 0, 1); // Jan 2026, deterministic
 
@@ -21,21 +21,21 @@ function flat(amount: number, months: number): number[] {
 describe('buildForecast', () => {
   it('computes net as income minus expenses', () => {
     const inc = [income({ monthly_amount: 5000 })];
-    const fc = buildForecast(inc, flat(2000, 3), [], [], 3, NOW);
+    const fc = buildForecast(inc, flat(2000, 3), [], 3, NOW);
     expect(fc[0].income).toBe(5000);
     expect(fc[0].expenses).toBe(2000);
     expect(fc[0].net).toBe(3000);
   });
 
   it('includes debt outflow in expenses', () => {
-    const fc = buildForecast([], flat(0, 3), [], [300, 300, 0], 3, NOW);
+    const fc = buildForecast([], flat(0, 3), [300, 300, 0], 3, NOW);
     expect(fc[0].expenses).toBe(300);
     expect(fc[2].expenses).toBe(0);
   });
 
   it('honors an income start date (no income before it)', () => {
     const inc = [income({ monthly_amount: 1000, start_date: '2026-03-01' })]; // offset 2 from Jan 2026
-    const fc = buildForecast(inc, flat(0, 4), [], [], 4, NOW);
+    const fc = buildForecast(inc, flat(0, 4), [], 4, NOW);
     expect(fc[0].income).toBe(0);
     expect(fc[1].income).toBe(0);
     expect(fc[2].income).toBe(1000);
@@ -50,7 +50,7 @@ describe('buildForecast', () => {
       payday_2: 31,
       occurrences: [{ scheduled_date: '2026-01-15', occurrence_date: '2026-01-14', status: 'detected', transaction_id: 'pay-1' }],
     })];
-    const fc = buildForecast(inc, flat(0, 2), [], [], 2, new Date(2026, 0, 16));
+    const fc = buildForecast(inc, flat(0, 2), [], 2, new Date(2026, 0, 16));
     expect(fc[0].income).toBe(2000);
     expect(fc[1].income).toBe(4000);
   });
@@ -89,15 +89,8 @@ describe('buildExpensePlan', () => {
     expect(ep.ongoingCashOut[8]).toBe(0);   // past end
   });
 
-  it('anchors normal and future expense recurrence to the same first-occurrence date', () => {
+  it('anchors expense recurrence to the first-occurrence date', () => {
     const normal = expense({ monthly_amount: 300, frequency: 'quarterly', start_date: '2025-11-15' });
-    const future: ScheduledPayment = {
-      id: 1, name: 'E', amount: 300, frequency: 'quarterly', start_date: '2025-11-15', end_date: null,
-      funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
-    };
-
-    expect(buildExpenseBreakdown([normal], 4, 0, NOW).total)
-      .toEqual(buildFutureExpenseBreakdown([future], 4, NOW).total);
     expect(buildExpenseBreakdown([normal], 4, 0, NOW).total).toEqual([0, 300, 0, 0]);
   });
 
@@ -123,7 +116,7 @@ describe('buildExpensePlan', () => {
     const exp = [expense({ id: 1, monthly_amount: 400, funding_allocations: [{ source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 100 }] })];
     const ep = buildExpensePlan(exp, accounts, 2, 0);
     expect(ep.ongoingCashOut[0]).toBe(0); // 100% on the card -> no cash out
-    const sv = buildSavings([], ep.ongoingCashOut, [], simulateDebtPlan([card], 0, 'none', 2, ep.charges).outflow, 2, 1000, NOW);
+    const sv = buildSavings([], ep.ongoingCashOut, simulateDebtPlan([card], 0, 'none', 2, ep.charges).outflow, 2, 1000, NOW);
     expect(sv[0].expenses).toBe(0);       // the expense doesn't dip cash
     expect(sv[0].debtOut).toBe(400);      // the card payment covers the charge
   });
@@ -156,40 +149,19 @@ describe('expense charged to a missing card', () => {
 describe('buildSavings', () => {
   it('accumulates net into a running balance from the starting cash', () => {
     const inc = [income({ monthly_amount: 1000 })];
-    const sv = buildSavings(inc, flat(400, 3), [], [], 3, 5000, NOW);
+    const sv = buildSavings(inc, flat(400, 3), [], 3, 5000, NOW);
     expect(sv[0].balance).toBe(5600);
     expect(sv[1].balance).toBe(6200);
     expect(sv[2].balance).toBe(6800);
   });
 
-  it('subtracts a one-off future expense in the right month', () => {
-    const pay: ScheduledPayment = { id: 1, name: 'Trip', amount: 1000, frequency: 'one-time', start_date: '2026-03-01', end_date: null, funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
-    const sv = buildSavings([], flat(0, 4), [pay], [], 4, 1000, NOW);
+  it('subtracts a one-off expense in the right month', () => {
+    const trip = expense({ id: 1, name: 'Trip', monthly_amount: 1000, frequency: 'one-time', start_date: '2026-03-01' });
+    const ep = buildExpensePlan([trip], [acct(1, 'Cash', 1000, true)], 4, 0, NOW);
+    const sv = buildSavings([], ep.ongoingCashOut, [], 4, 1000, NOW);
     expect(monthOffset('2026-03-01', NOW)).toBe(2);
-    expect(sv[2].scheduledOut).toBe(1000);
+    expect(sv[2].expenses).toBe(1000);
     expect(sv[2].balance).toBe(0);
-  });
-});
-
-describe('debt-funded future expenses', () => {
-  const card: Debt = { id: 9, name: 'Card', balance: 0, apr: 24, credit_limit: null, monthly_payment: 500, debt_type: 'credit_card', payment_day: null, group_id: null, account_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '' };
-  const charged: ScheduledPayment = {
-    id: 1, name: 'Laptop', amount: 2000, frequency: 'one-time', start_date: '2026-02-01', end_date: null,
-    funding_source_type: 'debt', funding_source_id: 9, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '',
-  };
-
-  it('does not dip cash for a charged expense', () => {
-    const sv = buildSavings([], flat(0, 4), [charged], [0, 0, 0, 0], 4, 5000, NOW);
-    expect(sv[1].scheduledOut).toBe(0);
-  });
-
-  it('adds the charge to the card balance via simulateDebtPlan', () => {
-    const charges = buildDebtCharges([charged], 6, NOW);
-    expect(charges).toMatchObject([{ debtId: 9, monthIndex: 1, amount: 2000 }]);
-    const plan = simulateDebtPlan([card], 0, 'none', 6, charges);
-    expect(plan.remaining[0]).toBe(0);
-    expect(plan.remaining[1]).toBeGreaterThan(1400);
-    expect(plan.outflow[1]).toBeCloseTo(500, 5);
   });
 });
 
@@ -201,8 +173,8 @@ describe('buildAccountSeries', () => {
       income({ id: 11, monthly_amount: 300, account_id: 2 }),
     ];
     const ep = buildExpensePlan([expense({ monthly_amount: 800 })], accounts, 3, 0);
-    const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 3, 1500, NOW);
-    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), new Map(), NOW);
+    const sv = buildSavings(sources, ep.ongoingCashOut, [], 3, 1500, NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), NOW);
 
     const savingsSeries = bd.series.find((s) => s.id === 2)!;
     expect(savingsSeries.values[0]).toBe(800);  // 500 + 300
@@ -222,85 +194,41 @@ describe('buildAccountSeries', () => {
     const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Other', 0)];
     const sources = [income({ id: 9, monthly_amount: 100, account_id: null })];
     const ep = buildExpensePlan([], accounts, 2, 0);
-    const sv = buildSavings(sources, ep.ongoingCashOut, [], [], 2, 0, NOW);
-    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), new Map(), NOW);
+    const sv = buildSavings(sources, ep.ongoingCashOut, [], 2, 0, NOW);
+    const bd = buildAccountSeries(accounts, sources, sv, ep.outByAccount, new Map(), NOW);
     expect(bd.series.find((s) => s.id === 1)!.values[0]).toBe(100);
     expect(bd.series.find((s) => s.id === 2)!.values[0]).toBe(0);
   });
 });
 
-describe('future-expense funding source (account vs card)', () => {
-  const pay = (over: Partial<ScheduledPayment>): ScheduledPayment => ({
-    id: 1, name: 'P', amount: 100, frequency: 'monthly', start_date: '2026-01-01', end_date: null,
-    funding_source_type: 'account', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '', ...over,
-  });
+describe('split-funded expenses by account', () => {
+  const bill = (over: Partial<Expense>): Expense =>
+    expense({ id: 1, name: 'P', monthly_amount: 1000, frequency: 'one-time', start_date: '2026-01-01', ...over });
 
-  it('attributes an account-funded payment to that account, not primary', () => {
+  it('attributes account-funded portions by account and the remainder to primary', () => {
     const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Vacation', 0)];
-    const payments = [pay({ amount: 100, funding_source_type: 'account', funding_source_id: 2 })];
-    const map = buildScheduledOutByAccount(payments, accounts, 2, NOW);
-    expect(map.get(2)![0]).toBe(100);
-    expect(map.get(1)![0]).toBe(0);
-  });
-
-  it('routes legacy cash funding to the primary account; skips card-funded', () => {
-    const accounts = [acct(1, 'Primary', 0, true)];
-    const payments = [
-      pay({ id: 1, amount: 50, funding_source_type: 'cash', funding_source_id: null }),
-      pay({ id: 2, amount: 999, funding_source_type: 'debt', funding_source_id: 7 }),
-    ];
-    const map = buildScheduledOutByAccount(payments, accounts, 1, NOW);
-    expect(map.get(1)![0]).toBe(50); // cash -> primary; debt excluded
-  });
-});
-
-describe('split-funded future expenses', () => {
-  const pay = (over: Partial<ScheduledPayment>): ScheduledPayment => ({
-    id: 1, name: 'P', amount: 1000, frequency: 'one-time', start_date: '2026-01-01', end_date: null,
-    funding_source_type: 'cash', funding_source_id: null, funding_allocations: [], funding_rules: [], created_at: '', updated_at: '', ...over,
-  });
-
-  it('splits a future expense between cash and a card', () => {
-    const payment = pay({
-      amount: 1000,
-      funding_allocations: [
-        { source_type: 'debt', source_id: 9, alloc_type: 'percent', value: 60 },
-        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 150 },
-      ],
+    const item = bill({
+      funding_allocations: [{ source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 300 }],
     });
-    const sv = buildSavings([], flat(0, 1), [payment], [], 1, 1000, NOW);
-    expect(sv[0].scheduledOut).toBe(400); // $150 account + $250 remainder to primary.
-    expect(buildDebtCharges([payment], 1, NOW)).toMatchObject([{ debtId: 9, monthIndex: 0, amount: 600 }]);
+    const ep = buildExpensePlan([item], accounts, 1, 0, NOW);
+    expect(ep.outByAccount.get(2)![0]).toBe(300);
+    expect(ep.outByAccount.get(1)![0]).toBe(700);
   });
 
-  it('attributes account-funded future expense portions by account and remainder to primary', () => {
+  it('switches funding sources by date range', () => {
     const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Vacation', 0)];
-    const payment = pay({
-      amount: 1000,
-      funding_allocations: [
-        { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 300 },
-      ],
-    });
-    const map = buildScheduledOutByAccount([payment], accounts, 1, NOW);
-    expect(map.get(2)![0]).toBe(300);
-    expect(map.get(1)![0]).toBe(700);
-  });
-
-  it('switches future-expense funding sources by date range', () => {
-    const accounts = [acct(1, 'Primary', 0, true), acct(2, 'Vacation', 0)];
-    const payment = pay({
-      amount: 1000,
+    const item = bill({
       frequency: 'monthly',
       funding_rules: [
         { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 300, frequency: 'monthly', start_date: '2026-01-01', end_date: '2026-01-01' },
         { source_type: 'account', source_id: 2, alloc_type: 'fixed', value: 600, frequency: 'monthly', start_date: '2026-02-01', end_date: null },
       ],
     });
-    const map = buildScheduledOutByAccount([payment], accounts, 2, NOW);
-    expect(map.get(2)![0]).toBe(300);
-    expect(map.get(1)![0]).toBe(700);
-    expect(map.get(2)![1]).toBe(600);
-    expect(map.get(1)![1]).toBe(400);
+    const ep = buildExpensePlan([item], accounts, 2, 0, NOW);
+    expect(ep.outByAccount.get(2)![0]).toBe(300);
+    expect(ep.outByAccount.get(1)![0]).toBe(700);
+    expect(ep.outByAccount.get(2)![1]).toBe(600);
+    expect(ep.outByAccount.get(1)![1]).toBe(400);
   });
 });
 
@@ -366,7 +294,7 @@ describe('debt pay-from account', () => {
     expect(plan.outflowByDebt.get(1)).toEqual([100, 50]);
     expect(map.get(1)).toEqual([100, 0]); // normal payment from primary before the plan starts
     expect(map.get(2)).toEqual([0, 50]);
-    expect(buildAccountActivity(2, accounts, [], [], [], [debt], plan, 2, 0, NOW).outByMonth).toEqual([0, 50]); // account 2 only funds the plan
+    expect(buildAccountActivity(2, accounts, [], [], [debt], plan, 2, 0, NOW).outByMonth).toEqual([0, 50]); // account 2 only funds the plan
   });
 
   it('uses the existing pay-from account until a future funding plan starts', () => {
@@ -474,7 +402,7 @@ describe('debt pay-from account', () => {
 
 describe('buildNetWorth', () => {
   it('is cash minus remaining debt', () => {
-    const sv = buildSavings([income({ monthly_amount: 1000 })], flat(0, 2), [], [200, 200], 2, 0, NOW);
+    const sv = buildSavings([income({ monthly_amount: 1000 })], flat(0, 2), [200, 200], 2, 0, NOW);
     const nw = buildNetWorth(sv, [800, 600]);
     expect(nw[0].cash).toBe(sv[0].balance);
     expect(nw[0].debt).toBe(800);
@@ -495,7 +423,7 @@ describe('buildAccountActivity', () => {
     const expenses = [expense({ id: 20, name: 'Rent', monthly_amount: 1000, funding_allocations: [{ source_type: 'account', source_id: 1, alloc_type: 'percent', value: 60 }] })];
     const plan = simulateDebtPlan(debts, 0, 'none', 6);
 
-    const a1 = buildAccountActivity(1, accounts, sources, expenses, [], debts, plan, 6, 0, NOW);
+    const a1 = buildAccountActivity(1, accounts, sources, expenses, debts, plan, 6, 0, NOW);
     const names = a1.items.map((i) => i.name);
     expect(names).toContain('Salary');   // income lands in Checking
     expect(names).toContain('Rent');     // 60% + remainder (primary) from Checking
@@ -506,7 +434,7 @@ describe('buildAccountActivity', () => {
     const visa = a1.items.find((i) => i.name === 'Visa')!;
     expect(visa.perOccurrence).toBe(100);
 
-    const a2 = buildAccountActivity(2, accounts, sources, expenses, [], debts, plan, 6, 0, NOW);
+    const a2 = buildAccountActivity(2, accounts, sources, expenses, debts, plan, 6, 0, NOW);
     expect(a2.items.map((i) => i.name)).toEqual(['Side']); // only Side income
   });
 
@@ -514,7 +442,7 @@ describe('buildAccountActivity', () => {
     const accounts = [acct(1, 'Checking', 5000, true)];
     const expenses = [expense({ id: 20, name: 'Rent', monthly_amount: 1000 })];
     const plan = simulateDebtPlan([], 0, 'none', 1);
-    const activity = buildAccountActivity(1, accounts, [], expenses, [], [], plan, 1, 0, NOW, 0, undefined, new Set([20]));
+    const activity = buildAccountActivity(1, accounts, [], expenses, [], plan, 1, 0, NOW, 0, undefined, new Set([20]));
 
     expect(activity.outByMonth).toEqual([0]);
     expect(activity.items.find((i) => i.name === 'Rent')?.paid).toBe(true);

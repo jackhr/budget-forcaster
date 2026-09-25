@@ -10,7 +10,7 @@ These docs explain **what the app is supposed to do and why**: the money rules, 
 | 2 | [02-glossary.md](02-glossary.md) | You hit a domain term (primary account, charge, lump, occurrence…). |
 | 3 | [03-entities.md](03-entities.md) | You touch any table, route, or type. Meaning, defaults, invariants, delete behavior. |
 | 4 | [04-scheduling.md](04-scheduling.md) | Anything involving frequencies, dates, paydays, or "which month does this land in". |
-| 5 | [05-funding.md](05-funding.md) | Anything about *who pays* for an expense, future expense, or debt payment. |
+| 5 | [05-funding.md](05-funding.md) | Anything about *who pays* for an expense or debt payment. |
 | 6 | [06-debt.md](06-debt.md) | Payoff simulation, strategies, charges, credit limits, "paid this month". |
 | 7 | [07-forecast-pipeline.md](07-forecast-pipeline.md) | Changing any chart/tab, or any number that feeds one. |
 | 8 | [08-monthly-obligations.md](08-monthly-obligations.md) | The day-level Month view: calendar, daily chart, liquidity. |

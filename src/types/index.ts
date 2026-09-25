@@ -110,23 +110,6 @@ export interface Debt {
   updated_at: string;
 }
 
-export type FundingSourceType = 'cash' | 'income' | 'debt' | 'account';
-
-export interface ScheduledPayment {
-  id: number;
-  name: string;
-  amount: number;
-  frequency: Frequency;
-  start_date: string; // YYYY-MM-DD, first occurrence
-  end_date: string | null; // YYYY-MM-DD, last occurrence (inclusive); null = open-ended
-  funding_source_type: FundingSourceType; // what pays for it
-  funding_source_id: number | null; // income/debt id when type !== 'cash'
-  funding_allocations: ExpenseAllocation[]; // split funding; empty = legacy funding source
-  funding_rules: FundingRule[]; // scheduled funding plan; empty = use funding_allocations/source
-  created_at: string;
-  updated_at: string;
-}
-
 export interface PaidStatusEntry {
   id: number;
   paid: boolean;
@@ -156,8 +139,6 @@ export interface SavingsPoint {
   income: number;
   incomeLump: number; // portion of income arriving as a lump (quarterly/annual/one-time)
   expenses: number;
-  scheduledOut: number;
-  scheduledLabel: string; // names of future expenses landing this month
   debtOut: number; // debt payments this month (decline to 0 at payoff)
   net: number;
   balance: number;

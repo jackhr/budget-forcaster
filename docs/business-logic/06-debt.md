@@ -42,13 +42,12 @@ simulateDebtPlan(debts, extra, strategy, months, charges, paymentSchedule?, paid
 |---|---|---|
 | `plan` | user strategy + extra, all charges, schedule, paid set | Forecast, Savings, Net Worth, Overview, Outflows, Debt breakdown, payoff markers, over-limit badges, invalid-target banner |
 | `basePlan` | `none`, extra 0, same charges, schedule, and paid set | "saves $X · N mo sooner" in the Debts header (`basePlan.totalInterest − plan.totalInterest`) |
-| no-future plan | like `plan` but only expense charges | Breakdown → Accounts with "Include future expenses" off |
 | activity plan | horizon = selected month + 1, **no paid set** | Activity tab |
 | scenario plan | from the snapshot, no paid set | Compare overlay |
 
 ## Charges
 
-A charge is a card-funded portion of an expense or future expense (see [05](05-funding.md)). Built by `buildExpensePlan(...).charges` and `buildDebtCharges(payments)`, and concatenated before simulation. Each carries a `label` and `kind` so the Debt Breakdown tooltip and Debt Activity can itemize what was billed to the card.
+A charge is a card-funded portion of an expense (see [05](05-funding.md)). Built by `buildExpensePlan(...).charges` and fed to `simulateDebtPlan`. Each carries a `label` so the Debt Breakdown tooltip and Debt Activity can itemize what was billed to the card.
 
 ## Credit limits (settled rule)
 

@@ -54,7 +54,7 @@ export default function ForecastChart({ data, startMonth, months, onStartMonthCh
         <div>
           <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Cash Flow Forecast</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginTop: 2 }}>
-            Actual monthly in/out over {duration} month{duration !== 1 ? 's' : ''} — includes future expenses
+            Actual monthly in/out over {duration} month{duration !== 1 ? 's' : ''}
           </p>
         </div>
         <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />

@@ -1,14 +1,14 @@
 # 05 — Funding: who pays for what
 
-Every outflow answers "paid from where?". Sources are **accounts** (cash leaves) or **credit cards** (a charge is added to the card). Funding applies to three things, and the rules differ slightly for each:
+Every outflow answers "paid from where?". Sources are **accounts** (cash leaves) or **credit cards** (a charge is added to the card). Funding applies to two things, and the rules differ slightly for each:
 
-| | Expenses | Future expenses | Debt payments |
-|---|---|---|---|
-| Card sources allowed | yes | yes | **no** (accounts only) |
-| Uncovered remainder | primary account | primary account | depends; see [Debt payments](#debt-payments) |
-| Rules change the *amount* paid | no, only routing | no, only routing | **yes**, in months their date window covers |
-| Legacy fallback | none (primary) | `funding_source_type/id` | `account_id` → primary |
-| Engine | `buildExpensePlan` | `paymentFundingAtAmount`, `buildDebtCharges`, `buildScheduledOutByAccount` | `buildDebtPaymentSchedule`, `debtPaymentByAccount` |
+| | Expenses | Debt payments |
+|---|---|---|
+| Card sources allowed | yes | **no** (accounts only) |
+| Uncovered remainder | primary account | depends; see [Debt payments](#debt-payments) |
+| Rules change the *amount* paid | no, only routing | **yes**, in months their date window covers |
+| Legacy fallback | none (primary) | `account_id` → primary |
+| Engine | `buildExpensePlan` | `buildDebtPaymentSchedule`, `debtPaymentByAccount` |
 
 ## Shapes
 
@@ -23,9 +23,9 @@ Server-side validation (`server/lib/funding.js`) silently **drops** malformed en
 
 1. If `funding_rules` is non-empty → **only rules** are used, and allocations are ignored.
 2. Else if `funding_allocations` is non-empty → allocations.
-3. Else → legacy or default (primary account for expenses; legacy source for future expenses; `account_id` or primary for debts).
+3. Else → the default (primary account for expenses; `account_id` or primary for debts).
 
-## Resolving one bill of amount `A` (expenses and future expenses)
+## Resolving one bill of amount `A` (expenses)
 
 `paymentFundingFromSources` in `forecast.ts`:
 
@@ -38,10 +38,10 @@ Example: a $1,000 bill with `[{card X, fixed 300}, {Savings, percent 50}]` → c
 
 Consequences:
 - Percentages over 100% in total, or fixed amounts over the bill, are silently capped by `remaining`. Nothing is paid twice.
-- Card portions become `DebtCharge { debtId, monthIndex, amount, label, kind: 'expense' | 'future' }` and feed `simulateDebtPlan`. **They are not cash out.**
+- Card portions become `DebtCharge { debtId, monthIndex, amount, label, kind: 'expense' }` and feed `simulateDebtPlan`. **They are not cash out.**
 - Account portions for a known account are cash out of that account.
 - A portion pointing at a deleted account falls into the remainder (primary).
-- A card portion pointing at a deleted debt becomes charge overflow, the header's "Invalid funding target". This applies to expenses and future expenses alike ([10 G7](10-known-gaps-and-decisions.md#g7)).
+- A card portion pointing at a deleted debt becomes charge overflow, the header's "Invalid funding target" ([10 G7](10-known-gaps-and-decisions.md#g7)).
 - A card portion pointing at a **loan** → charge overflow (flagged, paid by nobody).
 
 ## Credit cards as funding sources
@@ -81,10 +81,10 @@ Editors store a single-source choice as **one allocation at 100%**: `[{source, p
 
 The funding modal edits **rules only**. Opening it on a legacy allocation converts the allocations into monthly rules with no dates, and saving replaces them with rules.
 
-Helper text in the modal reflects the difference: for expenses and future expenses, "any unallocated remainder is paid from the primary account". For debts, rules "override the debt's monthly payment while their dates are active… Outside every rule's dates, the normal monthly payment is made from the debt's default account". Percent rules only offer monthly, quarterly, annual, and one-time frequencies.
+Helper text in the modal reflects the difference: for expenses, "any unallocated remainder is paid from the primary account". For debts, rules "override the debt's monthly payment while their dates are active… Outside every rule's dates, the normal monthly payment is made from the debt's default account". Percent rules only offer monthly, quarterly, annual, and one-time frequencies.
 
 ## Invariants when changing funding code
 
-- Keep `buildExpensePlan`, `buildDebtCharges`/`paymentFundingAtAmount`, `buildScheduledOutByAccount`, `buildAccountActivity`, and `monthlyBreakdown.fundingChanges` resolving splits **identically**. Fixed before percent, percent of the full amount, remainder to primary.
+- Keep `buildExpensePlan`, `buildAccountActivity`, and `monthlyBreakdown.fundingChanges` resolving splits **identically**. Fixed before percent, percent of the full amount, remainder to primary.
 - Anything card-funded must appear as a charge in the debt plan and **never** as cash out.
 - Re-check [07's invariants](07-forecast-pipeline.md#invariants) (forecast net = savings delta; accounts sum = total).

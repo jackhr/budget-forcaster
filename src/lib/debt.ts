@@ -102,13 +102,13 @@ export interface DebtPlan {
   debtFreeMonthIndex: number | null; // when the last debt clears
 }
 
-// A future expense charged to a debt (credit card / line) at a given month.
+// An expense portion charged to a debt (credit card / line) at a given month.
 export interface DebtCharge {
   debtId: number;
   monthIndex: number;
   amount: number;
   label?: string;                    // source name (for the breakdown tooltip)
-  kind?: 'expense' | 'future';       // where the charge came from
+  kind?: 'expense';                  // where the charge came from
 }
 
 interface DebtState {

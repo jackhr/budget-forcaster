@@ -30,7 +30,7 @@ Let `startOff = monthOffset(start_date)` and `since = m − startOff`. Nothing h
 Weekly and biweekly are **averaged**, so the monthly engine never shows a "3-paycheck month". The day engine does.
 
 **Anchoring differs by entity:**
-- **Expenses and future expenses:** anchored to the real start month, even if it's in the past. A quarterly bill that started 5 months ago lands at months 1, 4, 7, …
+- **Expenses:** anchored to the real start month, even if it's in the past. A quarterly bill that started 5 months ago lands at months 1, 4, 7, …
 - **Income:** same, anchored to the real start month even when it's in the past. An annual bonus dated last January lands next January. (Before `75bbb3b` it slid to the current month; see [10 G5](10-known-gaps-and-decisions.md#g5).)
 - **Null start date:** anchored to month 0.
 

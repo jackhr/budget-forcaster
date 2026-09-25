@@ -1,6 +1,6 @@
-import type { Account, Debt, Expense, Frequency, FundingRule, IncomeSource, ScheduledPayment } from '../types';
+import type { Account, Debt, Expense, Frequency, FundingRule, IncomeSource } from '../types';
 
-export type MonthObligationKind = 'income' | 'expense' | 'future' | 'debt';
+export type MonthObligationKind = 'income' | 'expense' | 'debt';
 
 export interface MonthObligation {
   key: string;
@@ -237,7 +237,6 @@ function fundingChanges(
 export function buildMonthBreakdown(
   income: IncomeSource[],
   expenses: Expense[],
-  future: ScheduledPayment[],
   debts: Debt[],
   accounts: Account[],
   monthOffset: number,
@@ -281,24 +280,6 @@ export function buildMonthBreakdown(
       const sources = fundingSources(item.funding_rules, item.funding_allocations, accounts, debts, primary?.name ?? 'primary account');
       const changes = fundingChanges(item.monthly_amount, item.funding_rules, item.funding_allocations, accounts, debts, 'account', primary?.id ?? null);
       push(`expense:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'expense', 'out', item.monthly_amount, `from ${sources}`, paid, changes);
-    }
-  }
-
-  for (const item of future) {
-    for (const occurrence of occurrenceDates(item.frequency, item.start_date, item.end_date, year, month)) {
-      let fallback = primary?.name ?? 'primary account';
-      let fallbackType: 'account' | 'debt' = 'account';
-      let fallbackId: number | null = primary?.id ?? null;
-      if (item.funding_source_type === 'account') fallback = accounts.find((account) => account.id === item.funding_source_id)?.name ?? fallback;
-      if (item.funding_source_type === 'account') fallbackId = item.funding_source_id;
-      if (item.funding_source_type === 'debt') {
-        fallback = debts.find((debt) => debt.id === item.funding_source_id)?.name ?? fallback;
-        fallbackType = 'debt';
-        fallbackId = item.funding_source_id;
-      }
-      const sources = fundingSources(item.funding_rules, item.funding_allocations, accounts, debts, fallback);
-      const changes = fundingChanges(item.amount, item.funding_rules, item.funding_allocations, accounts, debts, fallbackType, fallbackId);
-      push(`future:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'future', 'out', item.amount, `from ${sources}`, false, changes);
     }
   }
 

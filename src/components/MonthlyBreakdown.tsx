@@ -14,7 +14,6 @@ interface Props {
 const KIND: Record<MonthObligationKind, { label: string; color: string }> = {
   income: { label: 'Income', color: 'var(--color-income)' },
   expense: { label: 'Expense', color: 'var(--color-expense)' },
-  future: { label: 'Future', color: 'var(--color-net-neg)' },
   debt: { label: 'Debt', color: '#a78bfa' },
 };
 

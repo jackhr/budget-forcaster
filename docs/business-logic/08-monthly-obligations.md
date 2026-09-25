@@ -11,13 +11,12 @@ Code: `src/lib/monthlyBreakdown.ts:buildMonthBreakdown`, UI `src/components/Mont
 
 ## Events
 
-Each event is `{day, name, kind: income | expense | future | debt, direction, amount, detail, paid, dateSpecified, liquidityChanges[]}`. Events are sorted by day, then money in before money out, then larger amounts first.
+Each event is `{day, name, kind: income | expense | debt, direction, amount, detail, paid, dateSpecified, liquidityChanges[]}`. Events are sorted by day, then money in before money out, then larger amounts first.
 
 | Kind | Occurrences | Amount | Paid flag | Liquidity changes |
 |---|---|---|---|---|
 | Income | `incomeOccurrenceDates`: twice-monthly uses paydays + weekend shift + overrides (skipped are dropped); others use `occurrenceDates` | `monthly_amount`, or the **actual deposit** for a detected occurrence | received or detected | +amount to `account_id` or primary |
 | Expense | `occurrenceDates(frequency, start, end)` | `monthly_amount` (**no inflation**) | month 0 and marked paid | − per funding split (fixed first, then %, remainder to primary). A card split reduces that card's available credit. |
-| Future expense | same | `amount` | never | same, with the legacy source as fallback instead of primary |
 | Debt, no rules (or no rule window covers this month) | one per month on `payment_day` (or day 1, "Date not set") | `monthly_payment` | month 0 and marked paid | − from the **first allocation's account**, else `account_id`, else primary (the whole amount, no split). + to the card's available credit if it has a limit. |
 | Debt, with a rule window covering this month | one per in-window rule occurrence, dated by the rule's frequency and dates, falling back to `payment_day` | fixed `value`, or `monthly_payment × %` | month 0 and marked paid | − from the rule's account, + to the card |
 

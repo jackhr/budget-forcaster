@@ -11,7 +11,6 @@ app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/income', require('./routes/income'));
 app.use('/api/expenses', require('./routes/expenses'));
-app.use('/api/scheduled', require('./routes/scheduled'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/debts', require('./routes/debts'));

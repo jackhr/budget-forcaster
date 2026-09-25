@@ -70,12 +70,7 @@ router.delete('/:id', (req, res) => {
 
   // Income assigned here falls back to the primary account.
   db.prepare('UPDATE income_sources SET account_id = NULL WHERE account_id = ?').run(id);
-  // Future expenses paid from this account fall back to cash (= primary).
-  db.prepare(
-    "UPDATE scheduled_payments SET funding_source_type = 'cash', funding_source_id = NULL WHERE funding_source_type = 'account' AND funding_source_id = ?"
-  ).run(id);
   removeFundingAllocations(db, 'expenses', 'account', id);
-  removeFundingAllocations(db, 'scheduled_payments', 'account', id);
   removeFundingAllocations(db, 'debts', 'account', id);
   // Debts paid from this account fall back to the primary account.
   db.prepare('UPDATE debts SET account_id = NULL WHERE account_id = ?').run(id);

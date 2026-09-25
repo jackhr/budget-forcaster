@@ -24,7 +24,6 @@ Core:
 - `accounts` — cash accounts; name, balance, `is_primary`, `sort_order`, `plaid_account_id`. Exactly one primary; unallocated cash flows default to it.
 - `income_sources` — name, monthly_amount (per-payment), `frequency`, `payday_1`/`payday_2` (semimonthly days; 31 = last day), `start_date`, `account_id` (null = primary), `group_id`, `sort_order`
 - `expenses` — recurring costs; name, monthly_amount (per occurrence), `frequency`, `start_date`, `end_date` (retained for compat; normal expenses are ongoing), `funding_allocations`, `funding_rules`, `group_id`, `sort_order`
-- `scheduled_payments` ("Future Expenses") — name, amount, `frequency`, `start_date`, `end_date` (nullable), legacy `funding_source_type`/`funding_source_id`, plus `funding_allocations`/`funding_rules`
 - `debts` — name, balance, apr, credit_limit, monthly_payment, `debt_type` (`credit_card` = revolving/chargeable, `loan` = installment), `payment_day`, `account_id`, `funding_allocations`, `funding_rules`, `group_id`, `sort_order`, `plaid_account_id`, plus cached Plaid liability fields (`last_statement_balance`, `next_payment_due_date`, `last_payment_amount`, `is_overdue`, `plaid_aprs`, …)
 - `line_item_groups` — name, `kind` ('income' | 'expense' | 'debt'), `sort_order`. Items reference a group via `group_id`; deleting a group **ungroups** its items (sets group_id NULL), never deletes them.
 - `income_occurrences` — per-payday overrides keyed `(income_id, scheduled_date)`: `occurrence_date`, `status` (`expected` | `received` | `detected` | `skipped`), optional `transaction_id`. Cascades on income delete.
@@ -42,7 +41,7 @@ Schema/migrations are idempotent: tables use `CREATE TABLE IF NOT EXISTS`, and c
 
 ### Funding allocations & rules
 
-The key modeling concept, shared by `expenses`, `scheduled_payments`, and `debts`. Both columns hold a JSON array; `server/lib/funding.js` (`cleanAllocations`, `cleanFundingRules`) validates them on write.
+The key modeling concept, shared by `expenses` and `debts`. Both columns hold a JSON array; `server/lib/funding.js` (`cleanAllocations`, `cleanFundingRules`) validates them on write.
 
 - `funding_allocations` — `{source_type: 'account'|'debt', source_id, alloc_type: 'percent'|'fixed', value}`. Fixed amounts apply first, then percentages of the full bill; **any remainder falls to the primary account**.
 - `funding_rules` — the same shape plus `frequency`, `start_date`, `end_date`. If non-empty, rules take precedence over `funding_allocations`.
@@ -51,7 +50,7 @@ A portion funded by a `debt` source is not cash out — it becomes a **charge** 
 
 ## Back end (`server/`)
 
-- `server.js` loads `.env`, mounts one router per resource under `/api/*` (income, expenses, scheduled, settings, groups, debts, accounts, plaid, scenarios) plus `/api` for export/import. CORS is locked to the Vite dev origin; JSON body limit 10mb.
+- `server.js` loads `.env`, mounts one router per resource under `/api/*` (income, expenses, settings, groups, debts, accounts, plaid, scenarios) plus `/api` for export/import. CORS is locked to the Vite dev origin; JSON body limit 10mb.
 - `routes/*.js` — CRUD per resource (plus `paid.js` → `/api/paid` for paid-this-month status + Plaid debt-payment detection via `lib/paidDetection.js`). List routes order by `lib/data.ORDER_BY` (sort_order, then id); reorderable resources expose `POST /<resource>/reorder` (body `{ids:[...]}`) which sets sort_order by index. Numeric inputs are validated (`isAmount`), dates via `lib/dates.normalizeDate`.
   - `income.js` also has `PUT/DELETE /:id/occurrences/:scheduledDate` for marking a payday received/skipped.
   - Deleting an account or debt strips it from every `funding_allocations`/`funding_rules` (`data.removeFundingAllocations`).
@@ -62,8 +61,8 @@ A portion funded by a `debt` source is not cash out — it becomes a **charge** 
 
 ## Front end (`src/`)
 
-- `App.tsx` — single source of truth. Loads everything in one `Promise.all` (including `/api/paid`), holds all state, wraps every mutation in `guard()` (errors → toast). Computes all derived series each render and passes them down. Tabs: Forecast / Savings / Net Worth / Breakdown / Overview / Activity / Outflows / Transactions, in a `NavMenu` that collapses to a hamburger on narrow screens. Tab, horizon (`months`), start month, and per-tab view prefs persist to localStorage under `bf.*`. Header surfaces three warnings: load errors, possible double-counting (a name appearing in Expenses + Future Expenses + Debts), and invalid funding targets.
-- `lib/forecast.ts` — pure math, the bulk of the app's logic. `cashflowAtMonth` is the shared per-month engine so **Forecast net === Savings month-over-month delta**. `buildExpensePlan` resolves split funding into `ongoingCashOut` / per-account outflows / debt `charges`; `buildDebtCharges` does the same for future expenses. Then `buildForecast`, `buildSavings`, `buildNetWorth`, plus the per-entity series: `buildAccountSeries`, `buildAccountSavings`, `buildAccountActivity`, `buildDebtActivity`, `buildScheduledOutByAccount`, `buildDebtOutByAccount`, and the `build*Breakdown` family. Inflation compounds onto ongoing expenses. Income frequency: weekly/biweekly/semimonthly/monthly contribute every month; quarterly/annual/one-time arrive as lumps.
+- `App.tsx` — single source of truth. Loads everything in one `Promise.all` (including `/api/paid`), holds all state, wraps every mutation in `guard()` (errors → toast). Computes all derived series each render and passes them down. Tabs: Forecast / Savings / Net Worth / Breakdown / Overview / Activity / Outflows / Transactions, in a `NavMenu` that collapses to a hamburger on narrow screens. Tab, horizon (`months`), start month, and per-tab view prefs persist to localStorage under `bf.*`. Header surfaces three warnings: load errors, possible double-counting (a name appearing in both Expenses and Debts), and invalid funding targets.
+- `lib/forecast.ts` — pure math, the bulk of the app's logic. `cashflowAtMonth` is the shared per-month engine so **Forecast net === Savings month-over-month delta**. `buildExpensePlan` resolves split funding into `ongoingCashOut` / per-account outflows / debt `charges`. Then `buildForecast`, `buildSavings`, `buildNetWorth`, plus the per-entity series: `buildAccountSeries`, `buildAccountSavings`, `buildAccountActivity`, `buildDebtActivity`, `buildDebtOutByAccount`, and the `build*Breakdown` family. Inflation compounds onto ongoing expenses. Income frequency: weekly/biweekly/semimonthly/monthly contribute every month; quarterly/annual/one-time arrive as lumps.
 - `lib/debt.ts` — `simulateDebt` (independent per-debt amortization, used for row summaries) and `simulateDebtPlan` (combined avalanche/snowball with a global extra payment + rollover, accepting the charge stream and a per-debt payment schedule; returns per-month `outflow`, `remaining`, and `payoffMonthByDebt`). The plan's `outflow` feeds the forecast/savings math; `remaining` feeds net worth. **Guard:** if a payment ≤ first-month interest, the debt "never pays off" (don't loop forever).
 - `lib/monthlyBreakdown.ts` — expands a single calendar month into dated line items with their funding sources and per-account/per-debt liquidity changes. Handles semimonthly paydays (weekend-adjusted) and income occurrence overrides.
 - `lib/format.ts` — the single money-formatting config point (currency is module state, synced from settings; zero-decimal currencies handled).
@@ -75,7 +74,7 @@ A portion funded by a `debt` source is not cash out — it becomes a **charge** 
 
 - Money flows one way: components call `App` handlers → API → update local state. No refetch except after import/scenario-restore (`load()`).
 - Grouping is generic across income/expense/debt via `line_item_groups.kind`; each table filters `groups` by its own kind.
-- Anything funded from a debt is a charge, not cash — if you touch funding math, keep `buildExpensePlan`/`buildDebtCharges` and `simulateDebtPlan` in sync, and re-check that forecast net still equals the savings delta.
+- Anything funded from a debt is a charge, not cash — if you touch funding math, keep `buildExpensePlan` and `simulateDebtPlan` in sync, and re-check that forecast net still equals the savings delta.
 - Plaid data is a cache, not a source of truth: importing copies values into `accounts`/`debts`, and `plaid_account_id` is what blocks re-import and enables resync.
 - When adding a reorderable/groupable/fundable field, remember: migration in `database.js`, ordering in the route, validation in `lib/funding.js` if it's an allocation, the `group_id`/`sort_order` plumbing, and the type in `src/types/index.ts`.
 - Tests cover the math libs and date parsing (`*.test.ts` excluded from the production tsc build via `tsconfig.app.json`).

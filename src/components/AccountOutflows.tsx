@@ -11,7 +11,6 @@ interface Props {
   accounts: AcctOpt[];
   labels: string[];
   expenseOut: Map<number, number[]>;
-  scheduledOut: Map<number, number[]>;
   debtOut: Map<number, number[]>;
   startMonth: number;
   months: number;
@@ -41,17 +40,16 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-export default function AccountOutflows({ accounts, labels, expenseOut, scheduledOut, debtOut, startMonth, months, onStartMonthChange, onMonthsChange }: Props) {
+export default function AccountOutflows({ accounts, labels, expenseOut, debtOut, startMonth, months, onStartMonthChange, onMonthsChange }: Props) {
   const duration = months - startMonth;
   const [view, setView] = useState<'graph' | 'list'>('graph');
 
   const colorOf = (i: number) => PALETTE[i % PALETTE.length];
   const cell = (id: number, m: number) => ({
     expense: expenseOut.get(id)?.[m] ?? 0,
-    future: scheduledOut.get(id)?.[m] ?? 0,
     debt: debtOut.get(id)?.[m] ?? 0,
   });
-  const totalFor = (id: number, m: number) => { const c = cell(id, m); return c.expense + c.future + c.debt; };
+  const totalFor = (id: number, m: number) => { const c = cell(id, m); return c.expense + c.debt; };
 
   // One row per month; a key per account holding its total outflow that month.
   const data = labels.map((label, i) => {
@@ -83,7 +81,7 @@ export default function AccountOutflows({ accounts, labels, expenseOut, schedule
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>Account Outflows</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 2 }}>What's drawn from each account per month (expenses, future expenses, and debt payments).</p>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 2 }}>What's drawn from each account per month (expenses and debt payments).</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 4, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
@@ -154,10 +152,10 @@ export default function AccountOutflows({ accounts, labels, expenseOut, schedule
                   <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{label}</td>
                   {accounts.map((a) => {
                     const c = cell(a.id, m);
-                    const t = c.expense + c.future + c.debt;
+                    const t = c.expense + c.debt;
                     return (
                       <td key={a.id} style={{ ...td, color: t > 0.005 ? 'var(--color-text)' : 'var(--color-text-muted)' }}
-                        title={t > 0.005 ? `Expenses ${formatMoney(c.expense)} · Future ${formatMoney(c.future)} · Debt ${formatMoney(c.debt)}` : 'Nothing out'}>
+                        title={t > 0.005 ? `Expenses ${formatMoney(c.expense)} · Debt ${formatMoney(c.debt)}` : 'Nothing out'}>
                         {t > 0.005 ? formatMoney(t, { whole: true }) : '—'}
                       </td>
                     );

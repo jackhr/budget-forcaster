@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { formatCompactMoney, formatMoney } from '../lib/format';
@@ -10,7 +10,6 @@ export interface OverviewPoint {
   label: string;
   income: number;    // monthly inflow
   expenses: number;  // monthly ongoing expense cash
-  future: number;    // future-expense amount this month
   cash: number;      // total account balance
   debt: number;      // total remaining debt
 }
@@ -26,7 +25,7 @@ interface Props {
   payoffMarkers: PayoffMarker[];
 }
 
-type SeriesKey = 'income' | 'expenses' | 'future' | 'cash' | 'debt';
+type SeriesKey = 'income' | 'expenses' | 'cash' | 'debt';
 
 interface SeriesMeta {
   key: SeriesKey;
@@ -39,13 +38,12 @@ interface SeriesMeta {
 const SERIES: SeriesMeta[] = [
   { key: 'income', name: 'Income / mo', color: 'var(--color-income)', axis: 'flow', kind: 'line' },
   { key: 'expenses', name: 'Expenses / mo', color: 'var(--color-expense)', axis: 'flow', kind: 'line' },
-  { key: 'future', name: 'Future expenses / mo', color: 'var(--color-net-neg)', axis: 'flow', kind: 'bar' },
   { key: 'cash', name: 'Accounts (balance)', color: 'var(--color-net-pos)', axis: 'bal', kind: 'line' },
   { key: 'debt', name: 'Debt (balance)', color: '#a78bfa', axis: 'bal', kind: 'line' },
 ];
 
 const AXIS_NAME: Record<SeriesKey, string> = {
-  income: 'monthly', expenses: 'monthly', future: 'monthly', cash: 'balance', debt: 'balance',
+  income: 'monthly', expenses: 'monthly', cash: 'balance', debt: 'balance',
 };
 
 function CustomTooltip({ active, payload, label }: {
@@ -137,8 +135,6 @@ export default function OverviewChart({ data, startMonth, months, onStartMonthCh
               label={{ value: `${mk.name} paid`, position: 'top', fill: 'var(--color-income)', fontSize: 10 }}
             />
           ))}
-          {/* Bars first so lines sit on top */}
-          <Bar yAxisId="flow" dataKey="future" name="Future expenses / mo" fill="var(--color-net-neg)" barSize={12} radius={[3, 3, 0, 0]} hide={hidden.has('future')} />
           <Line yAxisId="flow" type="monotone" dataKey="income" name="Income / mo" stroke="var(--color-income)" strokeWidth={2} dot={false} hide={hidden.has('income')} />
           <Line yAxisId="flow" type="monotone" dataKey="expenses" name="Expenses / mo" stroke="var(--color-expense)" strokeWidth={2} dot={false} hide={hidden.has('expenses')} />
           <Line yAxisId="bal" type="monotone" dataKey="cash" name="Accounts (balance)" stroke="var(--color-net-pos)" strokeWidth={2.5} dot={false} hide={hidden.has('cash')} />

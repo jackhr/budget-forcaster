@@ -16,8 +16,8 @@ The monthly engine (`forecast.ts`) averages weekly and biweekly amounts, ignores
 
 <a id="g2"></a>
 
-### G2: Expenses vs Future Expenses is a legacy split (GAP)
-The two are nearly identical: both have frequency, start date, and funding. Differences: expenses force `end_date = NULL`, get inflation, can be marked paid, and are groupable and reorderable. Future expenses have an end date, legacy `funding_source_*`, no inflation, and no paid flag. **Intent: "ongoing vs temporary" expenses.** A refactor is welcome: one concept, or two with a clear ongoing/temporary distinction, sharing code paths. Watch for the double-counting warning, scenario and export compatibility (`TABLES`), legacy funding fields, and `paid_status` rows (`entity_type = 'expense'`). *Deferred by the owner (2026-09) as a separate, planned refactor.*
+### G2: No way to model a *temporary* (time-boxed) recurring cost (GAP)
+Future Expenses (`scheduled_payments`) were **removed** in 2026-09 at the owner's request: table dropped, routes and UI deleted, and every forecast path now runs on Expenses alone. What the removal leaves open is the half of the old intent that Expenses don't cover: expenses force `end_date = NULL` on write, so a cost that runs for a fixed span (a 48-month car loan modelled as a bill, a 6-month rental) can only be entered as an open-ended expense, or as a `one-time` expense for a single hit. The column still exists in `expenses` and the whole occurrence engine already honors it (`expenseOccurrenceAtMonth` reads `end_date`) — what's missing is letting the route and the editor write one. **Intent: "ongoing vs temporary" expenses, one concept.** Anything reintroducing a second cost table contradicts this.
 
 <a id="g4"></a>
 
@@ -48,7 +48,7 @@ These went back and forth in history. **Don't reopen them without the owner.**
 | Credit limits | A card **absorbs the full charge**, goes over limit, and is **flagged** (badge + first over-limit month). No cap, no spill to cash. Only loan or missing targets are "uncovered". | cap (`2a4ca7c`) → no cap/flag (`d26edfa`) → cap + spill to cash (`2293426`) → spill left uncovered (`af90989`) → **absorb + flag** (`51ccc24`). Confirmed 2026-09. |
 | Debt funding rules | **Temporary overrides.** In a month covered by a rule's date window, the in-window rules set the payment. Outside every window, the debt makes its normal payment from its default account and takes part in the strategy. | authoritative, $0 outside windows (`b1dbfe1`) → **temporary overrides** (`75bbb3b`). Confirmed 2026-09. |
 | Card-funded means not cash | Charges add to the card and are repaid through its payment. They never reduce cash directly. | Stable since split funding was introduced. |
-| Remainder for expenses and future expenses | Unallocated → primary account. | Stable. |
+| Remainder for expenses | Unallocated → primary account. | Stable. |
 | Funding sources for debts | Accounts only, never another card (no balance-transfer modeling). | Stable. |
 | Groups | Display only; deleting ungroups. | Stable. |
 | Simple vs advanced funding UI | One dropdown by default (stored as a single 100% allocation); "Split or schedule…" for rules. | `9c50014`, `47249e2`, `d1c2520`. |
