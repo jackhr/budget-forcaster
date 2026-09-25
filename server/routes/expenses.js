@@ -15,6 +15,20 @@ function isAmount(v) {
   return typeof v === 'number' && isFinite(v);
 }
 
+// A one-time expense has a single occurrence, so an end date is meaningless.
+function endDateFor(frequency, endDate) {
+  return frequency === 'one-time' ? null : normalizeDate(endDate, 'end_date');
+}
+
+// An end date before the first occurrence would silently produce an expense that never bills.
+function rangeError(res, startDate, endDate) {
+  if (startDate && endDate && endDate < startDate) {
+    res.status(400).json({ error: 'end_date must be on or after start_date' });
+    return true;
+  }
+  return false;
+}
+
 function serialize(row) {
   return {
     ...row,
@@ -34,19 +48,23 @@ router.post('/reorder', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date } = req.body;
+  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date } = req.body;
   if (!name || !isAmount(monthly_amount) || monthly_amount < 0 || !start_date) {
     return res.status(400).json({ error: 'name, a non-negative numeric monthly_amount and start_date are required' });
   }
+  const normalizedFrequency = normalizeFrequency(frequency);
   let normalizedStart;
+  let normalizedEnd;
   let cleanedRules;
   try {
     normalizedStart = normalizeDate(start_date, 'start_date', { required: true });
+    normalizedEnd = endDateFor(normalizedFrequency, end_date);
     cleanedRules = cleanFundingRules(funding_rules);
   } catch (e) {
     if (dateError(res, e)) return;
     throw e;
   }
+  if (rangeError(res, normalizedStart, normalizedEnd)) return;
   const stmt = db.prepare(
     'INSERT INTO expenses (name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
@@ -54,26 +72,32 @@ router.post('/', (req, res) => {
     name, monthly_amount, group_id ?? null,
     JSON.stringify(cleanAllocations(funding_allocations)),
     JSON.stringify(cleanedRules),
-    normalizeFrequency(frequency), normalizedStart, null,
+    normalizedFrequency, normalizedStart, normalizedEnd,
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(serialize(row));
 });
 
 router.put('/:id', (req, res) => {
-  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date } = req.body;
+  const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date } = req.body;
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  const normalizedFrequency = frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency;
   let cleanedRules = existing.funding_rules;
   let normalizedStart = existing.start_date;
+  let normalizedEnd = existing.end_date;
   try {
     if (start_date !== undefined) normalizedStart = normalizeDate(start_date, 'start_date', { required: true });
+    if (end_date !== undefined) normalizedEnd = normalizeDate(end_date, 'end_date');
     if (funding_rules !== undefined) cleanedRules = JSON.stringify(cleanFundingRules(funding_rules));
   } catch (e) {
     if (dateError(res, e)) return;
     throw e;
   }
+  // A one-time expense has a single occurrence, so an end date is meaningless.
+  if (normalizedFrequency === 'one-time') normalizedEnd = null;
+  if (rangeError(res, normalizedStart, normalizedEnd)) return;
 
   db.prepare(
     `UPDATE expenses
@@ -85,9 +109,9 @@ router.put('/:id', (req, res) => {
     group_id !== undefined ? (group_id ?? null) : existing.group_id,
     funding_allocations !== undefined ? JSON.stringify(cleanAllocations(funding_allocations)) : existing.funding_allocations,
     cleanedRules,
-    frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency,
+    normalizedFrequency,
     normalizedStart,
-    null,
+    normalizedEnd,
     id
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);

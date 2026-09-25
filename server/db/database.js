@@ -222,7 +222,7 @@ if (!expenseFundingCols.some((c) => c.name === 'funding_allocations')) {
 if (!expenseFundingCols.some((c) => c.name === 'funding_rules')) {
   db.exec("ALTER TABLE expenses ADD COLUMN funding_rules TEXT NOT NULL DEFAULT '[]'");
 }
-// Expenses get a frequency. Date columns remain for schema compatibility.
+// Expenses get a frequency, a first-occurrence date, and an optional end date.
 if (!expenseFundingCols.some((c) => c.name === 'frequency')) {
   db.exec("ALTER TABLE expenses ADD COLUMN frequency TEXT NOT NULL DEFAULT 'monthly'");
 }
@@ -234,7 +234,6 @@ if (!expenseFundingCols.some((c) => c.name === 'end_date')) {
 }
 // Existing expenses predate the required first-occurrence date; keep them active from today.
 db.exec("UPDATE expenses SET start_date = date('now') WHERE start_date IS NULL");
-db.exec('UPDATE expenses SET end_date = NULL WHERE end_date IS NOT NULL');
 
 // --- Migration: add frequency column to income_sources if it doesn't exist ---
 const incomeCols = db.prepare('PRAGMA table_info(income_sources)').all();

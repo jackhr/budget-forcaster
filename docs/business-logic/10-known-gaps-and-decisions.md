@@ -14,11 +14,6 @@ When you fix something, move it to "Resolved" with the commit hash and update th
 ### G1: Monthly engine vs day engine disagree (GAP)
 The monthly engine (`forecast.ts`) averages weekly and biweekly amounts, ignores the day of the month, applies inflation, and simulates debt. The day engine (`monthlyBreakdown.ts`) uses real dates but has no inflation, no debt simulation (interest, strategy, payoff, charges), and no split of debt allocations. **Intent: day-level is the source of truth.** Direction: move the forecast toward date-accurate occurrences, and share one occurrence generator and one funding resolver between both views. Until then, don't "fix" one engine to match the other's approximation. Fix toward date accuracy. *Deferred by the owner (2026-09) as a separate, planned refactor.*
 
-<a id="g2"></a>
-
-### G2: No way to model a *temporary* (time-boxed) recurring cost (GAP)
-Future Expenses (`scheduled_payments`) were **removed** in 2026-09 at the owner's request: table dropped, routes and UI deleted, and every forecast path now runs on Expenses alone. What the removal leaves open is the half of the old intent that Expenses don't cover: expenses force `end_date = NULL` on write, so a cost that runs for a fixed span (a 48-month car loan modelled as a bill, a 6-month rental) can only be entered as an open-ended expense, or as a `one-time` expense for a single hit. The column still exists in `expenses` and the whole occurrence engine already honors it (`expenseOccurrenceAtMonth` reads `end_date`) — what's missing is letting the route and the editor write one. **Intent: "ongoing vs temporary" expenses, one concept.** Anything reintroducing a second cost table contradicts this.
-
 <a id="g4"></a>
 
 ### G4: Auto-reconcile the rest of month 0 from Plaid (GAP, partly done)
@@ -47,6 +42,7 @@ These went back and forth in history. **Don't reopen them without the owner.**
 |---|---|---|
 | Credit limits | A card **absorbs the full charge**, goes over limit, and is **flagged** (badge + first over-limit month). No cap, no spill to cash. Only loan or missing targets are "uncovered". | cap (`2a4ca7c`) → no cap/flag (`d26edfa`) → cap + spill to cash (`2293426`) → spill left uncovered (`af90989`) → **absorb + flag** (`51ccc24`). Confirmed 2026-09. |
 | Debt funding rules | **Temporary overrides.** In a month covered by a rule's date window, the in-window rules set the payment. Outside every window, the debt makes its normal payment from its default account and takes part in the strategy. | authoritative, $0 outside windows (`b1dbfe1`) → **temporary overrides** (`75bbb3b`). Confirmed 2026-09. |
+| One cost entity | `expenses` models every cost: **ongoing** (no end date), **temporary** (start + end), **one-off** (`one-time`). No second table, no parallel "future"/"scheduled" concept — add a field instead. | two tables (`expenses` + `scheduled_payments`) → **one** (2026-09). |
 | Card-funded means not cash | Charges add to the card and are repaid through its payment. They never reduce cash directly. | Stable since split funding was introduced. |
 | Remainder for expenses | Unallocated → primary account. | Stable. |
 | Funding sources for debts | Accounts only, never another card (no balance-transfer modeling). | Stable. |
@@ -60,6 +56,11 @@ These went back and forth in history. **Don't reopen them without the owner.**
 ## Resolved
 
 All in `75bbb3b` unless noted.
+
+<a id="g2"></a>
+
+### G2: Expenses vs Future Expenses was a legacy split (GAP → fixed, 2026-09)
+Two entities modelled the same thing with different fields. Fixed in two steps. **(1)** Future Expenses (`scheduled_payments`) removed: table dropped, routes and UI deleted, `paymentCashAtMonth` / `buildDebtCharges` / `buildFutureExpenseBreakdown` / `buildScheduledOutByAccount` deleted, `SavingsPoint.scheduledOut`/`scheduledLabel` and `DebtCharge.kind: 'future'` gone, and the table dropped from `data.TABLES` so it leaves export/import and scenario snapshots. **(2)** Expenses gained the missing half: `end_date` is writable (optional, inclusive, on or after `start_date`, forced NULL for `one-time`), and a future `start_date` shows an orange **Future** tag on the row. The occurrence engine already honored `end_date` — test: `honors an expense frequency and date range`.
 
 <a id="g3"></a>
 

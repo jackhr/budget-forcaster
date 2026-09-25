@@ -41,6 +41,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const [payday1, setPayday1] = useState(15);
   const [payday2, setPayday2] = useState(31);
   const [start, setStart] = useState(today);
+  const [end, setEnd] = useState('');
   const [account, setAccount] = useState<number | null>(null);
   const [fundingSource, setFundingSource] = useState('');
   const [saving, setSaving] = useState(false);
@@ -50,10 +51,12 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
   const cardAvail = selectedCard?.available ?? null;
   const amtNum = parseFloat(amount);
   const cardSpill = cardAvail != null && amtNum > cardAvail ? amtNum - cardAvail : 0;
-  const valid = name.trim().length > 0 && amtNum > 0 && (!showFunding || !!start);
+  // An end before the first occurrence would bill nothing at all.
+  const rangeValid = !end || !start || end >= start;
+  const valid = name.trim().length > 0 && amtNum > 0 && (!showFunding || !!start) && rangeValid;
 
   const reset = () => {
-    setName(''); setAmount(''); setFrequency('monthly'); setPayday1(15); setPayday2(31); setStart(today());
+    setName(''); setAmount(''); setFrequency('monthly'); setPayday1(15); setPayday2(31); setStart(today()); setEnd('');
     setAccount(null); setFundingSource('');
   };
 
@@ -69,7 +72,7 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
       monthly_amount: amtNum,
       ...(showFrequency ? { frequency } : {}),
       ...(showAccount && frequency === 'semimonthly' ? { payday_1: payday1, payday_2: payday2 } : {}),
-      ...(showFunding ? { start_date: start } : {}),
+      ...(showFunding ? { start_date: start, end_date: end || null } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: funding } : {}),
       ...(groupId != null ? { group_id: groupId } : {}),
@@ -132,6 +135,12 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
             {showFunding && field('When', 'First occurrence; repeats according to the selected frequency.', (
               <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ width: '100%' }} />
             ))}
+
+            {showFunding && frequency !== 'one-time' && field('Ends (optional)', 'Last occurrence. Leave blank for an ongoing cost.', (
+              <input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} style={{ width: '100%' }} />
+            ))}
+
+            {!rangeValid && <p style={{ fontSize: 12, margin: 0, color: 'var(--color-expense)' }}>The end date must be on or after the first occurrence.</p>}
 
             {showAccount && accounts?.length ? field('Deposited into', 'The account that receives this income.', (
               <select value={account ?? primaryId ?? ''} onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>

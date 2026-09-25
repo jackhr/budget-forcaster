@@ -23,7 +23,7 @@ Core:
 
 - `accounts` — cash accounts; name, balance, `is_primary`, `sort_order`, `plaid_account_id`. Exactly one primary; unallocated cash flows default to it.
 - `income_sources` — name, monthly_amount (per-payment), `frequency`, `payday_1`/`payday_2` (semimonthly days; 31 = last day), `start_date`, `account_id` (null = primary), `group_id`, `sort_order`
-- `expenses` — recurring costs; name, monthly_amount (per occurrence), `frequency`, `start_date`, `end_date` (retained for compat; normal expenses are ongoing), `funding_allocations`, `funding_rules`, `group_id`, `sort_order`
+- `expenses` — every cost; name, monthly_amount (per occurrence), `frequency`, `start_date`, `end_date` (optional, inclusive; null = ongoing, forced null for `one-time`), `funding_allocations`, `funding_rules`, `group_id`, `sort_order`. Ongoing = no end date, temporary = start + end, one-off = `one-time`; a future `start_date` shows an orange "Future" tag.
 - `debts` — name, balance, apr, credit_limit, monthly_payment, `debt_type` (`credit_card` = revolving/chargeable, `loan` = installment), `payment_day`, `account_id`, `funding_allocations`, `funding_rules`, `group_id`, `sort_order`, `plaid_account_id`, plus cached Plaid liability fields (`last_statement_balance`, `next_payment_due_date`, `last_payment_amount`, `is_overdue`, `plaid_aprs`, …)
 - `line_item_groups` — name, `kind` ('income' | 'expense' | 'debt'), `sort_order`. Items reference a group via `group_id`; deleting a group **ungroups** its items (sets group_id NULL), never deletes them.
 - `income_occurrences` — per-payday overrides keyed `(income_id, scheduled_date)`: `occurrence_date`, `status` (`expected` | `received` | `detected` | `skipped`), optional `transaction_id`. Cascades on income delete.

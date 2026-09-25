@@ -17,6 +17,7 @@
   --color-expense: #f43f5e;
   --color-net-pos: #38bdf8;
   --color-net-neg: #fb923c;
+  --color-future: #fb923c; /* not-yet-started items (expense "Future" tag) */
   --radius: 12px;
   --radius-sm: 8px;
   --shadow: 0 4px 24px rgba(0,0,0,0.4);

@@ -34,11 +34,13 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
   - Cascade-deleted with the income source.
 - Reorderable and groupable (`kind = 'income'`).
 
-## Expense (`expenses`): *ongoing* costs
+## Expense (`expenses`): every cost
 
 - `monthly_amount` = **amount per occurrence** at `frequency`.
 - `start_date` is **required** on create and update. It is the first occurrence and anchors the cycle. Old rows got `date('now')` via migration.
-- `end_date` is **always forced to NULL** on write (the migration also nulls existing values). Expenses are ongoing by definition. A one-off cost is a `one-time` expense with a future `start_date`; a *time-boxed recurring* cost can't be expressed yet (see [10 G2](10-known-gaps-and-decisions.md#g2)).
+- `end_date` is **optional** and inclusive: null = ongoing, a date = the last occurrence. It must be on or after `start_date` (400 otherwise), and it's forced to NULL for `one-time` (a single occurrence has nothing to end). Comparison is **month-granular** in the monthly engine, so an end date mid-month still bills that whole month.
+- The three shapes a cost can take: **ongoing** (no end date), **temporary** (start + end), **one-off** (`one-time` frequency). There is no separate entity for any of them.
+- A `start_date` in the future is legal and normal: the row shows an orange **Future** tag and contributes nothing until its first occurrence.
 - Funding: `funding_allocations` / `funding_rules`, with account or card sources. See [05](05-funding.md).
 - **Inflation applies**: the amount compounds by `app_settings.inflation_rate`.
 - Can be marked **paid this month** (manually; stored in `paid_status`), which skips month 0.

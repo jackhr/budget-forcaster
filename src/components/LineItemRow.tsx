@@ -20,6 +20,16 @@ function formatDate(date: string | null): string | null {
   return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// "from Jun 12, 2026", "until Dec 1, 2026", or "Jun 12, 2026 → Dec 1, 2026".
+function rangeLabel(start: string | null, end: string | null): string | null {
+  const from = formatDate(start);
+  const to = formatDate(end);
+  if (from && to) return `${from} → ${to}`;
+  if (from) return `from ${from}`;
+  if (to) return `until ${to}`;
+  return null;
+}
+
 interface Props {
   item: LineItem;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
@@ -53,6 +63,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const [payday1, setPayday1] = useState('payday_1' in item ? item.payday_1 ?? 15 : 15);
   const [payday2, setPayday2] = useState('payday_2' in item ? item.payday_2 ?? 31 : 31);
   const [start, setStart] = useState('start_date' in item && item.start_date ? item.start_date : today());
+  const [end, setEnd] = useState('end_date' in item ? item.end_date ?? '' : '');
   const [groupId, setGroupId] = useState<number | null>(item.group_id);
   const [account, setAccount] = useState<number | null>(itemAccount);
   const [allocations, setAllocations] = useState<ExpenseAllocation[]>(itemAllocations);
@@ -66,6 +77,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     setPayday1('payday_1' in item ? item.payday_1 ?? 15 : 15);
     setPayday2('payday_2' in item ? item.payday_2 ?? 31 : 31);
     setStart('start_date' in item && item.start_date ? item.start_date : today());
+    setEnd('end_date' in item ? item.end_date ?? '' : '');
     setGroupId(item.group_id);
     setAccount(itemAccount);
     setAllocations(itemAllocations);
@@ -77,8 +89,14 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
   const nameValid = name.trim().length > 0;
   const amountValid = amtNum > 0;
   const startValid = !showFunding || !!start;
-  const valid = nameValid && amountValid && startValid;
-  const startLabel = showFunding && 'start_date' in item ? formatDate(item.start_date) : null;
+  // An end before the first occurrence would bill nothing at all.
+  const rangeValid = !end || !start || end >= start;
+  const valid = nameValid && amountValid && startValid && rangeValid;
+  const dateLabel = showFunding && 'start_date' in item
+    ? rangeLabel(item.start_date, 'end_date' in item ? item.end_date : null)
+    : null;
+  // An expense whose first occurrence hasn't arrived yet: it's in the forecast but not billing now.
+  const notStarted = showFunding && 'start_date' in item && !!item.start_date && item.start_date > today();
 
   // "Paid from" is simple (one account/card, or the primary account) unless
   // there's a scheduled plan or a split — then show the funding-plan summary.
@@ -104,7 +122,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
       ...(showFrequency ? { frequency } : {}),
       ...(showAccount && frequency === 'semimonthly' ? { payday_1: payday1, payday_2: payday2 } : {}),
       ...(showAccount ? { start_date: start } : {}),
-      ...(showFunding ? { start_date: start } : {}),
+      ...(showFunding ? { start_date: start, end_date: frequency === 'one-time' ? null : (end || null) } : {}),
       ...(showAccount ? { account_id: account } : {}),
       ...(showFunding ? { funding_allocations: allocations.filter((a) => a.source_id != null && a.value > 0) } : {}),
       ...(showFunding ? { funding_rules: fundingRules.filter((r) => r.source_id != null && r.value > 0) } : {}),
@@ -156,7 +174,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
           <div style={{ width: 3, height: 24, marginTop: 1, borderRadius: 2, background: accentColor, flexShrink: 0 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
             <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>{item.name}</span>
-            {(showFrequency && itemFreq !== 'monthly') || startLabel || onTogglePaid ? (
+            {(showFrequency && itemFreq !== 'monthly') || dateLabel || notStarted || onTogglePaid ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
                 {showFrequency && itemFreq !== 'monthly' && (
                   <span style={{
@@ -178,9 +196,24 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                     {receivedCount} of {incomeOccurrences.length} received this month
                   </span>
                 )}
-                {startLabel && (
+                {notStarted && (
+                  <span title="Hasn't started yet — it enters the forecast on its first occurrence." style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: 'var(--color-future)',
+                    background: 'color-mix(in srgb, var(--color-future) 14%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--color-future) 45%, transparent)',
+                    borderRadius: 5,
+                    padding: '1px 6px',
+                  }}>
+                    Future
+                  </span>
+                )}
+                {dateLabel && (
                   <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600 }}>
-                    from {startLabel}
+                    {dateLabel}
                   </span>
                 )}
                 {onTogglePaid && (
@@ -361,6 +394,18 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
               </label>
             )}
 
+            {showFunding && frequency !== 'one-time' && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Ends (optional)
+                </span>
+                <input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} style={{ width: '100%' }} />
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>
+                  Last occurrence. Leave blank for an ongoing cost.
+                </span>
+              </label>
+            )}
+
             {groups && (
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -453,6 +498,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
             {!nameValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Enter a name.</p>}
             {!amountValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Enter an amount greater than zero.</p>}
             {!startValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Choose the first occurrence date.</p>}
+            {!rangeValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>The end date must be on or after the first occurrence.</p>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
               <button
                 type="button"
