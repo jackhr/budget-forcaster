@@ -866,7 +866,7 @@ export default function App() {
           onMakePrimary={makePrimary} onReorder={reorderAccounts}
         />
         <PlaidConnect onImported={load} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
           <LineItemTable
             title="Income Sources" description="Money coming in, by pay frequency"
             items={incomeSources} accentColor="var(--color-income)" totalLabel="Total Per Payment"
