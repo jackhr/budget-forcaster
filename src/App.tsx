@@ -6,6 +6,7 @@ import {
 } from './api/client';
 import { buildForecast, buildSavings, buildNetWorth, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
 import { buildMonthBreakdown } from './lib/monthlyBreakdown';
+import { pickStored, resolveTab } from './lib/viewPrefs';
 import { simulateDebtPlan, debtPaidDefault, type DebtStrategy } from './lib/debt';
 import { setCurrency, formatMoney } from './lib/format';
 import { useToast } from './components/Toast';
@@ -16,7 +17,8 @@ import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import PlaidConnect from './components/PlaidConnect';
 import HeaderControls from './components/HeaderControls';
-import AppShell, { type NavGroup } from './components/AppShell';
+import AppShell from './components/AppShell';
+import { NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS, type ProjectionView, type Tab } from './lib/nav';
 import Home from './components/Home';
 import { Banner } from './ui';
 import Toolbar from './components/Toolbar';
@@ -33,57 +35,8 @@ const AccountActivity = lazy(() => import('./components/AccountActivity'));
 const AccountOutflows = lazy(() => import('./components/AccountOutflows'));
 const Transactions = lazy(() => import('./components/Transactions'));
 
-type Tab =
-  | 'home'
-  | 'accounts' | 'income' | 'expenses' | 'debts'
-  | 'projections' | 'breakdown' | 'account' | 'outflows' | 'transactions';
-
-// Planning and viewing are deliberately separate: the editors live under PLAN
-// and nowhere else, so a view is just a view.
-const NAV: NavGroup[] = [
-  { items: [{ id: 'home', label: 'Home', icon: '◈' }] },
-  {
-    heading: 'Plan',
-    items: [
-      { id: 'accounts', label: 'Accounts', icon: '▣' },
-      { id: 'income', label: 'Income', icon: '↑' },
-      { id: 'expenses', label: 'Expenses', icon: '↓' },
-      { id: 'debts', label: 'Debts', icon: '◆' },
-    ],
-  },
-  {
-    heading: 'Views',
-    items: [
-      { id: 'projections', label: 'Projections', icon: '◠' },
-      { id: 'breakdown', label: 'Breakdown', icon: '▥' },
-      { id: 'account', label: 'Activity', icon: '⇄' },
-      { id: 'outflows', label: 'Outflows', icon: '⇉' },
-      { id: 'transactions', label: 'Transactions', icon: '≡' },
-    ],
-  },
-];
-
-const PAGE_META: Record<Tab, { title: string; subtitle?: string }> = {
-  home: { title: 'Home', subtitle: 'Where you stand, and what’s coming' },
-  accounts: { title: 'Accounts', subtitle: 'Cash piles, and the bank connections behind them' },
-  income: { title: 'Income', subtitle: 'Money coming in, by pay frequency' },
-  expenses: { title: 'Expenses', subtitle: 'Ongoing and time-boxed costs, and what funds each' },
-  debts: { title: 'Debts', subtitle: 'Balances, payoff strategy, and projected free dates' },
-  projections: { title: 'Projections', subtitle: 'Cash flow, savings and net worth over time' },
-  breakdown: { title: 'Breakdown', subtitle: 'Item by item, by range or by month' },
-  account: { title: 'Activity', subtitle: 'What moves in and out of one account or debt' },
-  outflows: { title: 'Outflows', subtitle: 'What each account pays for, month by month' },
-  transactions: { title: 'Transactions', subtitle: 'Synced from your linked institutions' },
-};
-
-// The four chart tabs that used to be separate are one page with a switcher.
-type ProjectionView = 'cashflow' | 'savings' | 'networth' | 'overview';
-const PROJECTION_VIEWS: [ProjectionView, string][] = [
-  ['cashflow', 'Cash flow'],
-  ['savings', 'Savings'],
-  ['networth', 'Net worth'],
-  ['overview', 'Overview'],
-];
+const BREAKDOWN_SECTIONS: BreakdownSection[] = ['account', 'income', 'expense', 'debt'];
+const BREAKDOWN_MODES: BreakdownMode[] = ['range', 'month'];
 type BreakdownSection = 'account' | 'income' | 'expense' | 'debt';
 type BreakdownMode = 'range' | 'month';
 
@@ -162,11 +115,23 @@ export default function App() {
   const [debtStrategy, setDebtStrategy] = useState<DebtStrategy>('none');
   const [months, setMonths] = useState(() => Number(localStorage.getItem('bf.months')) || 12);
   const [startMonth, setStartMonth] = useState(() => Number(localStorage.getItem('bf.startMonth')) || 0);
-  const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'home');
-  const [projectionView, setProjectionView] = useState<ProjectionView>(() => (localStorage.getItem('bf.projection') as ProjectionView) || 'cashflow');
+  // Stored ids come from whatever build the user last ran, so they're resolved
+  // against the ids that exist now; a retired tab maps forward where it can.
+  const [tab, setTab] = useState<Tab>(
+    () => resolveTab(localStorage.getItem('bf.tab'), TAB_IDS, 'home').tab as Tab,
+  );
+  const [projectionView, setProjectionView] = useState<ProjectionView>(() => {
+    const carriedOver = resolveTab(localStorage.getItem('bf.tab'), TAB_IDS, 'home').view;
+    return (carriedOver as ProjectionView)
+      ?? pickStored(localStorage.getItem('bf.projection'), PROJECTION_IDS, 'cashflow');
+  });
   const [compareId, setCompareId] = useState<number | null>(null);
-  const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
-  const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>(() => (localStorage.getItem('bf.breakdownMode') as BreakdownMode) || 'range');
+  const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(
+    () => pickStored(localStorage.getItem('bf.breakdown'), BREAKDOWN_SECTIONS, 'debt'),
+  );
+  const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>(
+    () => pickStored(localStorage.getItem('bf.breakdownMode'), BREAKDOWN_MODES, 'range'),
+  );
   const [breakdownMonth, setBreakdownMonth] = useState(() => Number(localStorage.getItem('bf.breakdownMonth')) || 0);
   const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
   const [activityMonth, setActivityMonth] = useState(() => Number(localStorage.getItem('bf.activityMonth')) || 0);
@@ -600,13 +565,15 @@ export default function App() {
     </>
   );
 
+  const page = PAGE_META[tab] ?? PAGE_META.home;
+
   return (
     <AppShell
       groups={NAV}
       current={tab}
       onSelect={(id) => setTab(id as Tab)}
-      title={PAGE_META[tab].title}
-      subtitle={PAGE_META[tab].subtitle}
+      title={page.title}
+      subtitle={page.subtitle}
       banners={banners}
       actions={
         <HeaderControls

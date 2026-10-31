@@ -2,18 +2,7 @@ import { useEffect, useState } from 'react';
 import { cx } from '../ui';
 import UserMenu from '../auth/UserMenu';
 import { useMediaQuery } from '../lib/useMediaQuery';
-
-export interface NavItem {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-}
-
-export interface NavGroup {
-  /** Omitted for the top-level items that need no heading. */
-  heading?: string;
-  items: NavItem[];
-}
+import type { NavGroup } from '../lib/nav';
 
 interface Props {
   groups: NavGroup[];
