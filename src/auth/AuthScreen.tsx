@@ -1,8 +1,23 @@
 import { useState } from 'react';
-import { Button, Card, Field } from '../ui';
+import { Button, Card, Field, PasswordInput } from '../ui';
 import { useAuth } from './AuthProvider';
 
-const MIN_PASSWORD = 10;
+export const MIN_PASSWORD = 10;
+
+/**
+ * What's wrong with the chosen password, if anything. Only complains about a
+ * mismatch once there's something in the confirm box, so the error doesn't
+ * appear before the user has had a chance to type it.
+ */
+export function passwordProblem(password: string, confirm: string): string | null {
+  if (password.length > 0 && password.length < MIN_PASSWORD) {
+    return `At least ${MIN_PASSWORD} characters.`;
+  }
+  if (confirm.length > 0 && password !== confirm) {
+    return 'Passwords do not match.';
+  }
+  return null;
+}
 
 export default function AuthScreen({
   mode, onModeChange, onBack,
@@ -14,17 +29,24 @@ export default function AuthScreen({
   const { login, register } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const registering = mode === 'register';
-  const passwordTooShort = registering && password.length > 0 && password.length < MIN_PASSWORD;
-  const canSubmit = email.trim().length > 0 && password.length > 0 && !passwordTooShort && !submitting;
+  const problem = registering ? passwordProblem(password, confirm) : null;
+  const canSubmit =
+    email.trim().length > 0
+    && password.length > 0
+    && !problem
+    && (!registering || confirm.length > 0)
+    && !submitting;
 
   function switchMode(next: 'login' | 'register') {
     setError(null);
     setPassword('');
+    setConfirm('');
     onModeChange(next);
   }
 
@@ -94,11 +116,11 @@ export default function AuthScreen({
               label="Password"
               htmlFor="password"
               hint={registering ? `At least ${MIN_PASSWORD} characters.` : undefined}
-              error={passwordTooShort ? `At least ${MIN_PASSWORD} characters.` : null}
+              // A length complaint belongs here; a mismatch belongs on the confirm field.
+              error={problem === 'Passwords do not match.' ? null : problem}
             >
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 autoComplete={registering ? 'new-password' : 'current-password'}
                 required
                 value={password}
@@ -106,6 +128,23 @@ export default function AuthScreen({
                 placeholder="••••••••••"
               />
             </Field>
+
+            {registering && (
+              <Field
+                label="Confirm password"
+                htmlFor="confirm"
+                error={problem === 'Passwords do not match.' ? problem : null}
+              >
+                <PasswordInput
+                  id="confirm"
+                  autoComplete="new-password"
+                  required
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder="••••••••••"
+                />
+              </Field>
+            )}
 
             {error && (
               <p role="alert" className="rounded-control border border-danger/40 bg-danger/10 px-3 py-2 text-[12.5px] text-danger">

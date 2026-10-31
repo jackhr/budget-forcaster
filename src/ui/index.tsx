@@ -1,7 +1,7 @@
 // Shared UI primitives. Everything visual should be built from these so the app
 // reads as one system — the old per-component inline styles are what made it
 // drift. Tokens live in src/index.css (@theme).
-import { forwardRef } from 'react';
+import { forwardRef, useState } from 'react';
 
 type Div = React.HTMLAttributes<HTMLDivElement>;
 
@@ -130,6 +130,50 @@ export function Field({
     </div>
   );
 }
+
+/* ----------------------------- PasswordInput ----------------------------- */
+
+function EyeIcon({ off }: { off: boolean }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <path d="M1.4 8S3.9 3.6 8 3.6 14.6 8 14.6 8 12.1 12.4 8 12.4 1.4 8 1.4 8Z" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="8" cy="8" r="2.1" />
+      {off && <path d="M2.6 2.6l10.8 10.8" strokeLinecap="round" />}
+    </svg>
+  );
+}
+
+/**
+ * A password input with a reveal toggle. Typing a long password blind is the
+ * most common cause of a failed sign-in, so every password field uses this.
+ */
+export const PasswordInput = forwardRef<
+  HTMLInputElement,
+  Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'>
+>(function PasswordInput({ className, ...rest }, ref) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        ref={ref}
+        type={visible ? 'text' : 'password'}
+        // Room for the toggle so long values don't run underneath it.
+        className={cx('w-full pr-11', className)}
+        {...rest}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        aria-pressed={visible}
+        title={visible ? 'Hide password' : 'Show password'}
+        className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-control text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
+      >
+        <EyeIcon off={visible} />
+      </button>
+    </div>
+  );
+});
 
 /* ---------------------------------- Pill --------------------------------- */
 
