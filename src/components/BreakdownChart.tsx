@@ -5,6 +5,7 @@ import {
 import type { Breakdown } from '../lib/forecast';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
+import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface DebtMonthDetail { charges: { label: string; amount: number; kind: string }[]; payment: number }
 type DebtMonthInfo = Map<number, DebtMonthDetail[]>;
@@ -136,7 +137,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
       >
         <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color === TOTAL_COLOR ? 'var(--color-text)' : c.color, flexShrink: 0 }} />
         {c.name}
-        {c.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', fontWeight: 700 }}>✓</span>}
+        {c.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', display: 'inline-grid', placeItems: 'center' }}><Check size={13} strokeWidth={2.6} aria-hidden="true" /></span>}
       </button>
     );
   };
@@ -173,7 +174,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
           </span>
           {grp.name}
           <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>{visibleCount}/{keys.length}</span>
-          <span style={{ fontSize: 9, opacity: 0.7 }}>{open ? '▲' : '▼'}</span>
+          <span style={{ opacity: 0.7, display: 'inline-grid', placeItems: 'center' }}>{open ? <ChevronUp size={12} strokeWidth={2.4} aria-hidden="true" /> : <ChevronDown size={12} strokeWidth={2.4} aria-hidden="true" />}</span>
         </button>
         {open && (
           <div style={{
@@ -212,7 +213,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
                     background: off ? 'transparent' : m?.color,
                   }} />
                   <span style={{ flex: 1, textDecoration: off ? 'line-through' : 'none' }}>{m?.name}</span>
-                  {m?.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', fontWeight: 700 }}>✓</span>}
+                  {m?.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', display: 'inline-grid', placeItems: 'center' }}><Check size={13} strokeWidth={2.6} aria-hidden="true" /></span>}
                 </button>
               );
             })}
@@ -258,7 +259,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
                   border: '1px solid var(--color-border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, marginLeft: 4,
                 }}
               >
-                {showLimits ? '✓ ' : ''}Credit limits
+                {showLimits && <Check size={12} strokeWidth={2.6} aria-hidden="true" />}Credit limits
               </button>
             )}
           </div>

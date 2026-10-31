@@ -3,6 +3,7 @@ import type { AllocationSourceType, AllocationType, ExpenseAllocation, Frequency
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
+import { AlertTriangle, X } from 'lucide-react';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface DebtOpt { id: number; name: string; group_id?: number | null; available?: number | null; overLimit?: boolean } // available credit (limit − balance); null = no limit
@@ -188,17 +189,20 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
                 title="Remove funding rule"
                 onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
               >
-                ✕
+                <X size={15} strokeWidth={2.2} aria-hidden="true" />
               </button>
             </div>
 
             {cardAvailable(rule) != null && (
-              <p style={{ fontSize: 12, color: overLimit(rule) ? 'var(--color-expense)' : 'var(--color-text-muted)', margin: 0 }}>
-                {overLimit(rule)
-                  ? cardAlreadyOverLimit(rule)
-                    ? `⚠ Card is already over its limit — this rule adds another ${formatMoney(ruleDollar(rule))}.`
-                    : `⚠ Card has ${formatMoney(cardAvailable(rule)!)} available — this rule would put it ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} over its limit.`
-                  : `${formatMoney(cardAvailable(rule)!)} available on this card.`}
+              <p style={{ fontSize: 12, margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', color: overLimit(rule) ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
+                {overLimit(rule) && <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />}
+                <span>
+                  {overLimit(rule)
+                    ? cardAlreadyOverLimit(rule)
+                      ? `Card is already over its limit — this rule adds another ${formatMoney(ruleDollar(rule))}.`
+                      : `Card has ${formatMoney(cardAvailable(rule)!)} available — this rule would put it ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} over its limit.`
+                    : `${formatMoney(cardAvailable(rule)!)} available on this card.`}
+                </span>
               </p>
             )}
 
@@ -256,8 +260,9 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
         {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Make sure the end date is not before the start date.</p>}
         {percentInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>A percentage rule cannot exceed 100%. Add separate rules when multiple payments should accumulate.</p>}
         {cardSpill > 0.005 && (
-          <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>
-            ⚠ Selected card rules would exceed available credit by {formatMoney(cardSpill)} per occurrence and put those cards over limit.
+          <p style={{ fontSize: 12, color: 'var(--color-expense)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+            <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
+            <span>Selected card rules would exceed available credit by {formatMoney(cardSpill)} per occurrence and put those cards over limit.</span>
           </p>
         )}
 

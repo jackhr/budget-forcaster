@@ -72,7 +72,7 @@ A portion funded by a `debt` source is not cash out — it becomes a **charge** 
 
 ## Front end (`src/`)
 
-**Styling is Tailwind v4** (`@tailwindcss/vite`). Design tokens live in one `@theme` block in `src/index.css` — Tailwind generates utilities from them (`bg-surface`, `text-muted`, `rounded-card`) and the not-yet-migrated components read the same names via `var(--color-*)`. Build anything new from `src/ui/` (`Card`, `CardHeader`, `CardBody`, `Section`, `Button`, `Field`, `Pill`, `Banner`); per-component inline styles are what made the old UI drift.
+**Styling is Tailwind v4** (`@tailwindcss/vite`); **icons are [lucide-react](https://lucide.dev)** — never a unicode glyph or emoji. Design tokens live in one `@theme` block in `src/index.css` — Tailwind generates utilities from them (`bg-surface`, `text-muted`, `rounded-card`) and the not-yet-migrated components read the same names via `var(--color-*)`. Build anything new from `src/ui/` (`Card`, `CardHeader`, `CardBody`, `Section`, `Button`, `Field`, `Pill`, `Banner`); per-component inline styles are what made the old UI drift.
 
 - `auth/` — `AuthProvider` (session state, and a global 401 handler that drops to signed-out), `AuthGate` (landing vs. auth form vs. app), `Landing`, `AuthScreen`, `UserMenu`.
 - `components/AppShell.tsx` — sidebar + content shell. Nav is grouped (Home / **Plan** / **Views**); collapses to a drawer under 900px. Takes the page `title`, `actions` and `banners`.
@@ -96,4 +96,6 @@ A portion funded by a `debt` source is not cash out — it becomes a **charge** 
 - When adding a reorderable/groupable/fundable field, remember: migration in `database.js`, ordering in the route, validation in `lib/funding.js` if it's an allocation, the `group_id`/`sort_order` plumbing, and the type in `src/types/index.ts`.
 - When adding a **route**: scope every query by `user_id`, return 404 (not 403) for another user's row, and add a case to `server/lib/isolation.test.mjs`.
 - When adding **UI**: compose `src/ui/` primitives and Tailwind utilities. Don't add new inline-style components; migrating the remaining ones is in progress.
+- **Icons are Lucide components**, sized 11–17px with `strokeWidth` 1.9–2.6 and `aria-hidden` (or an `aria-label` when the icon is the only label). The two exceptions are deliberate: the brand mark is a hand-drawn SVG, and `<option>` text can't hold an SVG, so the primary-account marker stays a `★` there.
+- **Never put a base style outside a `@layer`** in `index.css`. Unlayered CSS beats layered CSS regardless of specificity, so a bare `button { … }` silently kills Tailwind utilities app-wide.
 - Tests cover the math libs and date parsing (`*.test.ts` excluded from the production tsc build via `tsconfig.app.json`).

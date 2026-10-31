@@ -9,6 +9,7 @@ import CollapseToggle from './CollapseToggle';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, X } from 'lucide-react';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 
@@ -56,8 +57,9 @@ function OverLimitBadge({ label }: { label: string }) {
     <span style={{
       fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 5, whiteSpace: 'nowrap',
       color: 'var(--color-expense)', background: 'var(--color-surface-2)', border: '1px solid var(--color-expense)',
+      display: 'inline-flex', alignItems: 'center', gap: 3,
     }}>
-      ⚠ {label}
+      <AlertTriangle size={11} strokeWidth={2.4} aria-hidden="true" />{label}
     </span>
   );
 }
@@ -251,17 +253,17 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
         </div>
         {overLimit && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)', margin: 0 }}>
-            ⚠ This card is {formatMoney(balNum - limNum!, { whole: true })} over its credit limit.
+            <AlertTriangle size={13} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" /> This card is {formatMoney(balNum - limNum!, { whole: true })} over its credit limit.
           </p>
         )}
         {!paymentValid && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)', margin: 0 }}>
-            ⚠ A monthly payment greater than $0 is required while a balance is owed. It is also the payment used in months no funding rule covers.
+            <AlertTriangle size={13} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" /> A monthly payment greater than $0 is required while a balance is owed. It is also the payment used in months no funding rule covers.
           </p>
         )}
         {!fundingPercentValid && (
           <p style={{ fontSize: 12, color: 'var(--color-expense)', margin: 0 }}>
-            ⚠ A funding-plan percentage exceeds 100%. Edit the funding plan before saving this debt.
+            <AlertTriangle size={13} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" /> A funding-plan percentage exceeds 100%. Edit the funding plan before saving this debt.
           </p>
         )}
         {field('Pay from', (
@@ -316,7 +318,7 @@ function DebtEditor({ title, initial, groups, accounts, onCancel, onSubmit }: Ed
           }}>
             {preview.neverPaysOff ? (
               <span style={{ color: 'var(--color-expense)' }}>
-                ⚠ This payment won’t cover the interest — the balance never gets paid off. Increase the monthly payment.
+                <AlertTriangle size={13} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" /> This payment won’t cover the interest — the balance never gets paid off. Increase the monthly payment.
               </span>
             ) : (
               <span style={{ color: 'var(--color-text)' }}>
@@ -385,7 +387,7 @@ function DebtRow({ debt, groups, accounts, overLimitMonth, paid, paidDetail, onT
         </div>
         <div style={{ flex: 1, minWidth: 180, fontSize: 13 }}>
           {s.neverPaysOff ? (
-            <span style={{ color: 'var(--color-expense)' }}>⚠ Payment won’t cover interest — never pays off</span>
+            <span style={{ color: 'var(--color-expense)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={12} strokeWidth={2.2} aria-hidden="true" />Payment won’t cover interest — never pays off</span>
           ) : (
             <span style={{ color: 'var(--color-text)' }}>
               Paid off <strong>{payoffDateLabel(s.payoffMonthIndex!)}</strong>
@@ -406,10 +408,10 @@ function DebtRow({ debt, groups, accounts, overLimitMonth, paid, paidDetail, onT
               border: `1px solid ${paid ? 'var(--color-income)' : 'var(--color-border)'}`,
             }}
           >
-            {paid ? '✓ Paid this month' : 'Mark paid'}
+            {paid ? <><Check size={12} strokeWidth={2.6} aria-hidden="true" /> Paid this month</> : 'Mark paid'}
           </button>
           <button onClick={() => setEditing(true)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', padding: '5px 10px', border: '1px solid var(--color-border)' }}>Edit</button>
-          <ConfirmButton onConfirm={() => onDelete(debt.id)} title={`Delete ${debt.name}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}>✕</ConfirmButton>
+          <ConfirmButton onConfirm={() => onDelete(debt.id)} title={`Delete ${debt.name}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></ConfirmButton>
         </div>
       </div>
       {editing && (
@@ -462,8 +464,8 @@ function DebtGroupBlock({ group, debts, groups, accounts, overLimitFor, isPaidTh
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', marginBottom: 8, overflow: 'hidden' }}>
       <div {...groupDrag} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--color-surface-2)', borderLeft: `3px solid ${ACCENT}`, cursor: groupDrag ? 'grab' : undefined }}>
-        <button onClick={toggleCollapsed} style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 32, lineHeight: 1, width: 26 }} aria-label={collapsed ? 'Expand group' : 'Collapse group'}>
-          {collapsed ? '▸' : '▾'}
+        <button onClick={toggleCollapsed} style={{ background: 'transparent', color: 'var(--color-text)', padding: 0, lineHeight: 1, width: 26, display: 'grid', placeItems: 'center' }} aria-label={collapsed ? 'Expand group' : 'Collapse group'}>
+          {collapsed ? <ChevronRight size={17} strokeWidth={2.2} aria-hidden="true" /> : <ChevronDown size={17} strokeWidth={2.2} aria-hidden="true" />}
         </button>
         {renaming ? (
           <input
@@ -532,7 +534,7 @@ function AddGroupInline({ onAddGroup }: { onAddGroup: (name: string) => Promise<
     <form onSubmit={submit} style={{ display: 'flex', gap: 6, flex: 1 }}>
       <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Group name (e.g. Jack's cards)" autoFocus style={{ flex: 1 }} required />
       <button type="submit" disabled={saving} style={{ background: ACCENT, color: '#fff', padding: '6px 14px' }}>{saving ? '…' : 'Create'}</button>
-      <button type="button" onClick={() => setOpen(false)} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 10px' }}>✕</button>
+      <button type="button" onClick={() => setOpen(false)} aria-label="Cancel" style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 8px', display: 'grid', placeItems: 'center' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></button>
     </form>
   );
 }

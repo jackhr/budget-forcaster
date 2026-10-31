@@ -17,6 +17,15 @@ const KIND: Record<MonthObligationKind, { label: string; color: string }> = {
   debt: { label: 'Debt', color: '#a78bfa' },
 };
 
+function LegendSwatch({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color }}>
+      <span style={{ width: 14, height: 2, borderRadius: 1, background: color, display: 'inline-block' }} />
+      {label}
+    </span>
+  );
+}
+
 function roundForDisplay(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -70,7 +79,7 @@ function Event({ event }: { event: MonthObligation }) {
         </span>
       </div>
       <div style={{ color: 'var(--color-text-muted)', fontSize: 9.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {!event.dateSpecified ? 'Date not set · ' : ''}{event.paid ? `✓ ${event.kind === 'income' ? 'received' : 'paid'} · ` : ''}{event.detail}
+        {!event.dateSpecified ? 'Date not set · ' : ''}{event.paid ? `${event.kind === 'income' ? 'Received' : 'Paid'} · ` : ''}{event.detail}
       </div>
     </div>
   );
@@ -175,7 +184,7 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
             </LineChart>
           </ResponsiveContainer>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 16, color: 'var(--color-text-muted)', fontSize: 11, flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--color-income)' }}>━ Money in</span><span style={{ color: 'var(--color-expense)' }}>━ Money out</span><span style={{ color: 'var(--color-text)' }}>━ Net</span>
+            <LegendSwatch color="var(--color-income)" label="Money in" /><LegendSwatch color="var(--color-expense)" label="Money out" /><LegendSwatch color="var(--color-text)" label="Net" />
           </div>
         </div>
       ) : view === 'calendar' ? (

@@ -2,6 +2,7 @@ import type { AccountActivity, AccountActivityItem } from '../lib/forecast';
 import { FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney, formatSignedMoney } from '../lib/format';
 import MonthControl from './MonthControl';
+import { ArrowDown, ArrowUp, Check } from 'lucide-react';
 
 interface Entity { id: number; name: string; kind: 'account' | 'debt'; isPrimary?: boolean }
 
@@ -46,10 +47,10 @@ function Row({ item, cost }: { item: AccountActivityItem; cost: boolean }) {
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-        <span style={{ color, fontWeight: 700 }}>{cost ? '↑' : '↓'}</span>
+        <span style={{ color, display: 'inline-grid', placeItems: 'center', flexShrink: 0 }}>{cost ? <ArrowUp size={14} strokeWidth={2.4} aria-hidden="true" /> : <ArrowDown size={14} strokeWidth={2.4} aria-hidden="true" />}</span>
         <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
         <Badge kind={item.kind} />
-        {paid && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-income)', border: '1px solid var(--color-income)', borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>✓ PAID</span>}
+        {paid && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-income)', border: '1px solid var(--color-income)', borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Check size={10} strokeWidth={3} aria-hidden="true" />PAID</span>}
       </div>
       <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>{FREQUENCY_LABELS[item.frequency]}</span>
       <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
@@ -137,7 +138,7 @@ export default function AccountActivity({ entities, selected, onSelect, entityKi
                   border: `1px solid ${paid ? 'var(--color-income)' : 'var(--color-border)'}`,
                 }}
               >
-                {paid ? '✓ Paid this month' : 'Mark paid'}
+                {paid ? <><Check size={12} strokeWidth={2.6} aria-hidden="true" /> Paid this month</> : 'Mark paid'}
               </button>
             )}
           </div>
@@ -166,10 +167,10 @@ export default function AccountActivity({ entities, selected, onSelect, entityKi
         )}
       </div>
 
-      <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-expense)', margin: '0 0 8px' }}>{isDebt ? 'Adds to balance ↑' : 'Money out ↑'}</h3>
+      <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-expense)', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 5 }}><ArrowUp size={13} strokeWidth={2.4} aria-hidden="true" />{isDebt ? 'Adds to balance' : 'Money out'}</h3>
       <Section items={topItems} cost empty={isDebt ? 'Nothing charged to this card.' : 'Nothing leaves this account.'} />
 
-      <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-income)', margin: '20px 0 8px' }}>{isDebt ? 'Pays it down ↓' : 'Money in ↓'}</h3>
+      <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-income)', margin: '20px 0 8px', display: 'flex', alignItems: 'center', gap: 5 }}><ArrowDown size={13} strokeWidth={2.4} aria-hidden="true" />{isDebt ? 'Pays it down' : 'Money in'}</h3>
       <Section items={bottomItems} cost={false} empty={isDebt ? 'No payments toward this debt yet.' : 'Nothing enters this account.'} />
     </div>
   );

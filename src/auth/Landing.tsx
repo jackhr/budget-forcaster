@@ -1,3 +1,4 @@
+import { TrendingDown } from 'lucide-react';
 import { Button } from '../ui';
 
 /** The one claim the product makes, and the three questions it answers. */
@@ -112,7 +113,7 @@ function RunwayPreview() {
       </div>
 
       <div className="mt-5 flex items-start gap-2.5 rounded-control border border-expense/40 bg-expense/10 px-3 py-2.5">
-        <span className="text-expense" aria-hidden="true">▾</span>
+        <TrendingDown size={15} strokeWidth={2.2} className="mt-px shrink-0 text-expense" aria-hidden="true" />
         <div className="text-[12.5px] leading-snug">
           <p className="font-semibold text-expense">Checking runs low in month 6</p>
           <p className="text-muted">Moving the insurance renewal one month clears it.</p>

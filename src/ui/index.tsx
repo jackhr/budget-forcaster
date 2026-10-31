@@ -2,6 +2,7 @@
 // reads as one system — the old per-component inline styles are what made it
 // drift. Tokens live in src/index.css (@theme).
 import { forwardRef, useState } from 'react';
+import { AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 type Div = React.HTMLAttributes<HTMLDivElement>;
 
@@ -133,16 +134,6 @@ export function Field({
 
 /* ----------------------------- PasswordInput ----------------------------- */
 
-function EyeIcon({ off }: { off: boolean }) {
-  return (
-    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-      <path d="M1.4 8S3.9 3.6 8 3.6 14.6 8 14.6 8 12.1 12.4 8 12.4 1.4 8 1.4 8Z" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="8" cy="8" r="2.1" />
-      {off && <path d="M2.6 2.6l10.8 10.8" strokeLinecap="round" />}
-    </svg>
-  );
-}
-
 /**
  * A password input with a reveal toggle. Typing a long password blind is the
  * most common cause of a failed sign-in, so every password field uses this.
@@ -169,7 +160,7 @@ export const PasswordInput = forwardRef<
         title={visible ? 'Hide password' : 'Show password'}
         className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-control text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
       >
-        <EyeIcon off={visible} />
+        {visible ? <EyeOff size={16} strokeWidth={1.9} aria-hidden="true" /> : <Eye size={16} strokeWidth={1.9} aria-hidden="true" />}
       </button>
     </div>
   );
@@ -214,7 +205,10 @@ export function Banner({
     : 'border-warning/40 bg-warning/10 text-warning';
   return (
     <div className={cx('flex items-start justify-between gap-3 rounded-control border px-3.5 py-2 text-[12.5px]', styles)}>
-      <span className="min-w-0">{children}</span>
+      <span className="flex min-w-0 items-start gap-2">
+        <AlertTriangle size={14} strokeWidth={2} className="mt-px shrink-0" aria-hidden="true" />
+        <span className="min-w-0">{children}</span>
+      </span>
       {onDismiss && (
         <button onClick={onDismiss} className="shrink-0 text-current underline opacity-70 hover:opacity-100">
           dismiss

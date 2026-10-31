@@ -5,6 +5,7 @@ import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
+import { AlertTriangle, Check, X } from 'lucide-react';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
@@ -228,9 +229,13 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                       fontSize: 11,
                       fontWeight: 600,
                       whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
                     }}
                   >
-                    {paid ? '✓ Paid this month' : '✓ Mark paid'}
+                    <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+                    {paid ? 'Paid this month' : 'Mark paid'}
                   </button>
                 )}
               </div>
@@ -252,7 +257,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
             title={`Delete ${item.name}`}
             triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}
           >
-            ✕
+            <X size={14} strokeWidth={2.2} aria-hidden="true" />
           </ConfirmButton>
         </div>
       </div>
@@ -371,7 +376,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                         <button type="button" onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, complete ? 'expected' : 'received')} style={{ background: complete ? 'rgba(34,197,94,.12)' : 'var(--color-surface-2)', color: complete ? 'var(--color-income)' : 'var(--color-text)', border: `1px solid ${complete ? 'var(--color-income)' : 'var(--color-border)'}`, padding: '5px 8px', fontSize: 11 }}>
-                          {complete ? '✓ Received' : 'Mark received'}
+                          {complete ? <><Check size={12} strokeWidth={2.6} aria-hidden="true" /> Received</> : 'Mark received'}
                         </button>
                         <button type="button" onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, 'skipped')} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', padding: '4px 8px', fontSize: 10.5 }}>Skip</button>
                         {onResetOccurrence && occurrence.date !== occurrence.scheduledDate && <button type="button" onClick={() => onResetOccurrence(occurrence.scheduledDate)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: 'none', padding: 2, fontSize: 10 }}>Reset date</button>}
@@ -481,10 +486,13 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                       )}
                     </select>
                     {selectedCard && cardAvail != null && (
-                      <p style={{ fontSize: 12, margin: 0, color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
-                        {cardSpill > 0.005
-                          ? `⚠ ${selectedCard.name} has ${formatMoney(cardAvail)} available — this charge would put it ${formatMoney(cardSpill)} over its limit.`
-                          : `${formatMoney(cardAvail)} available on this card.`}
+                      <p style={{ fontSize: 12, margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
+                        {cardSpill > 0.005 && <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />}
+                        <span>
+                          {cardSpill > 0.005
+                            ? `${selectedCard.name} has ${formatMoney(cardAvail)} available — this charge would put it ${formatMoney(cardSpill)} over its limit.`
+                            : `${formatMoney(cardAvail)} available on this card.`}
+                        </span>
                       </p>
                     )}
                     <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}>

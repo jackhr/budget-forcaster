@@ -3,6 +3,7 @@ import type { AllocationSourceType, Frequency, ItemFormData } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS, INCOME_FREQUENCIES } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
+import { AlertTriangle } from 'lucide-react';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
@@ -157,8 +158,9 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
             )) : null}
 
             {selectedCard && cardSpill > 0.005 && (
-              <p style={{ fontSize: 12, margin: 0, color: 'var(--color-expense)' }}>
-                ⚠ {selectedCard.name} has {formatMoney(cardAvail!)} available. This charge would put it {formatMoney(cardSpill)} over its limit.
+              <p style={{ fontSize: 12, margin: 0, color: 'var(--color-expense)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
+                <span>{selectedCard.name} has {formatMoney(cardAvail!)} available. This charge would put it {formatMoney(cardSpill)} over its limit.</span>
               </p>
             )}
 

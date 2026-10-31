@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { formatMoney, formatCompactMoney } from '../lib/format';
 import RangeControl from './RangeControl';
+import { Star } from 'lucide-react';
 
 interface AcctOpt { id: number; name: string; is_primary: 0 | 1 }
 
@@ -139,7 +140,7 @@ export default function AccountOutflows({ accounts, labels, expenseOut, debtOut,
                   <th key={a.id} style={th}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ width: 8, height: 8, borderRadius: 2, background: colorOf(i), display: 'inline-block' }} />
-                      {a.name}{a.is_primary ? ' ★' : ''}
+                      {a.name}{a.is_primary && <Star size={11} fill="currentColor" strokeWidth={0} style={{ color: '#facc15' }} aria-label="Primary account" />}
                     </span>
                   </th>
                 ))}

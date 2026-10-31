@@ -29,7 +29,7 @@ export default function SavingsSummary({ data, startingBalance }: Props) {
       label: 'Lowest Balance',
       value: formatMoney(lowest, { whole: true }),
       color: goesNegative ? 'var(--color-expense)' : 'var(--color-text)',
-      sub: goesNegative ? '⚠ goes negative' : 'stays positive',
+      sub: goesNegative ? 'goes negative' : 'stays positive',
     },
   ];
 

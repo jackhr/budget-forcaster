@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { AlertTriangle, CircleCheck } from 'lucide-react';
 
 type ToastKind = 'error' | 'success' | 'info';
 
@@ -79,7 +80,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 animation: 'toastIn 0.18s ease-out',
               }}
             >
-              {t.kind === 'error' ? '⚠ ' : t.kind === 'success' ? '✓ ' : ''}{t.message}
+              {t.kind === 'error' && <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />}
+              {t.kind === 'success' && <CircleCheck size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />}
+              <span>{t.message}</span>
             </div>
           );
         })}

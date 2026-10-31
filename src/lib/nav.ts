@@ -1,10 +1,16 @@
 // The app's navigation, as data. Kept out of App.tsx so the invariant that
 // every destination has a page can be tested — a nav id with no PAGE_META
 // entry crashed the whole app once, because the title lookup is unguarded.
+import {
+  ArrowLeftRight, ArrowUpRight, BarChart3, CreditCard, LayoutDashboard,
+  LineChart, List, Receipt, TrendingUp, Wallet, type LucideIcon,
+} from 'lucide-react';
+
 export interface NavItem {
   id: string;
   label: string;
-  icon: string;
+  /** The component itself, not an element, so this stays a plain .ts module. */
+  icon: LucideIcon;
 }
 
 export interface NavGroup {
@@ -21,24 +27,24 @@ export type Tab =
 // Planning and viewing are deliberately separate: the editors live under PLAN
 // and nowhere else, so a view is just a view.
 export const NAV: NavGroup[] = [
-  { items: [{ id: 'home', label: 'Home', icon: '◈' }] },
+  { items: [{ id: 'home', label: 'Home', icon: LayoutDashboard }] },
   {
     heading: 'Plan',
     items: [
-      { id: 'accounts', label: 'Accounts', icon: '▣' },
-      { id: 'income', label: 'Income', icon: '↑' },
-      { id: 'expenses', label: 'Expenses', icon: '↓' },
-      { id: 'debts', label: 'Debts', icon: '◆' },
+      { id: 'accounts', label: 'Accounts', icon: Wallet },
+      { id: 'income', label: 'Income', icon: TrendingUp },
+      { id: 'expenses', label: 'Expenses', icon: Receipt },
+      { id: 'debts', label: 'Debts', icon: CreditCard },
     ],
   },
   {
     heading: 'Views',
     items: [
-      { id: 'projections', label: 'Projections', icon: '◠' },
-      { id: 'breakdown', label: 'Breakdown', icon: '▥' },
-      { id: 'account', label: 'Activity', icon: '⇄' },
-      { id: 'outflows', label: 'Outflows', icon: '⇉' },
-      { id: 'transactions', label: 'Transactions', icon: '≡' },
+      { id: 'projections', label: 'Projections', icon: LineChart },
+      { id: 'breakdown', label: 'Breakdown', icon: BarChart3 },
+      { id: 'account', label: 'Activity', icon: ArrowLeftRight },
+      { id: 'outflows', label: 'Outflows', icon: ArrowUpRight },
+      { id: 'transactions', label: 'Transactions', icon: List },
     ],
   },
 ];

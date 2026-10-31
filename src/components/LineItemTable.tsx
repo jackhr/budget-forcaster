@@ -8,6 +8,7 @@ import CollapseToggle from './CollapseToggle';
 import LineItemRow from './LineItemRow';
 import AddItemForm from './AddItemForm';
 import ConfirmButton from './ConfirmButton';
+import { ChevronDown, ChevronRight, X } from 'lucide-react';
 
 type DragProps = React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
@@ -120,10 +121,10 @@ function GroupBlock({ group, placeholder, items, groups, accentColor, showFreque
       }}>
         <button
           onClick={toggleCollapsed}
-          style={{ background: 'transparent', color: 'var(--color-text)', padding: '0 6px', fontSize: 32, lineHeight: 1, width: 26 }}
+          style={{ background: 'transparent', color: 'var(--color-text)', padding: 0, lineHeight: 1, width: 26, display: 'grid', placeItems: 'center' }}
           aria-label={collapsed ? 'Expand group' : 'Collapse group'}
         >
-          {collapsed ? '▸' : '▾'}
+          {collapsed ? <ChevronRight size={17} strokeWidth={2.2} aria-hidden="true" /> : <ChevronDown size={17} strokeWidth={2.2} aria-hidden="true" />}
         </button>
         {renaming ? (
           <input
@@ -242,7 +243,7 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
       <button type="submit" disabled={saving} style={{ background: accentColor, color: '#fff', padding: '6px 14px' }}>
         {saving ? '…' : 'Create'}
       </button>
-      <button type="button" onClick={() => setOpen(false)} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 10px' }}>✕</button>
+      <button type="button" onClick={() => setOpen(false)} aria-label="Cancel" style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 8px', display: 'grid', placeItems: 'center' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></button>
     </form>
   );
 }

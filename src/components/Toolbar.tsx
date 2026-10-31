@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Scenario } from '../api/client';
 import ConfirmButton from './ConfirmButton';
+import { Save, X } from 'lucide-react';
 
 interface Props {
   scenarios: Scenario[];
@@ -50,10 +51,10 @@ export default function Toolbar({ scenarios, compareId, onSave, onRestore, onDel
         <form onSubmit={save} style={{ display: 'flex', gap: 6 }}>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Scenario name" autoFocus style={{ width: 160 }} required />
           <button type="submit" style={{ background: 'var(--color-primary)', color: '#fff', padding: '6px 12px' }}>Save</button>
-          <button type="button" onClick={() => setSavingOpen(false)} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 10px' }}>✕</button>
+          <button type="button" onClick={() => setSavingOpen(false)} aria-label="Cancel" style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 8px', display: 'grid', placeItems: 'center' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></button>
         </form>
       ) : (
-        <button onClick={() => setSavingOpen(true)} style={btn}>💾 Save current</button>
+        <button onClick={() => setSavingOpen(true)} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Save size={14} strokeWidth={1.9} aria-hidden="true" />Save current</button>
       )}
 
       {scenarios.length > 0 && (
@@ -100,7 +101,7 @@ export default function Toolbar({ scenarios, compareId, onSave, onRestore, onDel
                 title={`Delete scenario "${s.name}"`}
                 triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '2px 6px', fontSize: 12 }}
               >
-                ✕
+                <X size={14} strokeWidth={2.2} aria-hidden="true" />
               </ConfirmButton>
             </div>
           ))}

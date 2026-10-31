@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Props {
   month: number;
@@ -51,13 +52,13 @@ export default function MonthControl({ month, onMonthChange }: Props) {
     width: 36,
     height: 32,
     padding: 0,
-    fontSize: 17,
-    fontWeight: 700,
+    display: 'grid',
+    placeItems: 'center',
   };
 
   return (
     <div ref={containerRef} style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
-      <button type="button" onClick={() => onMonthChange(month - 1)} disabled={month <= 0} aria-label="Previous month" title="Previous month" style={buttonStyle}>←</button>
+      <button type="button" onClick={() => onMonthChange(month - 1)} disabled={month <= 0} aria-label="Previous month" title="Previous month" style={buttonStyle}><ChevronLeft size={15} strokeWidth={2.2} aria-hidden="true" /></button>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -77,7 +78,7 @@ export default function MonthControl({ month, onMonthChange }: Props) {
       >
         {MONTH_NAMES[selected.getMonth()]} {selected.getFullYear()}
       </button>
-      <button type="button" onClick={() => onMonthChange(month + 1)} disabled={month >= MAX_MONTH} aria-label="Next month" title="Next month" style={buttonStyle}>→</button>
+      <button type="button" onClick={() => onMonthChange(month + 1)} disabled={month >= MAX_MONTH} aria-label="Next month" title="Next month" style={buttonStyle}><ChevronRight size={15} strokeWidth={2.2} aria-hidden="true" /></button>
 
       {open && (
         <div style={{

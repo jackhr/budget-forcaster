@@ -6,6 +6,7 @@ import { useCollapsed } from '../lib/useCollapsed';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import CollapseToggle from './CollapseToggle';
+import { Star, X } from 'lucide-react';
 
 interface AccountInput { name: string; balance: number; is_primary?: 0 | 1 }
 
@@ -83,7 +84,7 @@ export default function Accounts({ accounts, onAdd, onUpdate, onDelete, onMakePr
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 600 }}>Accounts</h2>
             <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
-              Cash &amp; savings piles. Income lands in its account; the ★ primary account pays the bills.
+              Cash &amp; savings piles. Income lands in its account; the starred primary account pays the bills.
             </p>
           </div>
         </div>
@@ -108,15 +109,15 @@ export default function Accounts({ accounts, onAdd, onUpdate, onDelete, onMakePr
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 140 }}>
               {a.is_primary
-                ? <span title="Primary — pays the bills" style={{ color: '#facc15' }}>★</span>
-                : <button onClick={() => onMakePrimary(a.id)} title="Make primary" style={{ background: 'transparent', color: 'var(--color-text-muted)', fontSize: 15, padding: 0 }}>☆</button>}
+                ? <span title="Primary — pays the bills" style={{ color: '#facc15', display: 'grid', placeItems: 'center' }}><Star size={15} fill="currentColor" strokeWidth={0} aria-label="Primary account" /></span>
+                : <button onClick={() => onMakePrimary(a.id)} title="Make primary" aria-label={`Make ${a.name} the primary account`} style={{ background: 'transparent', color: 'var(--color-text-muted)', padding: 0, display: 'grid', placeItems: 'center' }}><Star size={15} strokeWidth={1.8} aria-hidden="true" /></button>}
               <span style={{ fontWeight: 600 }}>{a.name}</span>
               {a.is_primary ? <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-muted)' }}>PRIMARY</span> : null}
             </div>
             <span style={{ fontWeight: 700, color: ACCENT }}>{formatMoney(a.balance, { whole: true })}</span>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => setEditingId(a.id)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', padding: '5px 10px', border: '1px solid var(--color-border)' }}>Edit</button>
-              <ConfirmButton onConfirm={() => onDelete(a.id)} title={`Delete ${a.name}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}>✕</ConfirmButton>
+              <ConfirmButton onConfirm={() => onDelete(a.id)} title={`Delete ${a.name}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></ConfirmButton>
             </div>
           </div>
         ))}

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 
 interface Props {
   title: string;
@@ -105,12 +106,13 @@ export default function Modal({ title, onClose, children, maxWidth = 420 }: Prop
             style={{
               background: 'transparent',
               color: 'var(--color-text-muted)',
-              fontSize: 18,
               lineHeight: 1,
-              padding: '4px 8px',
+              padding: 6,
+              display: 'grid',
+              placeItems: 'center',
             }}
           >
-            ✕
+            <X size={17} strokeWidth={2.1} aria-hidden="true" />
           </button>
         </div>
         <div style={{ padding: 20, overflowY: 'auto', minHeight: 0 }}>{children}</div>

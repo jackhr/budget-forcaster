@@ -6,6 +6,7 @@ import { useCollapsed } from '../lib/useCollapsed';
 import { useToast } from './Toast';
 import ConfirmButton from './ConfirmButton';
 import CollapseToggle from './CollapseToggle';
+import { Check, Landmark, RefreshCw } from 'lucide-react';
 
 interface Props {
   onImported: () => void; // reload app accounts after import
@@ -220,7 +221,7 @@ export default function PlaidConnect({ onImported }: Props) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
           {accounts.some((a) => a.imported) && (
             <button onClick={() => resync()} disabled={syncingId != null} title="Update every imported balance from Plaid" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 13, fontWeight: 600 }}>
-              {syncingId === '__all__' ? 'Syncing all…' : '↻ Sync all'}
+              {syncingId === '__all__' ? 'Syncing all…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Sync all</>}
             </button>
           )}
           <button onClick={importSelected} disabled={importCount === 0} style={{ background: 'var(--color-income)', color: '#04210f', padding: '8px 16px', fontSize: 13, fontWeight: 700 }}>
@@ -252,7 +253,7 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 13, background: 'var(--color-surface-2)', padding: '8px 12px' }}>
         <div onClick={toggle} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', minWidth: 0 }}>
           <CollapseToggle collapsed={collapsed} onToggle={toggle} label={item.institution_name ?? 'institution'} />
-          <span style={{ fontWeight: 600 }}>🏦 {item.institution_name ?? 'Linked institution'}</span>
+          <span style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Landmark size={14} strokeWidth={1.9} aria-hidden="true" />{item.institution_name ?? 'Linked institution'}</span>
           <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>· {itemAccounts.length} account{itemAccounts.length !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -271,7 +272,7 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
           )}
           {hasImported && (
             <button onClick={onResync} disabled={syncingAny} title="Update this bank's imported balances" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
-              {syncing ? 'Syncing…' : '↻ Sync'}
+              {syncing ? 'Syncing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Sync</>}
             </button>
           )}
           <ConfirmButton onConfirm={onUnlink} title={`Unlink ${item.institution_name ?? 'institution'}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px', fontSize: 12 }}>Unlink</ConfirmButton>
@@ -330,7 +331,7 @@ function isDebtType(type: string): boolean {
 
 function DestBadge({ type }: { type: string }) {
   const debt = isDebtType(type);
-  const label = type === 'credit' ? '→ Credit card' : type === 'loan' ? '→ Loan' : '→ Account';
+  const label = type === 'credit' ? 'Credit card' : type === 'loan' ? 'Loan' : 'Account';
   return (
     <span style={{
       fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
@@ -359,7 +360,7 @@ function ImportedBadge() {
       fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
       color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
     }}>
-      ✓ Imported
+      <Check size={13} strokeWidth={2.6} aria-hidden="true" /> Imported
     </span>
   );
 }

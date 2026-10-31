@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Menu } from 'lucide-react';
 import { cx } from '../ui';
 import UserMenu from '../auth/UserMenu';
 import { useMediaQuery } from '../lib/useMediaQuery';
@@ -57,9 +58,12 @@ export default function AppShell({
                       : 'text-muted hover:bg-surface-2 hover:text-text',
                   )}
                 >
-                  <span className={cx('grid w-4 shrink-0 place-items-center', active ? 'text-primary' : 'text-faint')}>
-                    {item.icon}
-                  </span>
+                  <item.icon
+                    size={16}
+                    strokeWidth={1.9}
+                    className={cx('shrink-0', active ? 'text-primary' : 'text-faint')}
+                    aria-hidden="true"
+                  />
                   {item.label}
                 </button>
               );
@@ -99,7 +103,7 @@ export default function AppShell({
               aria-label="Open navigation"
               className="grid h-8 w-8 shrink-0 place-items-center rounded-control border border-border text-muted hover:text-text"
             >
-              ☰
+              <Menu size={16} strokeWidth={1.9} aria-hidden="true" />
             </button>
           )}
           <div className="min-w-0 flex-1">

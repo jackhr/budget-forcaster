@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { Button, Card, Field, PasswordInput } from '../ui';
 import { useAuth } from './AuthProvider';
 
@@ -70,9 +71,10 @@ export default function AuthScreen({
       <div className="w-full max-w-[420px]">
         <button
           onClick={onBack}
-          className="mb-6 text-[13px] text-muted transition-colors hover:text-text"
+          className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-text"
         >
-          ← Back
+          <ArrowLeft size={14} strokeWidth={2} aria-hidden="true" />
+          Back
         </button>
 
         <Card className="p-7">

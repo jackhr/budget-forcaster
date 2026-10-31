@@ -715,7 +715,7 @@ export default function App() {
           const activity = buildAccountActivity(id, accounts, incomeSources, expenses, debts, activityPlan, activityHorizon, inflation, new Date(), activityMonth, activityPaid, activityExpensePaid);
           return (
             <Suspense fallback={<ChartFallback />}>
-              <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? '★ primary — pays the bills' : 'savings pile'} activity={activity} />
+              <AccountActivity {...shared} entityKind="account" balance={acct.balance} balanceSub={acct.is_primary ? 'Primary — pays the bills' : 'Savings pile'} activity={activity} />
             </Suspense>
           );
         })()}

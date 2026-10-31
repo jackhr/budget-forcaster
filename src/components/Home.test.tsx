@@ -5,10 +5,11 @@ import Home from './Home';
 import type { Breakdown } from '../lib/forecast';
 import type { MonthBreakdown } from '../lib/monthlyBreakdown';
 import { AuthProvider } from '../auth/AuthProvider';
+import { LayoutDashboard, Receipt } from 'lucide-react';
 
 const NAV = [
-  { items: [{ id: 'home', label: 'Home', icon: '*' }] },
-  { heading: 'Plan', items: [{ id: 'expenses', label: 'Expenses', icon: '-' }] },
+  { items: [{ id: 'home', label: 'Home', icon: LayoutDashboard }] },
+  { heading: 'Plan', items: [{ id: 'expenses', label: 'Expenses', icon: Receipt }] },
 ];
 
 const series = (name: string, values: number[]) => ({ id: 1, name, values });

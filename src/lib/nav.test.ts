@@ -19,14 +19,21 @@ describe('navigation', () => {
     expect(new Set(TAB_IDS).size).toBe(TAB_IDS.length);
   });
 
-  it('labels every item and group', () => {
+  it('labels every item and gives it a real icon component', () => {
     for (const group of NAV) {
       expect(group.items.length).toBeGreaterThan(0);
       for (const item of group.items) {
         expect(item.label.trim()).not.toBe('');
-        expect(item.icon.trim()).not.toBe('');
+        // A Lucide icon, not a glyph: rendering a string here throws "Invalid tag".
+        expect(typeof item.icon).toBe('object');
+        expect(item.icon).toBeTruthy();
       }
     }
+  });
+
+  it('uses a distinct icon per destination', () => {
+    const icons = NAV.flatMap((g) => g.items.map((i) => i.icon));
+    expect(new Set(icons).size).toBe(icons.length);
   });
 
   it('separates planning from viewing', () => {

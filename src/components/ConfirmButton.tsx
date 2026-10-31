@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 
 interface Props {
   onConfirm: () => void;
   title?: string;
-  children: React.ReactNode; // trigger content (e.g. ✕)
+  children: React.ReactNode; // trigger content (usually an icon)
   triggerStyle?: React.CSSProperties;
   confirmLabel?: string;
 }
@@ -32,9 +33,10 @@ export default function ConfirmButton({ onConfirm, title, children, triggerStyle
         </button>
         <button
           onClick={() => { window.clearTimeout(timer.current); setConfirming(false); }}
-          style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '5px 8px', fontSize: 12 }}
+          aria-label="Cancel"
+          style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '5px 7px', display: 'grid', placeItems: 'center' }}
         >
-          ✕
+          <X size={14} strokeWidth={2.2} aria-hidden="true" />
         </button>
       </span>
     );

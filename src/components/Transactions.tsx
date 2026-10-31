@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { plaidApi, type PlaidAccount, type PlaidStatus, type PlaidTransaction } from '../api/client';
 import { formatMoney } from '../lib/format';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 const DAY_OPTIONS: (number | 'all')[] = ['all', 30, 90, 180, 365, 730];
 
@@ -128,7 +129,7 @@ export default function Transactions() {
             {DAY_OPTIONS.map((d) => <option key={d} value={d}>{d === 'all' ? 'All available' : `Last ${d} days`}</option>)}
           </select>
           <button onClick={refresh} disabled={syncing || loading} title="Pull the latest from Plaid" style={{ ...selectStyle, cursor: 'pointer' }}>
-            {syncing ? 'Refreshing…' : '↻ Refresh'}
+            {syncing ? 'Refreshing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Refresh</>}
           </button>
         </div>
       </div>
@@ -145,7 +146,7 @@ export default function Transactions() {
       {loading && <p style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>Loading transactions…</p>}
       {error && (
         <div style={{ background: '#3b2f12', border: '1px solid #854d0e', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fde68a' }}>
-          ⚠ {error}
+          <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" /> {error}
           {/PRODUCT_NOT_READY/.test(error) && <> — Plaid is still preparing this item’s transactions. Try again in a moment.</>}
         </div>
       )}
