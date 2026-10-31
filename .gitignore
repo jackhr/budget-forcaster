@@ -10,3 +10,6 @@ server/db/budget.db-wal
 
 # Local Claude Code harness settings (personal, not shared)
 .claude/
+
+# Auto-generated local encryption key for Plaid tokens
+server/db/secret.key

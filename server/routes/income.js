@@ -39,22 +39,22 @@ function currentScheduledDates(row, now = new Date()) {
   return [...new Set(dates.map(isoDate))].filter((date) => !row.start_date || date.slice(0, 7) >= row.start_date.slice(0, 7)).sort();
 }
 
-function serialize(row) {
-  const saved = db.prepare('SELECT scheduled_date, occurrence_date, status, transaction_id FROM income_occurrences WHERE income_id = ? ORDER BY scheduled_date').all(row.id);
+function serialize(row, userId) {
+  const saved = db.prepare('SELECT scheduled_date, occurrence_date, status, transaction_id FROM income_occurrences WHERE income_id = ? AND user_id = ? ORDER BY scheduled_date').all(row.id, userId);
   const byScheduled = new Map(saved.map((item) => [item.scheduled_date, item]));
   const scheduled = currentScheduledDates(row);
   if (scheduled.length) {
     const account = row.account_id != null
-      ? db.prepare('SELECT plaid_account_id FROM accounts WHERE id = ?').get(row.account_id)
-      : db.prepare('SELECT plaid_account_id FROM accounts ORDER BY is_primary DESC, sort_order IS NULL, sort_order, id LIMIT 1').get();
+      ? db.prepare('SELECT plaid_account_id FROM accounts WHERE id = ? AND user_id = ?').get(row.account_id, userId)
+      : db.prepare('SELECT plaid_account_id FROM accounts WHERE user_id = ? ORDER BY is_primary DESC, sort_order IS NULL, sort_order, id LIMIT 1').get(userId);
     if (account?.plaid_account_id) {
       const month = scheduled[0].slice(0, 7);
       const candidates = db.prepare(
         `SELECT transaction_id, date, name, amount, pending
          FROM plaid_transactions
-         WHERE account_id = ? AND date LIKE ? AND amount < 0 AND category = 'INCOME'
+         WHERE user_id = ? AND account_id = ? AND date LIKE ? AND amount < 0 AND category = 'INCOME'
          ORDER BY date, transaction_id`
-      ).all(account.plaid_account_id, `${month}-%`);
+      ).all(userId, account.plaid_account_id, `${month}-%`);
       const used = new Set(saved.map((item) => item.transaction_id).filter(Boolean));
       for (const scheduledDate of scheduled) {
         if (byScheduled.has(scheduledDate)) continue;
@@ -86,12 +86,12 @@ function serialize(row) {
 }
 
 router.get('/', (req, res) => {
-  const rows = db.prepare(`SELECT * FROM income_sources ${ORDER_BY}`).all();
-  res.json(rows.map(serialize));
+  const rows = db.prepare(`SELECT * FROM income_sources WHERE user_id = ? ${ORDER_BY}`).all(req.user.id);
+  res.json(rows.map((row) => serialize(row, req.user.id)));
 });
 
 router.post('/reorder', (req, res) => {
-  reorder(db, 'income_sources', req.body.ids);
+  reorder(db, 'income_sources', req.body.ids, req.user.id);
   res.json({ ok: true });
 });
 
@@ -108,23 +108,23 @@ router.post('/', (req, res) => {
     throw e;
   }
   const stmt = db.prepare(
-    'INSERT INTO income_sources (name, monthly_amount, frequency, payday_1, payday_2, group_id, start_date, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO income_sources (user_id, name, monthly_amount, frequency, payday_1, payday_2, group_id, start_date, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const normalizedFrequency = normalizeFrequency(frequency);
   const result = stmt.run(
-    name, monthly_amount, normalizedFrequency,
+    req.user.id, name, monthly_amount, normalizedFrequency,
     normalizedFrequency === 'semimonthly' ? normalizePayday(payday_1, 15) : null,
     normalizedFrequency === 'semimonthly' ? normalizePayday(payday_2, 31) : null,
     group_id ?? null, normalizedStart, account_id ?? null,
   );
   const row = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(serialize(row));
+  res.status(201).json(serialize(row, req.user.id));
 });
 
 router.put('/:id', (req, res) => {
   const { name, monthly_amount, frequency, payday_1, payday_2, group_id, start_date, account_id } = req.body;
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   let normalizedStart = existing.start_date;
   if (start_date !== undefined) {
@@ -140,7 +140,7 @@ router.put('/:id', (req, res) => {
   db.prepare(
     `UPDATE income_sources
      SET name = ?, monthly_amount = ?, frequency = ?, payday_1 = ?, payday_2 = ?, group_id = ?, start_date = ?, account_id = ?, updated_at = datetime('now')
-     WHERE id = ?`
+     WHERE id = ? AND user_id = ?`
   ).run(
     name ?? existing.name,
     monthly_amount ?? existing.monthly_amount,
@@ -150,15 +150,15 @@ router.put('/:id', (req, res) => {
     group_id !== undefined ? (group_id ?? null) : existing.group_id,
     normalizedStart,
     account_id !== undefined ? (account_id ?? null) : existing.account_id,
-    id
+    id, req.user.id,
   );
-  const row = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
-  res.json(serialize(row));
+  const row = db.prepare('SELECT * FROM income_sources WHERE id = ? AND user_id = ?').get(id, req.user.id);
+  res.json(serialize(row, req.user.id));
 });
 
 router.put('/:id/occurrences/:scheduledDate', (req, res) => {
   const { id, scheduledDate } = req.params;
-  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   let occurrenceDate;
   try {
@@ -172,27 +172,27 @@ router.put('/:id/occurrences/:scheduledDate', (req, res) => {
   }
   const status = ['expected', 'received', 'skipped'].includes(req.body.status) ? req.body.status : 'expected';
   db.prepare(
-    `INSERT INTO income_occurrences (income_id, scheduled_date, occurrence_date, status, transaction_id)
-     VALUES (?, ?, ?, ?, NULL)
+    `INSERT INTO income_occurrences (user_id, income_id, scheduled_date, occurrence_date, status, transaction_id)
+     VALUES (?, ?, ?, ?, ?, NULL)
      ON CONFLICT(income_id, scheduled_date) DO UPDATE SET
        occurrence_date = excluded.occurrence_date, status = excluded.status, transaction_id = NULL, updated_at = datetime('now')`
-  ).run(id, scheduledDate, occurrenceDate, status);
-  res.json(serialize(db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id)));
+  ).run(req.user.id, id, scheduledDate, occurrenceDate, status);
+  res.json(serialize(db.prepare('SELECT * FROM income_sources WHERE id = ? AND user_id = ?').get(id, req.user.id), req.user.id));
 });
 
 router.delete('/:id/occurrences/:scheduledDate', (req, res) => {
   const { id, scheduledDate } = req.params;
-  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  db.prepare('DELETE FROM income_occurrences WHERE income_id = ? AND scheduled_date = ?').run(id, scheduledDate);
-  res.json(serialize(existing));
+  db.prepare('DELETE FROM income_occurrences WHERE income_id = ? AND scheduled_date = ? AND user_id = ?').run(id, scheduledDate, req.user.id);
+  res.json(serialize(existing, req.user.id));
 });
 
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM income_sources WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  db.prepare('DELETE FROM income_sources WHERE id = ?').run(id);
+  db.prepare('DELETE FROM income_sources WHERE id = ? AND user_id = ?').run(id, req.user.id);
   res.status(204).end();
 });
 

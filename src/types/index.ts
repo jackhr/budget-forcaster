@@ -1,3 +1,9 @@
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string | null;
+}
+
 export type Frequency =
   | 'weekly'
   | 'biweekly'

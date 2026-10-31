@@ -1,11 +1,38 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'budget.db');
+// BF_DB_PATH lets tests point at a scratch database instead of the real one.
+const DB_PATH = process.env.BF_DB_PATH || path.join(__dirname, 'budget.db');
 const db = new Database(DB_PATH);
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+
+// --- Identity ---
+// Every row of household data belongs to a user; see the user_id migration below.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    email_normalized TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    name TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    user_agent TEXT,
+    ip TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS income_sources (
@@ -278,12 +305,88 @@ db.exec(`
   )
 `);
 
+// --- Migration: scope every row to a user ---
+// Added nullable so an existing single-user database keeps working; the first
+// account registered adopts every unowned row (see claimUnownedData).
+const OWNED_TABLES = [
+  'accounts', 'income_sources', 'expenses', 'debts', 'line_item_groups',
+  'scenarios', 'income_occurrences', 'plaid_items', 'plaid_accounts', 'plaid_transactions',
+];
+for (const table of OWNED_TABLES) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === 'user_id')) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE`);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_${table}_user ON ${table}(user_id)`);
+}
+
+// app_settings and paid_status are keyed by something that is only unique per
+// user, so they need a rebuilt primary key rather than an added column.
+function rebuildWithUserKey(table, createSql, columns) {
+  if (db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === 'user_id')) return;
+  const rows = db.prepare(`SELECT * FROM ${table}`).all();
+  const tx = db.transaction(() => {
+    db.exec(`ALTER TABLE ${table} RENAME TO ${table}_legacy`);
+    db.exec(createSql);
+    if (rows.length) {
+      const insert = db.prepare(
+        `INSERT INTO ${table} (user_id, ${columns.join(', ')}) VALUES (NULL, ${columns.map(() => '?').join(', ')})`
+      );
+      for (const row of rows) insert.run(...columns.map((c) => row[c]));
+    }
+    db.exec(`DROP TABLE ${table}_legacy`);
+  });
+  tx();
+}
+
+rebuildWithUserKey('app_settings', `
+  CREATE TABLE app_settings (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (user_id, key)
+  )
+`, ['key', 'value']);
+
+rebuildWithUserKey('paid_status', `
+  CREATE TABLE paid_status (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    entity_type TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    month TEXT NOT NULL,
+    paid INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, entity_type, entity_id, month)
+  )
+`, ['entity_type', 'entity_id', 'month', 'paid', 'updated_at']);
+
+const USER_SCOPED_TABLES = [...OWNED_TABLES, 'app_settings', 'paid_status'];
+
+// The first account registered on a database that predates auth inherits the
+// household data already in it. Later registrations always start empty.
+function claimUnownedData(userId) {
+  const tx = db.transaction(() => {
+    for (const table of USER_SCOPED_TABLES) {
+      db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id IS NULL`).run(userId);
+    }
+  });
+  tx();
+}
+
+function hasUnownedData() {
+  return USER_SCOPED_TABLES.some((table) =>
+    !!db.prepare(`SELECT 1 FROM ${table} WHERE user_id IS NULL LIMIT 1`).get());
+}
+
 // --- Migration: drop the retired "Future Expenses" table ---
 db.exec('DROP TABLE IF EXISTS scheduled_payments');
 
 // --- Seed example data on first run ---
+// Skipped under test so an isolation run starts from a genuinely empty database.
+const SEED = process.env.NODE_ENV !== 'test';
+
 const incomeCount = db.prepare('SELECT COUNT(*) as count FROM income_sources').get();
-if (incomeCount.count === 0) {
+if (SEED && incomeCount.count === 0) {
   const insertIncome = db.prepare(
     'INSERT INTO income_sources (name, monthly_amount, growth_rate_annual, frequency) VALUES (?, ?, ?, ?)'
   );
@@ -294,7 +397,7 @@ if (incomeCount.count === 0) {
 }
 
 const expenseCount = db.prepare('SELECT COUNT(*) as count FROM expenses').get();
-if (expenseCount.count === 0) {
+if (SEED && expenseCount.count === 0) {
   const insertExpense = db.prepare(
     'INSERT INTO expenses (name, monthly_amount, growth_rate_annual) VALUES (?, ?, ?)'
   );
@@ -316,20 +419,20 @@ if (expenseCount.count === 0) {
 }
 
 const startingBalance = db.prepare("SELECT value FROM app_settings WHERE key = 'starting_balance'").get();
-if (!startingBalance) {
+if (SEED && !startingBalance) {
   db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('starting_balance', '10000');
 }
 
 // Seed accounts on first run, migrating the legacy single starting_balance into a primary "Cash" account.
 const accountCount = db.prepare('SELECT COUNT(*) as count FROM accounts').get();
-if (accountCount.count === 0) {
+if (SEED && accountCount.count === 0) {
   const sb = db.prepare("SELECT value FROM app_settings WHERE key = 'starting_balance'").get();
   const bal = sb ? (parseFloat(sb.value) || 0) : 0;
   db.prepare('INSERT INTO accounts (name, balance, is_primary, sort_order) VALUES (?, ?, 1, 0)').run('Cash', bal);
 }
 
 const debtCount = db.prepare('SELECT COUNT(*) as count FROM debts').get();
-if (debtCount.count === 0) {
+if (SEED && debtCount.count === 0) {
   const insertDebt = db.prepare(
     'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment) VALUES (?, ?, ?, ?, ?)'
   );
@@ -338,3 +441,6 @@ if (debtCount.count === 0) {
 }
 
 module.exports = db;
+module.exports.claimUnownedData = claimUnownedData;
+module.exports.hasUnownedData = hasUnownedData;
+module.exports.USER_SCOPED_TABLES = USER_SCOPED_TABLES;

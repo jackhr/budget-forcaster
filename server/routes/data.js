@@ -5,7 +5,7 @@ const { exportData, importData } = require('../lib/data');
 
 // Full backup of every table.
 router.get('/export', (req, res) => {
-  res.json({ version: 1, exported_at: new Date().toISOString(), data: exportData(db) });
+  res.json({ version: 1, exported_at: new Date().toISOString(), data: exportData(db, req.user.id) });
 });
 
 // Restore from a backup (replaces all data).
@@ -15,7 +15,7 @@ router.post('/import', (req, res) => {
     return res.status(400).json({ error: 'Expected a backup object' });
   }
   try {
-    importData(db, payload);
+    importData(db, payload, req.user.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: 'Import failed: ' + e.message });

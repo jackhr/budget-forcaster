@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db/database');
 const { getClient, isConfigured, PLAID_ENV } = require('../lib/plaid');
 const { importName, reattachReplacedCards, replacedAccountIds } = require('../lib/plaidAccounts');
+const { encrypt, decrypt } = require('../lib/secrets');
 
 function requireClient(res) {
   const client = getClient();
@@ -17,8 +18,8 @@ function requireClient(res) {
 // Whether Plaid is configured + which institutions are linked (no secrets exposed).
 router.get('/status', (req, res) => {
   const items = db.prepare(
-    'SELECT id, item_id, institution_name, liabilities_synced_at, liabilities_consent_required, error_code, created_at FROM plaid_items ORDER BY created_at ASC'
-  ).all();
+    'SELECT id, item_id, institution_name, liabilities_synced_at, liabilities_consent_required, error_code, created_at FROM plaid_items WHERE user_id = ? ORDER BY created_at ASC'
+  ).all(req.user.id);
   res.json({ configured: isConfigured(), env: PLAID_ENV, items });
 });
 
@@ -64,9 +65,9 @@ router.post('/exchange_public_token', async (req, res) => {
     } catch { /* institution lookup is best-effort */ }
 
     db.prepare(
-      `INSERT INTO plaid_items (item_id, access_token, institution_name) VALUES (?, ?, ?)
+      `INSERT INTO plaid_items (user_id, item_id, access_token, institution_name) VALUES (?, ?, ?, ?)
        ON CONFLICT(item_id) DO UPDATE SET access_token = excluded.access_token, institution_name = excluded.institution_name`
-    ).run(item_id, access_token, institution_name);
+    ).run(req.user.id, item_id, encrypt(access_token), institution_name);
 
     res.json({ ok: true, item_id, institution_name });
   } catch (e) {
@@ -82,13 +83,13 @@ router.post('/exchange_public_token', async (req, res) => {
 router.post('/items/:id/liabilities_link_token', async (req, res) => {
   const client = requireClient(res);
   if (!client) return;
-  const item = db.prepare('SELECT * FROM plaid_items WHERE id = ?').get(req.params.id);
+  const item = db.prepare('SELECT * FROM plaid_items WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!item) return res.status(404).json({ error: 'Not found' });
   try {
     const resp = await client.linkTokenCreate({
       user: { client_user_id: 'local-user' },
       client_name: 'Budget Forecaster',
-      access_token: item.access_token,
+      access_token: decrypt(item.access_token),
       additional_consented_products: ['liabilities'],
       update: { account_selection_enabled: true },
       country_codes: ['US'],
@@ -109,10 +110,10 @@ const MAX_TRANSACTION_HISTORY_DAYS = 730;
 
 const upsertAccount = db.prepare(`
   INSERT INTO plaid_accounts
-    (account_id, item_id, institution_name, name, official_name, mask, type, subtype, current, available, credit_limit, currency,
+    (user_id, account_id, item_id, institution_name, name, official_name, mask, type, subtype, current, available, credit_limit, currency,
      apr, minimum_payment_amount, last_statement_balance, last_statement_issue_date, next_payment_due_date,
      last_payment_amount, last_payment_date, is_overdue, aprs, updated_at)
-  VALUES (@account_id, @item_id, @institution_name, @name, @official_name, @mask, @type, @subtype, @current, @available, @credit_limit, @currency,
+  VALUES (@user_id, @account_id, @item_id, @institution_name, @name, @official_name, @mask, @type, @subtype, @current, @available, @credit_limit, @currency,
           @apr, @minimum_payment_amount, @last_statement_balance, @last_statement_issue_date, @next_payment_due_date,
           @last_payment_amount, @last_payment_date, @is_overdue, @aprs, datetime('now'))
   ON CONFLICT(account_id) DO UPDATE SET
@@ -187,7 +188,7 @@ function emptyLiability() {
 
 async function fetchLiabilities(client, item) {
   try {
-    const resp = await client.liabilitiesGet({ access_token: item.access_token });
+    const resp = await client.liabilitiesGet({ access_token: decrypt(item.access_token) });
     db.prepare(
       "UPDATE plaid_items SET liabilities_synced_at = datetime('now'), liabilities_consent_required = 0 WHERE id = ?"
     ).run(item.id);
@@ -227,10 +228,10 @@ function serializeAccount(r, imported = false, replaced = false) {
 
 // Sets of what's already imported: by Plaid account id (exact link) and by the
 // local row name (covers rows imported before the link column existed).
-function importedSets() {
+function importedSets(userId) {
   const rows = [
-    ...db.prepare('SELECT plaid_account_id, name FROM accounts').all(),
-    ...db.prepare('SELECT plaid_account_id, name FROM debts').all(),
+    ...db.prepare('SELECT plaid_account_id, name FROM accounts WHERE user_id = ?').all(userId),
+    ...db.prepare('SELECT plaid_account_id, name FROM debts WHERE user_id = ?').all(userId),
   ];
   return {
     byId: new Set(rows.map((r) => r.plaid_account_id).filter(Boolean)),
@@ -254,8 +255,8 @@ function clearItemError(item) {
 
 // Cache is stale if any healthy linked item has never synced or is older than the TTL.
 // Items in an error state are excluded, or they'd keep the cache permanently stale.
-function accountsStale() {
-  const items = db.prepare('SELECT accounts_synced_at FROM plaid_items WHERE error_code IS NULL').all();
+function accountsStale(userId) {
+  const items = db.prepare('SELECT accounts_synced_at FROM plaid_items WHERE error_code IS NULL AND user_id = ?').all(userId);
   if (items.length === 0) return false;
   const now = Date.now();
   return items.some((it) => {
@@ -275,10 +276,10 @@ function liabilitiesStale(item) {
 // an explicit refresh (resync) waits for it and then runs its own, so it never
 // copies a cache that is mid-update.
 let accountsRefresh = null;
-async function refreshAccountsCache(client, itemId = null, forceLiabilities = false, { background = false } = {}) {
+async function refreshAccountsCache(client, itemId = null, forceLiabilities = false, { background = false } = {}, userId) {
   if (accountsRefresh && background) return;
   while (accountsRefresh) await accountsRefresh;
-  accountsRefresh = runAccountsRefresh(client, itemId, forceLiabilities);
+  accountsRefresh = runAccountsRefresh(client, itemId, forceLiabilities, userId);
   try {
     await accountsRefresh;
   } finally {
@@ -286,15 +287,15 @@ async function refreshAccountsCache(client, itemId = null, forceLiabilities = fa
   }
 }
 
-async function runAccountsRefresh(client, itemId, forceLiabilities) {
+async function runAccountsRefresh(client, itemId, forceLiabilities, userId) {
   try {
     const items = itemId
-      ? db.prepare('SELECT * FROM plaid_items WHERE item_id = ?').all(itemId)
-      : db.prepare('SELECT * FROM plaid_items').all();
+      ? db.prepare('SELECT * FROM plaid_items WHERE item_id = ? AND user_id = ?').all(itemId, userId)
+      : db.prepare('SELECT * FROM plaid_items WHERE user_id = ?').all(userId);
     for (const item of items) {
       let resp;
       try {
-        resp = await client.accountsBalanceGet({ access_token: item.access_token });
+        resp = await client.accountsBalanceGet({ access_token: decrypt(item.access_token) });
       } catch (e) {
         // One broken login must not stop the remaining items from refreshing.
         recordItemError(item, e, 'accounts');
@@ -325,6 +326,7 @@ async function runAccountsRefresh(client, itemId, forceLiabilities) {
             ? (liabilities.get(a.account_id) ?? emptyLiability())
             : (existingLiabilities.get(a.account_id) ?? emptyLiability());
           upsertAccount.run({
+            user_id: item.user_id,
             account_id: a.account_id,
             item_id: item.item_id,
             institution_name: item.institution_name,
@@ -352,18 +354,18 @@ async function runAccountsRefresh(client, itemId, forceLiabilities) {
 router.get('/accounts', async (req, res) => {
   try {
     const client = getClient();
-    const cached = db.prepare('SELECT COUNT(*) AS c FROM plaid_accounts').get().c;
+    const cached = db.prepare('SELECT COUNT(*) AS c FROM plaid_accounts WHERE user_id = ?').get(req.user.id).c;
     if (client) {
       if (cached === 0) {
-        await refreshAccountsCache(client); // nothing to show yet — populate once
-      } else if (accountsStale()) {
-        refreshAccountsCache(client, null, false, { background: true }); // serve cache now, refresh in the background
+        await refreshAccountsCache(client, null, false, {}, req.user.id); // nothing to show yet — populate once
+      } else if (accountsStale(req.user.id)) {
+        refreshAccountsCache(client, null, false, { background: true }, req.user.id); // serve cache now, refresh in the background
       }
     }
-    const rows = db.prepare('SELECT * FROM plaid_accounts ORDER BY type, name').all();
-    const { byId, byName } = importedSets();
+    const rows = db.prepare('SELECT * FROM plaid_accounts WHERE user_id = ? ORDER BY type, name').all(req.user.id);
+    const { byId, byName } = importedSets(req.user.id);
     const isImported = (pa) => byId.has(pa.account_id) || byName.has(importName(pa.name, pa.mask));
-    const replaced = replacedAccountIds(db);
+    const replaced = replacedAccountIds(db, req.user.id);
     res.json(rows.map((r) => serializeAccount(r, isImported(r), replaced.has(r.account_id))));
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });
@@ -376,8 +378,8 @@ router.get('/accounts', async (req, res) => {
 // first sync (or an explicit refresh) hits Plaid.
 const upsertTxn = db.prepare(`
   INSERT INTO plaid_transactions
-    (transaction_id, item_id, account_id, date, name, amount, currency, pending, category, category_detailed, logo_url, updated_at)
-  VALUES (@transaction_id, @item_id, @account_id, @date, @name, @amount, @currency, @pending, @category, @category_detailed, @logo_url, datetime('now'))
+    (user_id, transaction_id, item_id, account_id, date, name, amount, currency, pending, category, category_detailed, logo_url, updated_at)
+  VALUES (@user_id, @transaction_id, @item_id, @account_id, @date, @name, @amount, @currency, @pending, @category, @category_detailed, @logo_url, datetime('now'))
   ON CONFLICT(transaction_id) DO UPDATE SET
     account_id = excluded.account_id, date = excluded.date, name = excluded.name, amount = excluded.amount,
     currency = excluded.currency, pending = excluded.pending, category = excluded.category,
@@ -386,8 +388,9 @@ const upsertTxn = db.prepare(`
 `);
 const deleteTxn = db.prepare('DELETE FROM plaid_transactions WHERE transaction_id = ?');
 
-function txnRow(item_id, t) {
+function txnRow(item_id, t, userId) {
   return {
+    user_id: userId,
     transaction_id: t.transaction_id,
     item_id,
     account_id: t.account_id,
@@ -424,14 +427,14 @@ async function syncItem(client, item) {
   // First sync (no cursor) returns history in pages; loop until caught up.
   for (;;) {
     const { data } = await client.transactionsSync({
-      access_token: item.access_token,
+      access_token: decrypt(item.access_token),
       cursor,
       count: 500,
       options: cursor ? undefined : { days_requested: MAX_TRANSACTION_HISTORY_DAYS },
     });
     const apply = db.transaction(() => {
-      for (const t of data.added) upsertTxn.run(txnRow(item.item_id, t));
-      for (const t of data.modified) upsertTxn.run(txnRow(item.item_id, t));
+      for (const t of data.added) upsertTxn.run(txnRow(item.item_id, t, item.user_id));
+      for (const t of data.modified) upsertTxn.run(txnRow(item.item_id, t, item.user_id));
       for (const r of data.removed) deleteTxn.run(r.transaction_id);
     });
     apply();
@@ -476,16 +479,16 @@ router.get('/transactions', async (req, res) => {
   try {
     const client = getClient();
     if (client) {
-      const fresh = db.prepare('SELECT * FROM plaid_items WHERE transactions_synced_at IS NULL AND error_code IS NULL').all();
+      const fresh = db.prepare('SELECT * FROM plaid_items WHERE transactions_synced_at IS NULL AND error_code IS NULL AND user_id = ?').all(req.user.id);
       if (fresh.length) await syncItems(client, fresh);
     }
     const rows = accountId
       ? sinceStr
-        ? db.prepare('SELECT * FROM plaid_transactions WHERE account_id = ? AND date >= ? ORDER BY date DESC, transaction_id DESC').all(accountId, sinceStr)
-        : db.prepare('SELECT * FROM plaid_transactions WHERE account_id = ? ORDER BY date DESC, transaction_id DESC').all(accountId)
+        ? db.prepare('SELECT * FROM plaid_transactions WHERE user_id = ? AND account_id = ? AND date >= ? ORDER BY date DESC, transaction_id DESC').all(req.user.id, accountId, sinceStr)
+        : db.prepare('SELECT * FROM plaid_transactions WHERE user_id = ? AND account_id = ? ORDER BY date DESC, transaction_id DESC').all(req.user.id, accountId)
       : sinceStr
-        ? db.prepare('SELECT * FROM plaid_transactions WHERE date >= ? ORDER BY date DESC, transaction_id DESC').all(sinceStr)
-        : db.prepare('SELECT * FROM plaid_transactions ORDER BY date DESC, transaction_id DESC').all();
+        ? db.prepare('SELECT * FROM plaid_transactions WHERE user_id = ? AND date >= ? ORDER BY date DESC, transaction_id DESC').all(req.user.id, sinceStr)
+        : db.prepare('SELECT * FROM plaid_transactions WHERE user_id = ? ORDER BY date DESC, transaction_id DESC').all(req.user.id);
     res.json(rows.map(serializeTxn));
   } catch (e) {
     res.status(502).json({ error: plaidError(e) });
@@ -499,8 +502,8 @@ router.post('/transactions/sync', async (req, res) => {
   const client = requireClient(res);
   if (!client) return;
   try {
-    if (req.body?.full === true) db.prepare('UPDATE plaid_items SET cursor = NULL WHERE error_code IS NULL').run();
-    const items = db.prepare('SELECT * FROM plaid_items').all();
+    if (req.body?.full === true) db.prepare('UPDATE plaid_items SET cursor = NULL WHERE error_code IS NULL AND user_id = ?').run(req.user.id);
+    const items = db.prepare('SELECT * FROM plaid_items WHERE user_id = ?').all(req.user.id);
     const totals = await syncItems(client, items);
     res.json({ ok: true, ...totals });
   } catch (e) {
@@ -541,17 +544,17 @@ router.post('/import_accounts', async (req, res) => {
   const selections = Array.isArray(req.body.accounts) ? req.body.accounts : [];
   if (selections.length === 0) return res.status(400).json({ error: 'No accounts selected' });
   try {
-    const hasPrimary = db.prepare('SELECT COUNT(*) AS c FROM accounts WHERE is_primary = 1').get().c > 0;
-    const insertAccount = db.prepare('INSERT INTO accounts (name, balance, is_primary, plaid_account_id) VALUES (?, ?, ?, ?)');
+    const hasPrimary = db.prepare('SELECT COUNT(*) AS c FROM accounts WHERE is_primary = 1 AND user_id = ?').get(req.user.id).c > 0;
+    const insertAccount = db.prepare('INSERT INTO accounts (user_id, name, balance, is_primary, plaid_account_id) VALUES (?, ?, ?, ?, ?)');
     const insertDebt = db.prepare(
       `INSERT INTO debts
-       (name, balance, apr, credit_limit, monthly_payment, debt_type, payment_day, plaid_account_id,
+       (user_id, name, balance, apr, credit_limit, monthly_payment, debt_type, payment_day, plaid_account_id,
         last_statement_balance, last_statement_issue_date, next_payment_due_date, last_payment_amount,
         last_payment_date, is_overdue, plaid_aprs)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    const { byId, byName } = importedSets();
-    const replaced = replacedAccountIds(db);
+    const { byId, byName } = importedSets(req.user.id);
+    const replaced = replacedAccountIds(db, req.user.id);
     let madePrimary = hasPrimary;
     let accountsCreated = 0;
     let debtsCreated = 0;
@@ -566,15 +569,15 @@ router.post('/import_accounts', async (req, res) => {
         const balance = Number(s.balance) || 0;
         const primary = madePrimary ? 0 : 1;
         madePrimary = true;
-        insertAccount.run(name, balance, primary, plaidId);
+        insertAccount.run(req.user.id, name, balance, primary, plaidId);
         accountsCreated++;
       } else {
         // Plaid reports the owed amount as a positive `current` for credit/loan.
         const balance = Math.max(0, Number(s.balance) || 0);
         const limit = dest === 'credit_card' && Number.isFinite(Number(s.credit_limit)) ? Number(s.credit_limit) : null;
-        const liability = plaidId ? db.prepare('SELECT * FROM plaid_accounts WHERE account_id = ?').get(plaidId) : null;
+        const liability = plaidId ? db.prepare('SELECT * FROM plaid_accounts WHERE account_id = ? AND user_id = ?').get(plaidId, req.user.id) : null;
         insertDebt.run(
-          name, balance, liability?.apr ?? 0, limit, importPayment(liability), dest,
+          req.user.id, name, balance, liability?.apr ?? 0, limit, importPayment(liability), dest,
           dueDay(liability?.next_payment_due_date), plaidId,
           liability?.last_statement_balance ?? null, liability?.last_statement_issue_date ?? null,
           liability?.next_payment_due_date ?? null, liability?.last_payment_amount ?? null,
@@ -596,15 +599,15 @@ router.post('/resync', async (req, res) => {
   const itemId = req.body?.item_id ? String(req.body.item_id) : null;
   const forceLiabilities = req.body?.force_liabilities === true;
   try {
-    await refreshAccountsCache(client, itemId, forceLiabilities);
+    await refreshAccountsCache(client, itemId, forceLiabilities, {}, req.user.id);
     const cached = itemId
-      ? db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ?').all(itemId)
-      : db.prepare('SELECT * FROM plaid_accounts').all();
-    const setAcctById = db.prepare('UPDATE accounts SET balance = ? WHERE plaid_account_id = ?');
+      ? db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ? AND user_id = ?').all(itemId, req.user.id)
+      : db.prepare('SELECT * FROM plaid_accounts WHERE user_id = ?').all(req.user.id);
+    const setAcctById = db.prepare('UPDATE accounts SET balance = ? WHERE plaid_account_id = ? AND user_id = ?');
     // A stored link can be orphaned when an institution is unlinked and relinked (Plaid issues
     // new account ids), so the name fallback also reclaims rows whose link no longer resolves.
     const unlinked = '(plaid_account_id IS NULL OR plaid_account_id NOT IN (SELECT account_id FROM plaid_accounts))';
-    const setAcctByName = db.prepare(`UPDATE accounts SET balance = ?, plaid_account_id = ? WHERE ${unlinked} AND name = ?`);
+    const setAcctByName = db.prepare(`UPDATE accounts SET balance = ?, plaid_account_id = ? WHERE ${unlinked} AND name = ? AND user_id = ?`);
     const setDebtById = db.prepare(
       `UPDATE debts SET
        balance = ?, credit_limit = COALESCE(?, credit_limit), apr = COALESCE(?, apr),
@@ -615,7 +618,7 @@ router.post('/resync', async (req, res) => {
        payment_day = COALESCE(?, payment_day),
        last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
        last_payment_amount = ?, last_payment_date = ?, is_overdue = ?, plaid_aprs = ?
-       WHERE plaid_account_id = ?`
+       WHERE plaid_account_id = ? AND user_id = ?`
     );
     const setDebtByName = db.prepare(
       `UPDATE debts SET
@@ -627,20 +630,20 @@ router.post('/resync', async (req, res) => {
        payment_day = COALESCE(?, payment_day),
        last_statement_balance = ?, last_statement_issue_date = ?, next_payment_due_date = ?,
        last_payment_amount = ?, last_payment_date = ?, is_overdue = ?, plaid_aprs = ?, plaid_account_id = ?
-       WHERE ${unlinked} AND name = ?`
+       WHERE ${unlinked} AND name = ? AND user_id = ?`
     );
     let updated = 0;
     let reattached = 0;
     const tx = db.transaction(() => {
-      reattached = reattachReplacedCards(db, itemId);
+      reattached = reattachReplacedCards(db, itemId, req.user.id);
       for (const pa of cached) {
         const label = importName(pa.name, pa.mask);
         const current = pa.current ?? 0;
         const owed = Math.max(0, current);
         // Try the linked row first, then fall back to a name match (legacy imports),
         // backfilling the link so future resyncs are exact.
-        let n = setAcctById.run(current, pa.account_id).changes;
-        if (!n) n = setAcctByName.run(current, pa.account_id, label).changes;
+        let n = setAcctById.run(current, pa.account_id, req.user.id).changes;
+        if (!n) n = setAcctByName.run(current, pa.account_id, label, req.user.id).changes;
         const liabilityArgs = [
           owed, pa.credit_limit, pa.apr,
           pa.minimum_payment_amount, pa.minimum_payment_amount,
@@ -648,8 +651,8 @@ router.post('/resync', async (req, res) => {
           pa.last_statement_balance, pa.last_statement_issue_date, pa.next_payment_due_date,
           pa.last_payment_amount, pa.last_payment_date, pa.is_overdue, pa.aprs ?? '[]',
         ];
-        let d = setDebtById.run(...liabilityArgs, pa.account_id).changes;
-        if (!d) d = setDebtByName.run(...liabilityArgs, pa.account_id, label).changes;
+        let d = setDebtById.run(...liabilityArgs, pa.account_id, req.user.id).changes;
+        if (!d) d = setDebtByName.run(...liabilityArgs, pa.account_id, label, req.user.id).changes;
         updated += n + d;
       }
     });
@@ -662,19 +665,19 @@ router.post('/resync', async (req, res) => {
 
 // Unlink an item (best-effort remove at Plaid, then delete locally).
 router.delete('/items/:id', async (req, res) => {
-  const item = db.prepare('SELECT * FROM plaid_items WHERE id = ?').get(req.params.id);
+  const item = db.prepare('SELECT * FROM plaid_items WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!item) return res.status(404).json({ error: 'Not found' });
   const client = getClient();
   if (client) {
-    try { await client.itemRemove({ access_token: item.access_token }); } catch { /* ignore */ }
+    try { await client.itemRemove({ access_token: decrypt(item.access_token) }); } catch { /* ignore */ }
   }
   db.prepare('DELETE FROM plaid_transactions WHERE item_id = ?').run(item.item_id);
   // Detach imported rows so relinking the institution reattaches them by name on resync.
   for (const table of ['accounts', 'debts']) {
-    db.prepare(`UPDATE ${table} SET plaid_account_id = NULL WHERE plaid_account_id IN (SELECT account_id FROM plaid_accounts WHERE item_id = ?)`).run(item.item_id);
+    db.prepare(`UPDATE ${table} SET plaid_account_id = NULL WHERE user_id = ? AND plaid_account_id IN (SELECT account_id FROM plaid_accounts WHERE item_id = ?)`).run(req.user.id, item.item_id);
   }
   db.prepare('DELETE FROM plaid_accounts WHERE item_id = ?').run(item.item_id);
-  db.prepare('DELETE FROM plaid_items WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM plaid_items WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.status(204).end();
 });
 

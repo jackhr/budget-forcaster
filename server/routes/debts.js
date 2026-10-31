@@ -31,12 +31,12 @@ function serialize(row) {
 }
 
 router.get('/', (req, res) => {
-  const rows = db.prepare(`SELECT * FROM debts ${ORDER_BY}`).all();
+  const rows = db.prepare(`SELECT * FROM debts WHERE user_id = ? ${ORDER_BY}`).all(req.user.id);
   res.json(rows.map(serialize));
 });
 
 router.post('/reorder', (req, res) => {
-  reorder(db, 'debts', req.body.ids);
+  reorder(db, 'debts', req.body.ids, req.user.id);
   res.json({ ok: true });
 });
 
@@ -59,10 +59,10 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'A percentage funding rule cannot exceed 100%' });
   }
   const stmt = db.prepare(
-    'INSERT INTO debts (name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules, debt_type, payment_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO debts (user_id, name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules, debt_type, payment_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const result = stmt.run(
-    name, balance, apr ?? 0, credit_limit ?? null, monthly_payment, group_id ?? null, account_id ?? null,
+    req.user.id, name, balance, apr ?? 0, credit_limit ?? null, monthly_payment, group_id ?? null, account_id ?? null,
     JSON.stringify(cleanAllocations(funding_allocations, { allowDebt: false })),
     JSON.stringify(cleanedRules),
     normalizeDebtType(debt_type), normalizeDay(payment_day),
@@ -75,7 +75,7 @@ router.put('/:id', (req, res) => {
   const { name, balance, apr, credit_limit, monthly_payment, group_id, account_id, funding_allocations, funding_rules } = req.body;
   const { id } = req.params;
   const { debt_type, payment_day } = req.body;
-  const existing = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM debts WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const effectiveMonthlyPayment = monthly_payment ?? existing.monthly_payment;
   const effectiveBalance = balance ?? existing.balance;
@@ -100,7 +100,7 @@ router.put('/:id', (req, res) => {
   db.prepare(
     `UPDATE debts
      SET name = ?, balance = ?, apr = ?, credit_limit = ?, monthly_payment = ?, group_id = ?, account_id = ?, funding_allocations = ?, funding_rules = ?, debt_type = ?, payment_day = ?, updated_at = datetime('now')
-     WHERE id = ?`
+     WHERE id = ? AND user_id = ?`
   ).run(
     name ?? existing.name,
     balance ?? existing.balance,
@@ -113,7 +113,7 @@ router.put('/:id', (req, res) => {
     cleanedRules,
     debt_type !== undefined ? normalizeDebtType(debt_type, existing.debt_type) : existing.debt_type,
     payment_day !== undefined ? normalizeDay(payment_day) : existing.payment_day,
-    id
+    id, req.user.id,
   );
   const row = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
   res.json(serialize(row));
@@ -121,11 +121,11 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM debts WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM debts WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  removeFundingAllocations(db, 'expenses', 'debt', id);
-  db.prepare("DELETE FROM paid_status WHERE entity_type = 'debt' AND entity_id = ?").run(id);
-  db.prepare('DELETE FROM debts WHERE id = ?').run(id);
+  removeFundingAllocations(db, 'expenses', 'debt', id, req.user.id);
+  db.prepare("DELETE FROM paid_status WHERE entity_type = 'debt' AND entity_id = ? AND user_id = ?").run(id, req.user.id);
+  db.prepare('DELETE FROM debts WHERE id = ? AND user_id = ?').run(id, req.user.id);
   res.status(204).end();
 });
 

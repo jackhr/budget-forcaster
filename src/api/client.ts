@@ -1,12 +1,34 @@
-import type { Account, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, PaidStatus } from '../types';
+import type { Account, AuthUser, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, PaidStatus } from '../types';
 
 const BASE = '/api';
 
+/** Thrown when the server rejects the session, so callers can send the user back to sign-in. */
+export class UnauthorizedError extends Error {
+  constructor() {
+    super('Your session has expired. Please sign in again.');
+    this.name = 'UnauthorizedError';
+  }
+}
+
+// Set by the auth provider so an expired session anywhere in the app lands the
+// user on the sign-in screen instead of surfacing a wall of failed requests.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
+    // The session lives in an httpOnly cookie, which only travels when the
+    // request opts in; in dev the client and API are different origins.
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
+  if (res.status === 401) {
+    onUnauthorized?.();
+    throw new UnauthorizedError();
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error ?? `HTTP ${res.status}`);
@@ -14,6 +36,17 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T;
   return res.json();
 }
+
+export const authApi = {
+  me: () => req<{ user: AuthUser | null }>('/auth/me'),
+  login: (email: string, password: string) =>
+    req<{ user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  register: (email: string, password: string, name?: string) =>
+    req<{ user: AuthUser }>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) }),
+  logout: () => req<void>('/auth/logout', { method: 'POST' }),
+  changePassword: (current_password: string, new_password: string) =>
+    req<{ user: AuthUser }>('/auth/password', { method: 'PUT', body: JSON.stringify({ current_password, new_password }) }),
+};
 
 type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at' | 'occurrences'>;
 type ExpenseInput = Omit<Expense, 'id' | 'created_at' | 'updated_at'>;

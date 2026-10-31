@@ -16,6 +16,7 @@ import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import PlaidConnect from './components/PlaidConnect';
 import HeaderControls from './components/HeaderControls';
+import UserMenu from './auth/UserMenu';
 import Toolbar from './components/Toolbar';
 import NavMenu from './components/NavMenu';
 import type { PayoffMarker } from './components/NetWorthChart';
@@ -558,6 +559,7 @@ export default function App() {
             inflation={inflation}
             onInflationChange={changeInflation}
           />
+          <UserMenu />
         </div>
         <div style={{ position: 'absolute', top: 12, right: 24 }}>
           <NavMenu

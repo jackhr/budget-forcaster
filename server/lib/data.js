@@ -14,20 +14,30 @@ const TABLES = [
 ];
 
 // Whether a dependent row still points at an existing parent after an import.
-function referenceExists(db, table, row) {
+function referenceExists(db, table, row, userId) {
   if (table === 'income_occurrences') {
-    return !!db.prepare('SELECT 1 FROM income_sources WHERE id = ?').get(row.income_id);
+    return !!db.prepare('SELECT 1 FROM income_sources WHERE id = ? AND user_id = ?').get(row.income_id, userId);
   }
   if (table === 'paid_status') {
     const parent = row.entity_type === 'debt' ? 'debts' : row.entity_type === 'expense' ? 'expenses' : null;
-    return !!parent && !!db.prepare(`SELECT 1 FROM ${parent} WHERE id = ?`).get(row.entity_id);
+    return !!parent && !!db.prepare(`SELECT 1 FROM ${parent} WHERE id = ? AND user_id = ?`).get(row.entity_id, userId);
   }
   return true;
 }
 
-function exportData(db) {
+// user_id is an implementation detail of multi-tenancy, not part of the user's
+// data: it's stripped on export and re-applied on import, so a snapshot can be
+// restored into any account.
+function withoutUserId(row) {
+  const { user_id, ...rest } = row;
+  return rest;
+}
+
+function exportData(db, userId) {
   const out = {};
-  for (const t of TABLES) out[t] = db.prepare(`SELECT * FROM ${t}`).all();
+  for (const t of TABLES) {
+    out[t] = db.prepare(`SELECT * FROM ${t} WHERE user_id = ?`).all(userId).map(withoutUserId);
+  }
   return out;
 }
 
@@ -35,22 +45,24 @@ function exportData(db) {
 // backups and scenarios predate income_occurrences/paid_status) keep their current
 // rows, minus any whose parent no longer exists. Without this, deleting
 // income_sources would cascade away every received/skipped payday.
-function importData(db, data) {
+function importData(db, data, userId) {
   const tx = db.transaction(() => {
     const kept = {};
     for (const t of TABLES) {
-      if (data?.[t] === undefined) kept[t] = db.prepare(`SELECT * FROM ${t}`).all();
+      if (data?.[t] === undefined) {
+        kept[t] = db.prepare(`SELECT * FROM ${t} WHERE user_id = ?`).all(userId).map(withoutUserId);
+      }
     }
-    for (const t of TABLES) db.exec(`DELETE FROM ${t}`);
+    for (const t of TABLES) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(userId);
     for (const t of TABLES) {
-      const incoming = Array.isArray(data?.[t]) ? data[t] : [];
-      const rows = kept[t] ? kept[t].filter((row) => referenceExists(db, t, row)) : incoming;
+      const incoming = Array.isArray(data?.[t]) ? data[t].map(withoutUserId) : [];
+      const rows = kept[t] ? kept[t].filter((row) => referenceExists(db, t, row, userId)) : incoming;
       for (const row of rows) {
         const cols = Object.keys(row);
         if (cols.length === 0) continue;
         const placeholders = cols.map(() => '?').join(', ');
-        db.prepare(`INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`)
-          .run(...cols.map((c) => row[c]));
+        db.prepare(`INSERT INTO ${t} (user_id, ${cols.join(', ')}) VALUES (?, ${placeholders})`)
+          .run(userId, ...cols.map((c) => row[c]));
       }
     }
   });
@@ -58,18 +70,18 @@ function importData(db, data) {
 }
 
 // Persist an explicit display order by setting sort_order = array index.
-function reorder(db, table, ids) {
+function reorder(db, table, ids, userId) {
   if (!Array.isArray(ids)) return;
-  const stmt = db.prepare(`UPDATE ${table} SET sort_order = ? WHERE id = ?`);
+  const stmt = db.prepare(`UPDATE ${table} SET sort_order = ? WHERE id = ? AND user_id = ?`);
   const tx = db.transaction((list) => {
-    list.forEach((id, i) => stmt.run(i, id));
+    list.forEach((id, i) => stmt.run(i, id, userId));
   });
   tx(ids);
 }
 
-function removeFundingAllocations(db, table, sourceType, sourceId) {
-  const rows = db.prepare(`SELECT id, funding_allocations, funding_rules FROM ${table}`).all();
-  const update = db.prepare(`UPDATE ${table} SET funding_allocations = ?, funding_rules = ?, updated_at = datetime('now') WHERE id = ?`);
+function removeFundingAllocations(db, table, sourceType, sourceId, userId) {
+  const rows = db.prepare(`SELECT id, funding_allocations, funding_rules FROM ${table} WHERE user_id = ?`).all(userId);
+  const update = db.prepare(`UPDATE ${table} SET funding_allocations = ?, funding_rules = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`);
   const tx = db.transaction(() => {
     for (const row of rows) {
       let allocations;
@@ -89,7 +101,7 @@ function removeFundingAllocations(db, table, sourceType, sourceId) {
       const nextAllocations = allocations.filter((a) => !(a?.source_type === sourceType && Number(a.source_id) === Number(sourceId)));
       const nextRules = rules.filter((a) => !(a?.source_type === sourceType && Number(a.source_id) === Number(sourceId)));
       if (nextAllocations.length !== allocations.length || nextRules.length !== rules.length) {
-        update.run(JSON.stringify(nextAllocations), JSON.stringify(nextRules), row.id);
+        update.run(JSON.stringify(nextAllocations), JSON.stringify(nextRules), row.id, userId);
       }
     }
   });

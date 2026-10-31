@@ -19,15 +19,15 @@ const kindOf = (plaidType) => (plaidType === 'credit' || plaidType === 'loan' ? 
 // dangling, or a same-named $0 account of the same Item with a different mask while
 // the new account carries a balance.
 // Returns the number of rows moved.
-function reattachReplacedCards(db, itemId = null) {
+function reattachReplacedCards(db, itemId = null, userId) {
   const cached = itemId
-    ? db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ?').all(itemId)
-    : db.prepare('SELECT * FROM plaid_accounts').all();
-  const byId = new Map(db.prepare('SELECT * FROM plaid_accounts').all().map((a) => [a.account_id, a]));
+    ? db.prepare('SELECT * FROM plaid_accounts WHERE item_id = ? AND user_id = ?').all(itemId, userId)
+    : db.prepare('SELECT * FROM plaid_accounts WHERE user_id = ?').all(userId);
+  const byId = new Map(db.prepare('SELECT * FROM plaid_accounts WHERE user_id = ?').all(userId).map((a) => [a.account_id, a]));
   let moved = 0;
   for (const next of cached) {
     const table = kindOf(next.type);
-    const rows = db.prepare(`SELECT id, name, plaid_account_id FROM ${table}`).all();
+    const rows = db.prepare(`SELECT id, name, plaid_account_id FROM ${table} WHERE user_id = ?`).all(userId);
     if (rows.some((r) => r.plaid_account_id === next.account_id || r.name === importName(next.name, next.mask))) continue;
     const candidates = rows.filter((r) => {
       if (baseName(r.name) !== baseName(importName(next.name, next.mask))) return false;
@@ -39,20 +39,20 @@ function reattachReplacedCards(db, itemId = null) {
         && !(Math.abs(linked.current ?? 0) > 0.005) && Math.abs(next.current ?? 0) > 0.005;
     });
     if (candidates.length !== 1) continue;
-    db.prepare(`UPDATE ${table} SET plaid_account_id = ?, name = ?, updated_at = datetime('now') WHERE id = ?`)
-      .run(next.account_id, importName(next.name, next.mask), candidates[0].id);
+    db.prepare(`UPDATE ${table} SET plaid_account_id = ?, name = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
+      .run(next.account_id, importName(next.name, next.mask), candidates[0].id, userId);
     moved++;
   }
   return moved;
 }
 
 // Cached accounts that an imported row has moved off of (the old card after a reissue).
-function replacedAccountIds(db) {
+function replacedAccountIds(db, userId) {
   const linked = new Set([
-    ...db.prepare('SELECT plaid_account_id FROM accounts').all(),
-    ...db.prepare('SELECT plaid_account_id FROM debts').all(),
+    ...db.prepare('SELECT plaid_account_id FROM accounts WHERE user_id = ?').all(userId),
+    ...db.prepare('SELECT plaid_account_id FROM debts WHERE user_id = ?').all(userId),
   ].map((r) => r.plaid_account_id).filter(Boolean));
-  const all = db.prepare('SELECT * FROM plaid_accounts').all();
+  const all = db.prepare('SELECT * FROM plaid_accounts WHERE user_id = ?').all(userId);
   return new Set(all.filter((a) => !linked.has(a.account_id) && all.some((b) =>
     b.account_id !== a.account_id && linked.has(b.account_id) && b.item_id === a.item_id && b.name === a.name && b.mask !== a.mask,
   )).map((a) => a.account_id));

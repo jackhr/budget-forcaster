@@ -38,12 +38,12 @@ function serialize(row) {
 }
 
 router.get('/', (req, res) => {
-  const rows = db.prepare(`SELECT * FROM expenses ${ORDER_BY}`).all();
+  const rows = db.prepare(`SELECT * FROM expenses WHERE user_id = ? ${ORDER_BY}`).all(req.user.id);
   res.json(rows.map(serialize));
 });
 
 router.post('/reorder', (req, res) => {
-  reorder(db, 'expenses', req.body.ids);
+  reorder(db, 'expenses', req.body.ids, req.user.id);
   res.json({ ok: true });
 });
 
@@ -66,10 +66,10 @@ router.post('/', (req, res) => {
   }
   if (rangeError(res, normalizedStart, normalizedEnd)) return;
   const stmt = db.prepare(
-    'INSERT INTO expenses (name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO expenses (user_id, name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const result = stmt.run(
-    name, monthly_amount, group_id ?? null,
+    req.user.id, name, monthly_amount, group_id ?? null,
     JSON.stringify(cleanAllocations(funding_allocations)),
     JSON.stringify(cleanedRules),
     normalizedFrequency, normalizedStart, normalizedEnd,
@@ -81,7 +81,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const { name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date } = req.body;
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM expenses WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const normalizedFrequency = frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency;
   let cleanedRules = existing.funding_rules;
@@ -102,7 +102,7 @@ router.put('/:id', (req, res) => {
   db.prepare(
     `UPDATE expenses
      SET name = ?, monthly_amount = ?, group_id = ?, funding_allocations = ?, funding_rules = ?, frequency = ?, start_date = ?, end_date = ?, updated_at = datetime('now')
-     WHERE id = ?`
+     WHERE id = ? AND user_id = ?`
   ).run(
     name ?? existing.name,
     monthly_amount ?? existing.monthly_amount,
@@ -112,7 +112,7 @@ router.put('/:id', (req, res) => {
     normalizedFrequency,
     normalizedStart,
     normalizedEnd,
-    id
+    id, req.user.id,
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
   res.json(serialize(row));
@@ -120,10 +120,10 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT * FROM expenses WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  db.prepare("DELETE FROM paid_status WHERE entity_type = 'expense' AND entity_id = ?").run(id);
-  db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+  db.prepare("DELETE FROM paid_status WHERE entity_type = 'expense' AND entity_id = ? AND user_id = ?").run(id, req.user.id);
+  db.prepare('DELETE FROM expenses WHERE id = ? AND user_id = ?').run(id, req.user.id);
   res.status(204).end();
 });
 

@@ -5,7 +5,7 @@ const { exportData, importData } = require('../lib/data');
 
 // List scenarios (includes snapshot so the client can compare without a round-trip).
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM scenarios ORDER BY created_at DESC').all();
+  const rows = db.prepare('SELECT * FROM scenarios WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
   res.json(rows.map((r) => ({ ...r, snapshot: JSON.parse(r.snapshot) })));
 });
 
@@ -15,18 +15,19 @@ router.post('/', (req, res) => {
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: 'name is required' });
   }
-  const snapshot = JSON.stringify(exportData(db));
-  const result = db.prepare('INSERT INTO scenarios (name, snapshot) VALUES (?, ?)').run(String(name).trim(), snapshot);
+  const snapshot = JSON.stringify(exportData(db, req.user.id));
+  const result = db.prepare('INSERT INTO scenarios (user_id, name, snapshot) VALUES (?, ?, ?)')
+    .run(req.user.id, String(name).trim(), snapshot);
   const row = db.prepare('SELECT * FROM scenarios WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json({ ...row, snapshot: JSON.parse(row.snapshot) });
 });
 
 // Replace current data with a scenario's snapshot.
 router.post('/:id/restore', (req, res) => {
-  const row = db.prepare('SELECT * FROM scenarios WHERE id = ?').get(req.params.id);
+  const row = db.prepare('SELECT * FROM scenarios WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   try {
-    importData(db, JSON.parse(row.snapshot));
+    importData(db, JSON.parse(row.snapshot), req.user.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: 'Restore failed: ' + e.message });
@@ -34,9 +35,9 @@ router.post('/:id/restore', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const existing = db.prepare('SELECT * FROM scenarios WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT * FROM scenarios WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  db.prepare('DELETE FROM scenarios WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM scenarios WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.status(204).end();
 });
 
