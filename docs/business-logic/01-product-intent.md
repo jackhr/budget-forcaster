@@ -16,8 +16,8 @@ It is **not** a transaction-categorizing budget app (like YNAB or Mint). Real ba
 
 ## Audience
 
-- **Today:** one household, two earners, shared finances. Single user on one machine, with no auth.
-- **Long term:** personal first, *maybe shared later*. Single-user shortcuts are acceptable, but **avoid choices that would block another household from using it**. Examples: don't hard-code people, institutions, or account names. Keep household-specific data in the DB, never in code. Prefer server-persisted state over browser-only state for anything that affects numbers.
+- **Today:** multi-user. Each account holds one household's plan, isolated from every other account ([11](11-accounts-and-access.md)). Still self-hosted rather than a public service.
+- **Direction:** built so it *could* run as a real product — the data model, auth and Plaid handling assume more than one household from here on. Don't reintroduce single-user shortcuts: no hard-coded people, institutions or account names; household data in the DB, never in code; server-persisted state over browser-only state for anything that affects numbers or must survive a device change.
 
 ## Principles (use these to break ties)
 
@@ -25,7 +25,7 @@ It is **not** a transaction-categorizing budget app (like YNAB or Mint). Real ba
 2. **One engine, consistent views.** Every tab derives from the same computations. Forecast net for a month must equal the Savings balance change for that month, and per-account balances must sum to the total. See [07](07-forecast-pipeline.md).
 3. **Money charged to a card is not cash out.** A card-funded portion becomes a debt *charge*. Cash leaves only when the card payment is made. See [05](05-funding.md).
 4. **Simple by default, powerful on demand.** Every payable item has a one-click "Paid from" dropdown. Splits and date-ranged schedules live behind "Split or schedule…".
-5. **Local-first and private.** SQLite on disk, with no telemetry. Plaid data is a cache. The repo is public, so data never goes in code or docs.
+5. **Private by construction.** No telemetry. Plaid data is a cache, and Plaid tokens are encrypted at rest. Every query is scoped to one user; a missing `WHERE user_id` is a security bug, not a display bug. The repo is public, so data never goes in code or docs.
 6. **Non-destructive edits.** Deleting a group ungroups its items. Deleting an account or debt re-routes whatever referenced it rather than deleting those items. Two-step confirm on every delete.
 
 ## Direction (owner-confirmed, not yet built)

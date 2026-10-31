@@ -16,9 +16,11 @@ These docs explain **what the app is supposed to do and why**: the money rules, 
 | 8 | [08-monthly-obligations.md](08-monthly-obligations.md) | The day-level Month view: calendar, daily chart, liquidity. |
 | 9 | [09-plaid.md](09-plaid.md) | Bank linking, import, resync, transactions, income detection. |
 | 10 | [10-known-gaps-and-decisions.md](10-known-gaps-and-decisions.md) | **Before changing behavior.** Confirmed bugs, intended-vs-current gaps, settled decisions. |
+| 11 | [11-accounts-and-access.md](11-accounts-and-access.md) | **Before adding any route or table.** Sign-in, sessions, and the rules that keep one user's data away from another's. |
 
 ## Conventions in these docs
 
+- Deliberately-deferred work lives in [../ICEBOX.md](../ICEBOX.md), not here.
 - **Current** means what the code does today. **Intended** means what the owner has confirmed it *should* do. When they differ, the gap is listed in doc 10, and the topic doc links to it.
 - Code references use `path:symbol` so they survive line shifts, e.g. `src/lib/debt.ts:simulateDebtPlan`.
 - Examples use made-up names and amounts. **The GitHub repo is public: never put real household data (names, account masks, balances, lenders) in these docs or in commits.**

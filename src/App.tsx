@@ -16,9 +16,10 @@ import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import PlaidConnect from './components/PlaidConnect';
 import HeaderControls from './components/HeaderControls';
-import UserMenu from './auth/UserMenu';
+import AppShell, { type NavGroup } from './components/AppShell';
+import Home from './components/Home';
+import { Banner } from './ui';
 import Toolbar from './components/Toolbar';
-import NavMenu from './components/NavMenu';
 import type { PayoffMarker } from './components/NetWorthChart';
 
 // Charts pull in Recharts (~the bulk of the bundle) — load them on demand.
@@ -32,17 +33,56 @@ const AccountActivity = lazy(() => import('./components/AccountActivity'));
 const AccountOutflows = lazy(() => import('./components/AccountOutflows'));
 const Transactions = lazy(() => import('./components/Transactions'));
 
-type Tab = 'forecast' | 'savings' | 'networth' | 'breakdown' | 'overview' | 'account' | 'outflows' | 'transactions';
+type Tab =
+  | 'home'
+  | 'accounts' | 'income' | 'expenses' | 'debts'
+  | 'projections' | 'breakdown' | 'account' | 'outflows' | 'transactions';
 
-const TABS: [Tab, string][] = [
-  ['forecast', 'Forecast'],
+// Planning and viewing are deliberately separate: the editors live under PLAN
+// and nowhere else, so a view is just a view.
+const NAV: NavGroup[] = [
+  { items: [{ id: 'home', label: 'Home', icon: '◈' }] },
+  {
+    heading: 'Plan',
+    items: [
+      { id: 'accounts', label: 'Accounts', icon: '▣' },
+      { id: 'income', label: 'Income', icon: '↑' },
+      { id: 'expenses', label: 'Expenses', icon: '↓' },
+      { id: 'debts', label: 'Debts', icon: '◆' },
+    ],
+  },
+  {
+    heading: 'Views',
+    items: [
+      { id: 'projections', label: 'Projections', icon: '◠' },
+      { id: 'breakdown', label: 'Breakdown', icon: '▥' },
+      { id: 'account', label: 'Activity', icon: '⇄' },
+      { id: 'outflows', label: 'Outflows', icon: '⇉' },
+      { id: 'transactions', label: 'Transactions', icon: '≡' },
+    ],
+  },
+];
+
+const PAGE_META: Record<Tab, { title: string; subtitle?: string }> = {
+  home: { title: 'Home', subtitle: 'Where you stand, and what’s coming' },
+  accounts: { title: 'Accounts', subtitle: 'Cash piles, and the bank connections behind them' },
+  income: { title: 'Income', subtitle: 'Money coming in, by pay frequency' },
+  expenses: { title: 'Expenses', subtitle: 'Ongoing and time-boxed costs, and what funds each' },
+  debts: { title: 'Debts', subtitle: 'Balances, payoff strategy, and projected free dates' },
+  projections: { title: 'Projections', subtitle: 'Cash flow, savings and net worth over time' },
+  breakdown: { title: 'Breakdown', subtitle: 'Item by item, by range or by month' },
+  account: { title: 'Activity', subtitle: 'What moves in and out of one account or debt' },
+  outflows: { title: 'Outflows', subtitle: 'What each account pays for, month by month' },
+  transactions: { title: 'Transactions', subtitle: 'Synced from your linked institutions' },
+};
+
+// The four chart tabs that used to be separate are one page with a switcher.
+type ProjectionView = 'cashflow' | 'savings' | 'networth' | 'overview';
+const PROJECTION_VIEWS: [ProjectionView, string][] = [
+  ['cashflow', 'Cash flow'],
   ['savings', 'Savings'],
-  ['networth', 'Net Worth'],
-  ['breakdown', 'Breakdown'],
+  ['networth', 'Net worth'],
   ['overview', 'Overview'],
-  ['account', 'Activity'],
-  ['outflows', 'Outflows'],
-  ['transactions', 'Transactions'],
 ];
 type BreakdownSection = 'account' | 'income' | 'expense' | 'debt';
 type BreakdownMode = 'range' | 'month';
@@ -122,7 +162,8 @@ export default function App() {
   const [debtStrategy, setDebtStrategy] = useState<DebtStrategy>('none');
   const [months, setMonths] = useState(() => Number(localStorage.getItem('bf.months')) || 12);
   const [startMonth, setStartMonth] = useState(() => Number(localStorage.getItem('bf.startMonth')) || 0);
-  const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'forecast');
+  const [tab, setTab] = useState<Tab>(() => (localStorage.getItem('bf.tab') as Tab) || 'home');
+  const [projectionView, setProjectionView] = useState<ProjectionView>(() => (localStorage.getItem('bf.projection') as ProjectionView) || 'cashflow');
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(() => (localStorage.getItem('bf.breakdown') as BreakdownSection) || 'debt');
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>(() => (localStorage.getItem('bf.breakdownMode') as BreakdownMode) || 'range');
@@ -135,11 +176,11 @@ export default function App() {
   const [dupDismissed, setDupDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => { localStorage.setItem('bf.months', String(months)); }, [months]);
   useEffect(() => { localStorage.setItem('bf.startMonth', String(startMonth)); }, [startMonth]);
   useEffect(() => { localStorage.setItem('bf.tab', tab); }, [tab]);
+  useEffect(() => { localStorage.setItem('bf.projection', projectionView); }, [projectionView]);
   useEffect(() => { localStorage.setItem('bf.breakdown', breakdownSection); }, [breakdownSection]);
   useEffect(() => { localStorage.setItem('bf.breakdownMode', breakdownMode); }, [breakdownMode]);
   useEffect(() => { localStorage.setItem('bf.breakdownMonth', String(breakdownMonth)); }, [breakdownMonth]);
@@ -248,11 +289,14 @@ export default function App() {
   }));
 
   // Per-item breakdown for the selected section.
+  // Per-account balances drive Home's runway warning, so build them always.
+  const accountSeries = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, debtOutByAccount);
+
   let breakdown: Breakdown;
   let breakdownTitle: string;
   let breakdownSubtitle: string;
   if (breakdownSection === 'account') {
-    breakdown = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, debtOutByAccount);
+    breakdown = accountSeries;
     breakdownTitle = 'Accounts Over Time';
     breakdownSubtitle = 'Balance of each account/savings pile over time, alongside total cash';
   } else if (breakdownSection === 'income') {
@@ -322,9 +366,12 @@ export default function App() {
     : null;
   const visibleMap = (map: Map<number, number[]>) =>
     new Map([...map].map(([id, values]) => [id, visible(values)]));
-  let monthlyBreakdown = buildMonthBreakdown(
+  const thisMonth = buildMonthBreakdown(
     incomeSources, expenses, debts, accounts, 0, new Date(), paidThisMonth, expensesPaidThisMonth,
   );
+  // Home's "next 30 days" list crosses the month boundary.
+  const nextMonth = buildMonthBreakdown(incomeSources, expenses, debts, accounts, 1, new Date());
+  let monthlyBreakdown = thisMonth;
   for (let monthIndex = 1; monthIndex <= breakdownMonth; monthIndex++) {
     const priorEndingLiquidity = new Map(monthlyBreakdown.liquidity
       .filter((series) => series.kind === 'account' || series.kind === 'card')
@@ -334,9 +381,6 @@ export default function App() {
     );
   }
 
-  // This month's outflow breakdown.
-  const m0 = savings[0];
-  const moneyOut = m0 ? m0.expenses + m0.debtOut : 0;
 
   // Uncovered funding: charges aimed at a loan or missing debt target aren't paid
   // from anywhere. Valid cards accept the full charge and surface over-limit state.
@@ -536,63 +580,72 @@ export default function App() {
     />
   );
 
+  const banners = (
+    <>
+      {error && <Banner tone="danger">{error}</Banner>}
+      {!error && duplicates.length > 0 && !dupDismissed && (
+        <Banner onDismiss={() => setDupDismissed(true)}>
+          Possible double-counting — the name{duplicates.length > 1 ? 's' : ''} “{duplicates.join('”, “')}”
+          {' '}appear in both Expenses and Debts.
+        </Banner>
+      )}
+      {!error && uncoveredAny && (
+        <Banner tone="danger">
+          Invalid funding target — {uncoveredThisMonth > 0.005
+            ? <><strong>{formatMoney(uncoveredThisMonth)}</strong> this month{uncoveredMonths > 1 ? ` (and ${uncoveredMonths - 1} more month${uncoveredMonths - 1 !== 1 ? 's' : ''})` : ''}</>
+            : <><strong>{uncoveredMonths}</strong> month{uncoveredMonths !== 1 ? 's' : ''}</>}
+          {' '}of charges point to a loan or missing debt and aren't funded. Assign a valid account or credit card.
+        </Banner>
+      )}
+    </>
+  );
+
   return (
-    <div style={{ minHeight: '100vh', padding: '0 0 60px' }}>
-      <header style={{
-        background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)',
-        padding: '10px 84px 10px 24px', minHeight: 60, display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 10,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, var(--color-primary), var(--color-income))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>📈</div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Budget Forecaster</div>
-            <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Personal Finance Planner</div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <HeaderControls
+    <AppShell
+      groups={NAV}
+      current={tab}
+      onSelect={(id) => setTab(id as Tab)}
+      title={PAGE_META[tab].title}
+      subtitle={PAGE_META[tab].subtitle}
+      banners={banners}
+      actions={
+        <HeaderControls
+          totalCash={totalCash}
+          currency={currency}
+          onCurrencyChange={changeCurrency}
+          inflation={inflation}
+          onInflationChange={changeInflation}
+        />
+      }
+    >
+        {tab === 'home' && (
+          <Home
             totalCash={totalCash}
-            currency={currency}
-            onCurrencyChange={changeCurrency}
-            inflation={inflation}
-            onInflationChange={changeInflation}
+            netWorth={netWorth}
+            accountSeries={accountSeries}
+            monthBreakdowns={[thisMonth, nextMonth]}
+            onGoToPlan={() => setTab('expenses')}
+            onGoToProjections={() => setTab('projections')}
           />
-          <UserMenu />
-        </div>
-        <div style={{ position: 'absolute', top: 12, right: 24 }}>
-          <NavMenu
-            tabs={TABS.map(([id, label]) => ({ id, label }))}
-            current={tab}
-            onSelect={(id) => setTab(id as Tab)}
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-          >
-            {toolbar}
-          </NavMenu>
-        </div>
+        )}
 
-        {error && (
-          <div style={{ background: '#7f1d1d', border: '1px solid #991b1b', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#fca5a5', flexBasis: '100%' }}>
-            ⚠ {error}
+        {tab === 'projections' && (
+          <div className="flex w-fit gap-1 rounded-control border border-border bg-bg p-1">
+            {PROJECTION_VIEWS.map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setProjectionView(id)}
+                className={projectionView === id
+                  ? 'rounded-[6px] bg-primary px-4 py-1.5 text-[13px] font-semibold text-white'
+                  : 'rounded-[6px] px-4 py-1.5 text-[13px] font-medium text-muted hover:text-text'}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         )}
-        {!error && duplicates.length > 0 && !dupDismissed && (
-          <div style={{ background: '#3b2f12', border: '1px solid #854d0e', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#fde68a', flexBasis: '100%', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-            <span>⚠ Possible double-counting — the name{duplicates.length > 1 ? 's' : ''} “{duplicates.join('”, “')}” appear in both Expenses and Debts.</span>
-            <button onClick={() => setDupDismissed(true)} style={{ background: 'transparent', color: '#fde68a' }}>dismiss</button>
-          </div>
-        )}
-        {!error && uncoveredAny && (
-          <div style={{ background: '#7f1d1d', border: '1px solid #991b1b', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#fca5a5', flexBasis: '100%' }}>
-            ⚠ Invalid funding target — {uncoveredThisMonth > 0.005 ? <><strong>{formatMoney(uncoveredThisMonth)}</strong> this month{uncoveredMonths > 1 ? ` (and ${uncoveredMonths - 1} more month${uncoveredMonths - 1 !== 1 ? 's' : ''})` : ''}</> : <><strong>{uncoveredMonths}</strong> month{uncoveredMonths !== 1 ? 's' : ''}</>} of charges point to a loan or missing debt and aren't funded. Assign a valid account or credit card.
-          </div>
-        )}
-      </header>
 
-      <main style={{ maxWidth: 1100, margin: '0 auto', padding: 'clamp(16px, 3vw, 28px)', display: 'flex', flexDirection: 'column', gap: 24 }}>
-        {tab === 'forecast' && (
+        {tab === 'projections' && projectionView === 'cashflow' && (
           <>
             <SummaryCards data={forecast} />
             <Suspense fallback={<ChartFallback />}>
@@ -600,7 +653,7 @@ export default function App() {
             </Suspense>
           </>
         )}
-        {tab === 'savings' && (() => {
+        {tab === 'projections' && projectionView === 'savings' && (() => {
           const selectedId = (savingsAccountId != null && accounts.some((a) => a.id === savingsAccountId)) ? savingsAccountId : null;
           const acct = selectedId != null ? accounts.find((a) => a.id === selectedId) : undefined;
           const fullData = selectedId != null
@@ -640,12 +693,12 @@ export default function App() {
             </>
           );
         })()}
-        {tab === 'networth' && (
+        {tab === 'projections' && projectionView === 'networth' && (
           <Suspense fallback={<ChartFallback />}>
             <NetWorthChart data={visible(netWorth)} startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth} payoffMarkers={payoffMarkers} compareData={visibleCompare?.networth} compareName={compareScenario?.name} />
           </Suspense>
         )}
-        {tab === 'overview' && (
+        {tab === 'projections' && projectionView === 'overview' && (
           <Suspense fallback={<ChartFallback />}>
             <OverviewChart data={visible(overviewData)} startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth} payoffMarkers={payoffMarkers} />
           </Suspense>
@@ -770,6 +823,8 @@ export default function App() {
             />
           </Suspense>
         )}
+        {tab === 'projections' && toolbar}
+
         {tab === 'transactions' && (
           <Suspense fallback={<ChartFallback />}>
             <Transactions />
@@ -777,61 +832,58 @@ export default function App() {
         )}
 
         {/* Budget data & editors — shown on every tab except the standalone Transactions page. */}
-        {tab !== 'transactions' && <>
-        {/* This month's money out */}
-        {m0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: '12px 18px', fontSize: 13 }}>
-            <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 11 }}>This month out</span>
-            <span>Expenses <strong style={{ color: 'var(--color-expense)' }}>{formatMoney(m0.expenses, { whole: true })}</strong></span>
-            <span>Debt <strong style={{ color: 'var(--color-net-neg)' }}>{formatMoney(m0.debtOut, { whole: true })}</strong></span>
-            <span style={{ marginLeft: 'auto' }}>Total out <strong>{formatMoney(moneyOut, { whole: true })}</strong> · Net <strong style={{ color: m0.net >= 0 ? 'var(--color-income)' : 'var(--color-expense)' }}>{formatMoney(m0.net, { whole: true })}</strong></span>
-          </div>
+        {tab === 'accounts' && (
+          <>
+            <Accounts
+        accounts={accounts}
+        onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount}
+        onMakePrimary={makePrimary} onReorder={reorderAccounts}
+      />
+            <PlaidConnect onImported={load} />
+          </>
         )}
 
-        {/* Shared data — drives all views, always editable */}
-        <Accounts
-          accounts={accounts}
-          onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount}
-          onMakePrimary={makePrimary} onReorder={reorderAccounts}
-        />
-        <PlaidConnect onImported={load} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
+        {tab === 'income' && (
           <LineItemTable
-            title="Income Sources" description="Money coming in, by pay frequency"
-            items={incomeSources} accentColor="var(--color-income)" totalLabel="Total Per Payment"
-            kind="income" groups={groups} showFrequency showAccount
-            accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-            onAdd={addIncome} onUpdate={updateIncome} onDelete={deleteIncome}
-            onUpdateOccurrence={(item, scheduledDate, occurrenceDate, status) => updateIncomeOccurrence(item as IncomeSource, scheduledDate, occurrenceDate, status)}
-            onResetOccurrence={(item, scheduledDate) => resetIncomeOccurrence(item as IncomeSource, scheduledDate)}
-            onAddGroup={(name) => addGroup(name, 'income')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
-            onReorder={reorderIncome} onReorderGroup={reorderGroups}
-          />
-          <LineItemTable
-            title="Expenses" description="Ongoing costs by frequency — split across cash & credit via Edit"
-            items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
-            kind="expense" groups={groups} showFrequency showFunding
-            isPaidThisMonth={(item) => isExpensePaidThisMonth(item as Expense)}
-            onTogglePaid={(item) => toggleExpensePaid(item as Expense)}
-            accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-            debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null, overLimit: d.credit_limit != null && d.balance > d.credit_limit + 0.005 }))}
-            onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}
-            onAddGroup={(name) => addGroup(name, 'expense')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
-            onReorder={reorderExpenses} onReorderGroup={reorderGroups}
-          />
-        </div>
-        <Debts
-          debts={debts} groups={groups}
+          title="Income Sources" description="Money coming in, by pay frequency"
+          items={incomeSources} accentColor="var(--color-income)" totalLabel="Total Per Payment"
+          kind="income" groups={groups} showFrequency showAccount
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
-          onAdd={addDebt} onUpdate={updateDebt} onDelete={deleteDebt}
-          onAddGroup={(name) => addGroup(name, 'debt')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
-          onReorder={reorderDebts} onReorderGroup={reorderGroups}
-          plan={plan} basePlan={basePlan} extra={debtExtra} strategy={debtStrategy}
-          onExtraChange={changeDebtExtra} onStrategyChange={changeDebtStrategy}
-          isPaidThisMonth={isPaidThisMonth} paidDetail={paidDetailOf} onTogglePaid={togglePaid}
+          onAdd={addIncome} onUpdate={updateIncome} onDelete={deleteIncome}
+          onUpdateOccurrence={(item, scheduledDate, occurrenceDate, status) => updateIncomeOccurrence(item as IncomeSource, scheduledDate, occurrenceDate, status)}
+          onResetOccurrence={(item, scheduledDate) => resetIncomeOccurrence(item as IncomeSource, scheduledDate)}
+          onAddGroup={(name) => addGroup(name, 'income')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
+          onReorder={reorderIncome} onReorderGroup={reorderGroups}
         />
-        </>}
-      </main>
-    </div>
+        )}
+
+        {tab === 'expenses' && (
+          <LineItemTable
+          title="Expenses" description="Ongoing costs by frequency — split across cash & credit via Edit"
+          items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
+          kind="expense" groups={groups} showFrequency showFunding
+          isPaidThisMonth={(item) => isExpensePaidThisMonth(item as Expense)}
+          onTogglePaid={(item) => toggleExpensePaid(item as Expense)}
+          accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
+          debts={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name, available: d.credit_limit != null ? Math.max(0, d.credit_limit - d.balance) : null, overLimit: d.credit_limit != null && d.balance > d.credit_limit + 0.005 }))}
+          onAdd={addExpense} onUpdate={updateExpense} onDelete={deleteExpense}
+          onAddGroup={(name) => addGroup(name, 'expense')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
+          onReorder={reorderExpenses} onReorderGroup={reorderGroups}
+        />
+        )}
+
+        {tab === 'debts' && (
+          <Debts
+        debts={debts} groups={groups}
+        accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
+        onAdd={addDebt} onUpdate={updateDebt} onDelete={deleteDebt}
+        onAddGroup={(name) => addGroup(name, 'debt')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
+        onReorder={reorderDebts} onReorderGroup={reorderGroups}
+        plan={plan} basePlan={basePlan} extra={debtExtra} strategy={debtStrategy}
+        onExtraChange={changeDebtExtra} onStrategyChange={changeDebtStrategy}
+        isPaidThisMonth={isPaidThisMonth} paidDetail={paidDetailOf} onTogglePaid={togglePaid}
+      />
+        )}
+    </AppShell>
   );
 }
