@@ -3,14 +3,14 @@ import type { AllocationSourceType, Frequency, ItemFormData } from '../types';
 import { FREQUENCIES, FREQUENCY_LABELS, INCOME_FREQUENCIES } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
-import { AlertTriangle } from 'lucide-react';
+import { ACCENTS, AddButton, Button, Field, FieldError, ModalActions, MoneyInput, type Accent } from '../ui';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
 
 interface Props {
   onAdd: (data: ItemFormData) => Promise<void>;
-  accentColor: string;
+  accent: Accent;
   placeholder: string;
   showFrequency?: boolean;
   showAccount?: boolean;
@@ -20,21 +20,12 @@ interface Props {
   debts?: NamedSource[];
 }
 
-const labelStyle: React.CSSProperties = {
-  fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)',
-  textTransform: 'uppercase', letterSpacing: '0.05em',
-};
-
-const selectStyle: React.CSSProperties = {
-  width: '100%',
-};
-
 function today(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequency, showAccount, showFunding, groupId, accounts, debts }: Props) {
+export default function AddItemForm({ onAdd, accent, placeholder, showFrequency, showAccount, showFunding, groupId, accounts, debts }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
@@ -83,91 +74,98 @@ export default function AddItemForm({ onAdd, accentColor, placeholder, showFrequ
     setOpen(false);
   }
 
-  const field = (label: string, help: string, child: React.ReactNode) => (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={labelStyle}>{label}</span>
-      {child}
-      <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>{help}</span>
-    </label>
-  );
-
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        style={{
-          background: 'transparent', color: accentColor, border: `1px dashed ${accentColor}`,
-          borderRadius: 'var(--radius-sm)', padding: '8px 16px', width: '100%',
-          marginTop: 8, opacity: 0.8, fontSize: 13,
-        }}
-      >
+      <AddButton accent={accent} onClick={() => setOpen(true)} className="mt-2 w-full">
         + Add {placeholder}
-      </button>
+      </AddButton>
 
       {open && (
         <Modal title={`Add ${placeholder}`} onClose={() => setOpen(false)} maxWidth={560}>
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {field('Name', `A recognizable label, such as ${showFunding ? '"Electricity"' : '"Paycheck"'}.`, (
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={showFunding ? 'e.g. Electricity' : `e.g. ${placeholder}`} autoFocus required />
-            ))}
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <Field label="Name" hint={`A recognizable label, such as ${showFunding ? '"Electricity"' : '"Paycheck"'}.`}>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={showFunding ? 'e.g. Electricity' : `e.g. ${placeholder}`}
+                autoFocus
+                required
+              />
+            </Field>
 
-            {field(
-              showFrequency ? 'Amount per payment' : 'Monthly amount',
-              showFrequency ? 'Enter the amount charged each time it occurs, not its monthly average.' : 'Enter the amount received each month.',
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }}>$</span>
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" min={0} step="any" style={{ width: '100%', paddingLeft: 24 }} required />
-              </div>,
+            <Field
+              label={showFrequency ? 'Amount per payment' : 'Monthly amount'}
+              hint={showFrequency
+                ? 'Enter the amount charged each time it occurs, not its monthly average.'
+                : 'Enter the amount received each month.'}
+            >
+              <MoneyInput value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" required />
+            </Field>
+
+            {showFrequency && (
+              <Field label="Frequency" hint="How often the amount above occurs.">
+                <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} className="w-full">
+                  {(showAccount ? INCOME_FREQUENCIES : FREQUENCIES).map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
+                </select>
+              </Field>
             )}
 
-            {showFrequency && field('Frequency', 'How often the amount above occurs.', (
-              <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} style={selectStyle}>
-                {(showAccount ? INCOME_FREQUENCIES : FREQUENCIES).map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
-              </select>
-            ))}
-
             {showAccount && frequency === 'semimonthly' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                {field('First payday', 'Day of month.', <input type="number" min={1} max={31} value={payday1} onChange={(e) => setPayday1(Number(e.target.value))} />)}
-                {field('Second payday', 'Use 31 for month end.', <input type="number" min={1} max={31} value={payday2} onChange={(e) => setPayday2(Number(e.target.value))} />)}
+              <div className="grid grid-cols-2 gap-2.5">
+                <Field label="First payday" hint="Day of month.">
+                  <input type="number" min={1} max={31} value={payday1} onChange={(e) => setPayday1(Number(e.target.value))} />
+                </Field>
+                <Field label="Second payday" hint="Use 31 for month end.">
+                  <input type="number" min={1} max={31} value={payday2} onChange={(e) => setPayday2(Number(e.target.value))} />
+                </Field>
               </div>
             )}
 
-            {showFunding && field('When', 'First occurrence; repeats according to the selected frequency.', (
-              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ width: '100%' }} />
-            ))}
-
-            {showFunding && frequency !== 'one-time' && field('Ends (optional)', 'Last occurrence. Leave blank for an ongoing cost.', (
-              <input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} style={{ width: '100%' }} />
-            ))}
-
-            {!rangeValid && <p style={{ fontSize: 12, margin: 0, color: 'var(--color-expense)' }}>The end date must be on or after the first occurrence.</p>}
-
-            {showAccount && accounts?.length ? field('Deposited into', 'The account that receives this income.', (
-              <select value={account ?? primaryId ?? ''} onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
-              </select>
-            )) : null}
-
-            {showFunding && (accounts?.length || debts?.length) ? field('Paid from', 'Choose the account or credit card used for this expense.', (
-              <select value={fundingSource} onChange={(e) => setFundingSource(e.target.value)} style={selectStyle}>
-                <option value="">Primary account</option>
-                {accounts?.length ? <optgroup label="Accounts">{accounts.map((a) => <option key={`a${a.id}`} value={`account:${a.id}`}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}</optgroup> : null}
-                {debts?.length ? <optgroup label="Credit cards">{debts.map((d) => <option key={`d${d.id}`} value={`debt:${d.id}`}>{d.name}</option>)}</optgroup> : null}
-              </select>
-            )) : null}
-
-            {selectedCard && cardSpill > 0.005 && (
-              <p style={{ fontSize: 12, margin: 0, color: 'var(--color-expense)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
-                <span>{selectedCard.name} has {formatMoney(cardAvail!)} available. This charge would put it {formatMoney(cardSpill)} over its limit.</span>
-              </p>
+            {showFunding && (
+              <Field label="When" hint="First occurrence; repeats according to the selected frequency.">
+                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required className="w-full" />
+              </Field>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" onClick={() => setOpen(false)} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '9px 16px' }}>Cancel</button>
-              <button type="submit" disabled={saving || !valid} style={{ background: accentColor, color: '#fff', padding: '9px 18px' }}>{saving ? 'Adding…' : `Add ${placeholder}`}</button>
-            </div>
+            {showFunding && frequency !== 'one-time' && (
+              <Field label="Ends (optional)" hint="Last occurrence. Leave blank for an ongoing cost.">
+                <input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} className="w-full" />
+              </Field>
+            )}
+
+            {!rangeValid && <FieldError>The end date must be on or after the first occurrence.</FieldError>}
+
+            {showAccount && accounts?.length ? (
+              <Field label="Deposited into" hint="The account that receives this income.">
+                <select value={account ?? primaryId ?? ''} onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)} className="w-full">
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+                </select>
+              </Field>
+            ) : null}
+
+            {showFunding && (accounts?.length || debts?.length) ? (
+              <Field label="Paid from" hint="Choose the account or credit card used for this expense.">
+                <select value={fundingSource} onChange={(e) => setFundingSource(e.target.value)} className="w-full">
+                  <option value="">Primary account</option>
+                  {accounts?.length ? <optgroup label="Accounts">{accounts.map((a) => <option key={`a${a.id}`} value={`account:${a.id}`}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}</optgroup> : null}
+                  {debts?.length ? <optgroup label="Credit cards">{debts.map((d) => <option key={`d${d.id}`} value={`debt:${d.id}`}>{d.name}</option>)}</optgroup> : null}
+                </select>
+              </Field>
+            ) : null}
+
+            {selectedCard && cardSpill > 0.005 && (
+              <FieldError>
+                {selectedCard.name} has {formatMoney(cardAvail!)} available. This charge would put it {formatMoney(cardSpill)} over its limit.
+              </FieldError>
+            )}
+
+            <ModalActions>
+              <Button onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="submit" variant="bare" disabled={saving || !valid} className={ACCENTS[accent].solid}>
+                {saving ? 'Adding…' : `Add ${placeholder}`}
+              </Button>
+            </ModalActions>
           </form>
         </Modal>
       )}

@@ -92,14 +92,13 @@ export default function Toolbar({ scenarios, compareId, onSave, onRestore, onDel
                 onConfirm={() => onRestore(s.id)}
                 title={`Replace all current data with "${s.name}"`}
                 confirmLabel="Load?"
-                triggerStyle={{ background: 'transparent', color: 'var(--color-primary)', padding: '2px 6px', fontSize: 12 }}
+                tone="primary"
               >
                 Load
               </ConfirmButton>
               <ConfirmButton
                 onConfirm={() => onDelete(s.id)}
                 title={`Delete scenario "${s.name}"`}
-                triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '2px 6px', fontSize: 12 }}
               >
                 <X size={14} strokeWidth={2.2} aria-hidden="true" />
               </ConfirmButton>

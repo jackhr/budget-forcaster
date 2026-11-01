@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { IconButton } from '../ui';
 
 interface Props {
   title: string;
@@ -59,18 +60,7 @@ export default function Modal({ title, onClose, children, maxWidth = 420 }: Prop
   return (
     <div
       onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0, 0, 0, 0.6)',
-        backdropFilter: 'blur(2px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-        padding: 20,
-        animation: 'modalFade 0.12s ease-out',
-      }}
+      className="fixed inset-0 z-[100] flex animate-modal-fade items-center justify-center bg-black/60 p-5 backdrop-blur-[2px]"
     >
       <div
         ref={dialogRef}
@@ -78,49 +68,18 @@ export default function Modal({ title, onClose, children, maxWidth = 420 }: Prop
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius)',
-          boxShadow: 'var(--shadow)',
-          width: '100%',
-          maxWidth,
-          maxHeight: 'calc(100vh - 40px)',
-          display: 'flex',
-          flexDirection: 'column',
-          animation: 'modalSlide 0.15s ease-out',
-        }}
+        // The width is a per-dialog decision the caller makes, so it stays a value.
+        style={{ maxWidth }}
+        className="flex max-h-[calc(100vh-40px)] w-full animate-modal-slide flex-col rounded-card border border-border bg-surface shadow-pop"
       >
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '18px 20px',
-          borderBottom: '1px solid var(--color-border)',
-          flexShrink: 0,
-        }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>{title}</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close dialog"
-            style={{
-              background: 'transparent',
-              color: 'var(--color-text-muted)',
-              lineHeight: 1,
-              padding: 6,
-              display: 'grid',
-              placeItems: 'center',
-            }}
-          >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+          <IconButton onClick={onClose} aria-label="Close dialog">
             <X size={17} strokeWidth={2.1} aria-hidden="true" />
-          </button>
+          </IconButton>
         </div>
-        <div style={{ padding: 20, overflowY: 'auto', minHeight: 0 }}>{children}</div>
+        <div className="min-h-0 overflow-y-auto p-5">{children}</div>
       </div>
-      <style>{`
-        @keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes modalSlide { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
     </div>
   );
 }

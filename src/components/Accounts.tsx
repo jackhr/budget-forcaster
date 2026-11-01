@@ -117,7 +117,7 @@ export default function Accounts({ accounts, onAdd, onUpdate, onDelete, onMakePr
             <span style={{ fontWeight: 700, color: ACCENT }}>{formatMoney(a.balance, { whole: true })}</span>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => setEditingId(a.id)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', padding: '5px 10px', border: '1px solid var(--color-border)' }}>Edit</button>
-              <ConfirmButton onConfirm={() => onDelete(a.id)} title={`Delete ${a.name}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></ConfirmButton>
+              <ConfirmButton onConfirm={() => onDelete(a.id)} title={`Delete ${a.name}`}><X size={14} strokeWidth={2.2} aria-hidden="true" /></ConfirmButton>
             </div>
           </div>
         ))}

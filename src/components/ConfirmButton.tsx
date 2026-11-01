@@ -1,16 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
+import { Button, IconButton, cx } from '../ui';
+
+/** How the resting trigger looks. The armed state is always a red confirm. */
+type Tone = 'danger' | 'quiet' | 'outline' | 'primary';
+
+const TONES: Record<Tone, string> = {
+  danger: 'text-danger hover:bg-danger/10',
+  quiet: 'text-muted hover:bg-surface-2 hover:text-text',
+  outline: 'border border-border text-muted hover:border-border-strong hover:text-text',
+  primary: 'text-primary hover:bg-primary/10',
+};
 
 interface Props {
   onConfirm: () => void;
   title?: string;
   children: React.ReactNode; // trigger content (usually an icon)
-  triggerStyle?: React.CSSProperties;
+  tone?: Tone;
   confirmLabel?: string;
+  className?: string;
 }
 
 // Two-step inline confirmation: first click reveals confirm/cancel, avoiding accidental deletes.
-export default function ConfirmButton({ onConfirm, title, children, triggerStyle, confirmLabel = 'Delete?' }: Props) {
+export default function ConfirmButton({ onConfirm, title, children, tone = 'danger', confirmLabel = 'Delete?', className }: Props) {
   const [confirming, setConfirming] = useState(false);
   const timer = useRef<number | undefined>(undefined);
 
@@ -24,26 +36,33 @@ export default function ConfirmButton({ onConfirm, title, children, triggerStyle
 
   if (confirming) {
     return (
-      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-        <button
+      <span className="inline-flex shrink-0 items-center gap-1">
+        <Button
+          size="sm"
           onClick={() => { window.clearTimeout(timer.current); setConfirming(false); onConfirm(); }}
-          style={{ background: 'var(--color-expense)', color: '#fff', padding: '5px 10px', fontSize: 12, fontWeight: 600 }}
+          variant="bare"
+          className="bg-danger font-semibold text-white hover:bg-danger/90"
         >
           {confirmLabel}
-        </button>
-        <button
-          onClick={() => { window.clearTimeout(timer.current); setConfirming(false); }}
-          aria-label="Cancel"
-          style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '5px 7px', display: 'grid', placeItems: 'center' }}
-        >
+        </Button>
+        <IconButton tone="neutral" size="sm" onClick={() => { window.clearTimeout(timer.current); setConfirming(false); }} aria-label="Cancel">
           <X size={14} strokeWidth={2.2} aria-hidden="true" />
-        </button>
+        </IconButton>
       </span>
     );
   }
 
   return (
-    <button onClick={arm} title={title} style={triggerStyle}>
+    <button
+      type="button"
+      onClick={arm}
+      title={title}
+      className={cx(
+        'inline-flex shrink-0 items-center gap-1.5 rounded-control px-2.5 py-1.5 text-[12.5px] font-medium transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+        TONES[tone], className,
+      )}
+    >
       {children}
     </button>
   );

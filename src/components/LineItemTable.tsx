@@ -4,11 +4,11 @@ import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
 import { useCollapsedGroup } from '../lib/useCollapsedGroup';
 import { useCollapsed } from '../lib/useCollapsed';
-import CollapseToggle from './CollapseToggle';
 import LineItemRow from './LineItemRow';
 import AddItemForm from './AddItemForm';
-import ConfirmButton from './ConfirmButton';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
+import { X } from 'lucide-react';
+import { ACCENTS, Button, EmptyState, IconButton, Panel, PanelHeader, cx, type Accent } from '../ui';
+import { GroupBar } from '../ui/GroupBar';
 
 type DragProps = React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
@@ -18,7 +18,7 @@ interface Props {
   title: string;
   description?: string;
   items: LineItem[];
-  accentColor: string;
+  accent: Accent;
   totalLabel: string;
   kind: GroupKind;
   groups: LineItemGroup[];
@@ -41,24 +41,16 @@ interface Props {
   onReorderGroup: (ids: number[]) => void;
 }
 
-const GRID = '1fr 140px 96px';
-
-function money(n: number) {
-  return formatMoney(n);
-}
+// Shared by the column header and every row, so the three columns line up.
+const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_140px_96px] gap-2';
 
 function ColumnHeader({ amountLabel }: { amountLabel: string }) {
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: GRID,
-      gap: '8px',
-      padding: '0 12px 8px',
-      borderBottom: '1px solid var(--color-border)',
-      marginBottom: 4,
-    }}>
-      {['Name', amountLabel, ''].map((h, idx) => (
-        <span key={idx} style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+    <div className={cx(COLUMNS, 'mb-1 border-b border-border px-3 pb-2')}>
+      {['Name', amountLabel, ''].map((heading, idx) => (
+        <span key={idx} className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+          {heading}
+        </span>
       ))}
     </div>
   );
@@ -69,7 +61,7 @@ interface GroupBlockProps {
   placeholder: string;
   items: LineItem[];
   groups: LineItemGroup[];
-  accentColor: string;
+  accent: Accent;
   showFrequency?: boolean;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -89,117 +81,65 @@ interface GroupBlockProps {
   groupDrag?: DragProps;
 }
 
-function GroupBlock({ group, placeholder, items, groups, accentColor, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, isPaidThisMonth, onTogglePaid, onUpdateOccurrence, onResetOccurrence, dragFor, draggingId, groupDrag }: GroupBlockProps) {
-  const { collapsed, toggle: toggleCollapsed } = useCollapsedGroup(group.id);
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(group.name);
+function GroupBlock({ group, placeholder, items, groups, accent, showFrequency, onUpdate, onDelete, onAdd, onRenameGroup, onDeleteGroup, accounts, debts, showFunding, showAccount, isPaidThisMonth, onTogglePaid, onUpdateOccurrence, onResetOccurrence, dragFor, draggingId, groupDrag }: GroupBlockProps) {
+  const { collapsed, toggle } = useCollapsedGroup(group.id);
   const subtotal = items.reduce((sum, i) => sum + i.monthly_amount, 0);
 
-  function commitRename() {
-    const v = draft.trim();
-    setRenaming(false);
-    if (v && v !== group.name) onRenameGroup(group.id, v);
-    else setDraft(group.name);
-  }
-
   return (
-    <div style={{
-      border: '1px solid var(--color-border)',
-      borderRadius: 'var(--radius-sm)',
-      background: 'rgba(255,255,255,0.015)',
-      marginBottom: 8,
-      overflow: 'hidden',
-    }}>
-      <div {...groupDrag} style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 12px',
-        background: 'var(--color-surface-2)',
-        borderLeft: `3px solid ${accentColor}`,
-        cursor: groupDrag ? 'grab' : undefined,
-      }}>
-        <button
-          onClick={toggleCollapsed}
-          style={{ background: 'transparent', color: 'var(--color-text)', padding: 0, lineHeight: 1, width: 26, display: 'grid', placeItems: 'center' }}
-          aria-label={collapsed ? 'Expand group' : 'Collapse group'}
-        >
-          {collapsed ? <ChevronRight size={17} strokeWidth={2.2} aria-hidden="true" /> : <ChevronDown size={17} strokeWidth={2.2} aria-hidden="true" />}
-        </button>
-        {renaming ? (
-          <input
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') { setRenaming(false); setDraft(group.name); }
-            }}
-            autoFocus
-            style={{ flex: 1, fontWeight: 600 }}
+    <GroupBar
+      accent={accent}
+      name={group.name}
+      count={items.length}
+      noun="item"
+      subtotal={formatMoney(subtotal)}
+      collapsed={collapsed}
+      onToggle={toggle}
+      onRename={(name) => onRenameGroup(group.id, name)}
+      onDelete={() => onDeleteGroup(group.id)}
+      drag={groupDrag}
+    >
+      <div className="py-1">
+        {items.map((item) => (
+          <LineItemRow
+            key={item.id}
+            item={item}
+            onUpdate={onUpdate}
+            onDelete={onDelete}
+            accent={accent}
+            showFrequency={showFrequency}
+            showFunding={showFunding}
+            showAccount={showAccount}
+            groups={groups}
+            accounts={accounts}
+            debts={debts}
+            paid={isPaidThisMonth?.(item)}
+            onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
+            onUpdateOccurrence={onUpdateOccurrence ? (scheduledDate, occurrenceDate, status) => onUpdateOccurrence(item, scheduledDate, occurrenceDate, status) : undefined}
+            onResetOccurrence={onResetOccurrence ? (scheduledDate) => onResetOccurrence(item, scheduledDate) : undefined}
+            drag={dragFor(item)}
+            dragging={draggingId === item.id}
           />
-        ) : (
-          <button
-            onClick={() => setRenaming(true)}
-            style={{ background: 'transparent', color: 'var(--color-text)', fontWeight: 600, fontSize: 13, padding: 0, flex: 1, textAlign: 'left' }}
-            title="Click to rename"
-          >
-            {group.name}
-            <span style={{ color: 'var(--color-text-muted)', fontWeight: 400, marginLeft: 8 }}>
-              {items.length} item{items.length !== 1 ? 's' : ''}
-            </span>
-          </button>
-        )}
-        <span style={{ fontWeight: 700, color: accentColor, fontSize: 13 }}>{money(subtotal)}</span>
-        <ConfirmButton
-          onConfirm={() => onDeleteGroup(group.id)}
-          title="Remove group (keeps items, ungrouped)"
-          confirmLabel="Ungroup?"
-          triggerStyle={{ background: 'transparent', color: 'var(--color-text-muted)', padding: '4px 8px', border: '1px solid var(--color-border)', fontSize: 12 }}
-        >
-          Ungroup
-        </ConfirmButton>
-      </div>
-
-      {!collapsed && (
-        <div style={{ padding: '4px 0' }}>
-          {items.map((item) => (
-            <LineItemRow
-              key={item.id}
-              item={item}
-              onUpdate={onUpdate}
-              onDelete={onDelete}
-              accentColor={accentColor}
-              showFrequency={showFrequency}
-              showFunding={showFunding}
-              showAccount={showAccount}
-              groups={groups}
-              accounts={accounts}
-              debts={debts}
-              paid={isPaidThisMonth?.(item)}
-              onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
-              onUpdateOccurrence={onUpdateOccurrence ? (scheduledDate, occurrenceDate, status) => onUpdateOccurrence(item, scheduledDate, occurrenceDate, status) : undefined}
-              onResetOccurrence={onResetOccurrence ? (scheduledDate) => onResetOccurrence(item, scheduledDate) : undefined}
-              drag={dragFor(item)}
-              dragging={draggingId === item.id}
-            />
-          ))}
-          {items.length === 0 && (
-            <p style={{ padding: '8px 16px', color: 'var(--color-text-muted)', fontSize: 12.5 }}>
-              Empty group — add an item below.
-            </p>
-          )}
-          <div style={{ padding: '0 12px 6px' }}>
-            <AddItemForm onAdd={onAdd} accentColor={accentColor} placeholder={placeholder} showFrequency={showFrequency} showAccount={showAccount} showFunding={showFunding} groupId={group.id} accounts={accounts} debts={debts} />
-          </div>
+        ))}
+        {items.length === 0 && <EmptyState compact>Empty group — add an item below.</EmptyState>}
+        <div className="px-3 pb-1.5">
+          <AddItemForm
+            onAdd={onAdd}
+            accent={accent}
+            placeholder={placeholder}
+            showFrequency={showFrequency}
+            showAccount={showAccount}
+            showFunding={showFunding}
+            groupId={group.id}
+            accounts={accounts}
+            debts={debts}
+          />
         </div>
-      )}
-    </div>
+      </div>
+    </GroupBar>
   );
 }
 
-function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup: (name: string) => Promise<void> }) {
+function AddGroup({ accent, onAddGroup }: { accent: Accent; onAddGroup: (name: string) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -215,40 +155,31 @@ function AddGroup({ accentColor, onAddGroup }: { accentColor: string; onAddGroup
   }
 
   if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        style={{
-          background: 'var(--color-surface-2)', color: 'var(--color-text-muted)',
-          border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
-          padding: '8px 16px', flex: '0 0 auto', fontSize: 13,
-        }}
-      >
-        + New Group
-      </button>
-    );
+    return <Button onClick={() => setOpen(true)}>+ New Group</Button>;
   }
 
   return (
-    <form onSubmit={submit} style={{ display: 'flex', gap: 6, flex: 1 }}>
+    <form onSubmit={submit} className="flex flex-1 gap-1.5">
       <input
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="Group name (e.g. Jack CC payments)"
+        placeholder="Group name (e.g. Utilities)"
         autoFocus
-        style={{ flex: 1 }}
+        className="min-w-0 flex-1"
         required
       />
-      <button type="submit" disabled={saving} style={{ background: accentColor, color: '#fff', padding: '6px 14px' }}>
+      <Button type="submit" variant="bare" disabled={saving} className={ACCENTS[accent].solid}>
         {saving ? '…' : 'Create'}
-      </button>
-      <button type="button" onClick={() => setOpen(false)} aria-label="Cancel" style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 8px', display: 'grid', placeItems: 'center' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></button>
+      </Button>
+      <IconButton tone="neutral" onClick={() => setOpen(false)} aria-label="Cancel">
+        <X size={14} strokeWidth={2.2} aria-hidden="true" />
+      </IconButton>
     </form>
   );
 }
 
-export default function LineItemTable({ title, description, items, accentColor, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, isPaidThisMonth, onTogglePaid, onUpdateOccurrence, onResetOccurrence, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
+export default function LineItemTable({ title, description, items, accent, totalLabel, kind, groups, accounts, debts, showFunding, showFrequency, showAccount, isPaidThisMonth, onTogglePaid, onUpdateOccurrence, onResetOccurrence, onUpdate, onDelete, onAdd, onAddGroup, onRenameGroup, onDeleteGroup, onReorder, onReorderGroup }: Props) {
   const total = items.reduce((sum, i) => sum + i.monthly_amount, 0);
   const myGroups = groups.filter((g) => g.kind === kind);
   const ungrouped = items.filter((i) => i.group_id == null);
@@ -260,111 +191,91 @@ export default function LineItemTable({ title, description, items, accentColor, 
   const { collapsed, toggle } = useCollapsed(`section-${kind}`);
 
   return (
-    <div style={{
-      background: 'var(--color-surface)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 'var(--radius)',
-      padding: '20px',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: collapsed ? 0 : 16 }}>
-        <div onClick={toggle} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
-          <CollapseToggle collapsed={collapsed} onToggle={toggle} label={title} />
-          <div>
-            <h2 style={{ fontSize: '16px', fontWeight: 600 }}>{title}</h2>
-            {description && (
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>{description}</p>
-            )}
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: 2 }}>
-              {items.length} item{items.length !== 1 ? 's' : ''}
-              {myGroups.length > 0 ? ` · ${myGroups.length} group${myGroups.length !== 1 ? 's' : ''}` : ''}
-            </p>
-          </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{totalLabel}</div>
-          <div style={{ fontSize: '20px', fontWeight: 700, color: accentColor }}>{money(total)}</div>
-        </div>
-      </div>
-
-      {!collapsed && (<>
-      <ColumnHeader amountLabel={amountLabel} />
-
-      {/* Grouped sections */}
-      {myGroups.map((group) => (
-        <GroupBlock
-          key={group.id}
-          group={group}
-          placeholder={itemLabel}
-          items={items.filter((i) => i.group_id === group.id)}
-          groups={myGroups}
-          accentColor={accentColor}
-          showFrequency={showFrequency}
-          onUpdate={onUpdate}
-          onDelete={onDelete}
-          onAdd={onAdd}
-          onRenameGroup={onRenameGroup}
-          onDeleteGroup={onDeleteGroup}
-          accounts={accounts}
-          debts={debts}
-          showFunding={showFunding}
-          showAccount={showAccount}
-          isPaidThisMonth={isPaidThisMonth}
-          onTogglePaid={onTogglePaid}
-          onUpdateOccurrence={onUpdateOccurrence}
-          onResetOccurrence={onResetOccurrence}
-          dragFor={dnd.handlers}
-          draggingId={dnd.dragId}
-          groupDrag={groupDnd.handlers(group)}
-        />
-      ))}
-
-      {/* Ungrouped items */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {ungrouped.map((item) => (
-          <LineItemRow
-            key={item.id}
-            item={item}
-            onUpdate={onUpdate}
-            onDelete={onDelete}
-            accentColor={accentColor}
-            showFrequency={showFrequency}
-            showFunding={showFunding}
-            showAccount={showAccount}
-            groups={myGroups}
-            accounts={accounts}
-            debts={debts}
-            paid={isPaidThisMonth?.(item)}
-            onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
-            onUpdateOccurrence={onUpdateOccurrence ? (scheduledDate, occurrenceDate, status) => onUpdateOccurrence(item, scheduledDate, occurrenceDate, status) : undefined}
-            onResetOccurrence={onResetOccurrence ? (scheduledDate) => onResetOccurrence(item, scheduledDate) : undefined}
-            drag={dnd.handlers(item)}
-            dragging={dnd.dragId === item.id}
-          />
-        ))}
-        {items.length === 0 && (
-          <p style={{ padding: '20px 12px', color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 13 }}>
-            No items yet. Add one below.
-          </p>
-        )}
-      </div>
-
-      <AddItemForm
-        onAdd={onAdd}
-        accentColor={accentColor}
-        placeholder={itemLabel}
-        showFrequency={showFrequency}
-        showAccount={showAccount}
-        showFunding={showFunding}
-        accounts={accounts}
-        debts={debts}
+    <Panel className="flex flex-col">
+      <PanelHeader
+        title={title}
+        description={description}
+        meta={`${items.length} item${items.length !== 1 ? 's' : ''}${myGroups.length > 0 ? ` · ${myGroups.length} group${myGroups.length !== 1 ? 's' : ''}` : ''}`}
+        stats={[{ label: totalLabel, value: formatMoney(total), className: ACCENTS[accent].text }]}
+        collapsed={collapsed}
+        onToggle={toggle}
       />
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <AddGroup accentColor={accentColor} onAddGroup={onAddGroup} />
-      </div>
-      </>)}
-    </div>
+      {!collapsed && (
+        <>
+          <ColumnHeader amountLabel={amountLabel} />
+
+          {/* Grouped sections */}
+          {myGroups.map((group) => (
+            <GroupBlock
+              key={group.id}
+              group={group}
+              placeholder={itemLabel}
+              items={items.filter((i) => i.group_id === group.id)}
+              groups={myGroups}
+              accent={accent}
+              showFrequency={showFrequency}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+              onAdd={onAdd}
+              onRenameGroup={onRenameGroup}
+              onDeleteGroup={onDeleteGroup}
+              accounts={accounts}
+              debts={debts}
+              showFunding={showFunding}
+              showAccount={showAccount}
+              isPaidThisMonth={isPaidThisMonth}
+              onTogglePaid={onTogglePaid}
+              onUpdateOccurrence={onUpdateOccurrence}
+              onResetOccurrence={onResetOccurrence}
+              dragFor={dnd.handlers}
+              draggingId={dnd.dragId}
+              groupDrag={groupDnd.handlers(group)}
+            />
+          ))}
+
+          {/* Ungrouped items */}
+          <div className="flex flex-col gap-0.5">
+            {ungrouped.map((item) => (
+              <LineItemRow
+                key={item.id}
+                item={item}
+                onUpdate={onUpdate}
+                onDelete={onDelete}
+                accent={accent}
+                showFrequency={showFrequency}
+                showFunding={showFunding}
+                showAccount={showAccount}
+                groups={myGroups}
+                accounts={accounts}
+                debts={debts}
+                paid={isPaidThisMonth?.(item)}
+                onTogglePaid={onTogglePaid ? () => onTogglePaid(item) : undefined}
+                onUpdateOccurrence={onUpdateOccurrence ? (scheduledDate, occurrenceDate, status) => onUpdateOccurrence(item, scheduledDate, occurrenceDate, status) : undefined}
+                onResetOccurrence={onResetOccurrence ? (scheduledDate) => onResetOccurrence(item, scheduledDate) : undefined}
+                drag={dnd.handlers(item)}
+                dragging={dnd.dragId === item.id}
+              />
+            ))}
+            {items.length === 0 && <EmptyState>No items yet. Add one below.</EmptyState>}
+          </div>
+
+          <AddItemForm
+            onAdd={onAdd}
+            accent={accent}
+            placeholder={itemLabel}
+            showFrequency={showFrequency}
+            showAccount={showAccount}
+            showFunding={showFunding}
+            accounts={accounts}
+            debts={debts}
+          />
+
+          <div className="mt-2 flex gap-2">
+            <AddGroup accent={accent} onAddGroup={onAddGroup} />
+          </div>
+        </>
+      )}
+    </Panel>
   );
 }

@@ -813,7 +813,7 @@ export default function App() {
         {tab === 'income' && (
           <LineItemTable
           title="Income Sources" description="Money coming in, by pay frequency"
-          items={incomeSources} accentColor="var(--color-income)" totalLabel="Total Per Payment"
+          items={incomeSources} accent="income" totalLabel="Total Per Payment"
           kind="income" groups={groups} showFrequency showAccount
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
           onAdd={addIncome} onUpdate={updateIncome} onDelete={deleteIncome}
@@ -827,7 +827,7 @@ export default function App() {
         {tab === 'expenses' && (
           <LineItemTable
           title="Expenses" description="Ongoing costs by frequency — split across cash & credit via Edit"
-          items={expenses} accentColor="var(--color-expense)" totalLabel="Total Per Payment"
+          items={expenses} accent="expense" totalLabel="Total Per Payment"
           kind="expense" groups={groups} showFrequency showFunding
           isPaidThisMonth={(item) => isExpensePaidThisMonth(item as Expense)}
           onTogglePaid={(item) => toggleExpensePaid(item as Expense)}

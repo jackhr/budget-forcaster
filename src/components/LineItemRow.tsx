@@ -5,7 +5,10 @@ import { formatMoney } from '../lib/format';
 import Modal from './Modal';
 import ConfirmButton from './ConfirmButton';
 import FundingPlanModal, { summarizeFundingPlan } from './FundingPlanModal';
-import { AlertTriangle, Check, X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
+import {
+  ACCENTS, Button, Field, FieldError, ModalActions, MoneyInput, PaidToggle, Pill, cx, type Accent,
+} from '../ui';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface NamedSource { id: number; name: string; available?: number | null }
@@ -35,7 +38,7 @@ interface Props {
   item: LineItem;
   onUpdate: (id: number, data: ItemFormData) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  accentColor: string;
+  accent: Accent;
   showFrequency?: boolean;
   showAccount?: boolean;   // "lands in account" selector (income)
   showFunding?: boolean;   // expense split-funding editor
@@ -50,7 +53,7 @@ interface Props {
   dragging?: boolean;
 }
 
-export default function LineItemRow({ item, onUpdate, onDelete, accentColor, showFrequency, showAccount, showFunding, groups, accounts, debts, paid, onTogglePaid, onUpdateOccurrence, onResetOccurrence, drag, dragging }: Props) {
+export default function LineItemRow({ item, onUpdate, onDelete, accent, showFrequency, showAccount, showFunding, groups, accounts, debts, paid, onTogglePaid, onUpdateOccurrence, onResetOccurrence, drag, dragging }: Props) {
   const itemFreq: Frequency = 'frequency' in item ? item.frequency : 'monthly';
   const itemAccount = 'account_id' in item ? item.account_id : null;
   const itemAllocations: ExpenseAllocation[] = 'funding_allocations' in item ? (item.funding_allocations ?? []) : [];
@@ -154,109 +157,51 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
     });
   })();
   const receivedCount = incomeOccurrences.filter((occurrence) => occurrence.status === 'received' || occurrence.status === 'detected').length;
+  const allReceived = incomeOccurrences.length > 0 && receivedCount === incomeOccurrences.length;
+  const hasTags = (showFrequency && itemFreq !== 'monthly') || dateLabel || notStarted || !!onTogglePaid;
 
   return (
     <>
-      <div {...drag} style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) 140px 96px',
-        gap: '8px',
-        padding: '10px 12px',
-        borderRadius: 'var(--radius-sm)',
-        alignItems: 'center',
-        transition: 'background 0.1s',
-        cursor: drag ? 'grab' : undefined,
-        outline: dragging ? '2px dashed var(--color-primary)' : undefined,
-      }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-2)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+      <div
+        {...drag}
+        className={cx(
+          'grid grid-cols-[minmax(0,1fr)_140px_96px] items-center gap-2 rounded-control px-3 py-2.5',
+          'transition-colors hover:bg-surface-2',
+          drag && 'cursor-grab',
+          dragging && 'outline-2 outline-dashed outline-primary',
+        )}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-          <div style={{ width: 3, height: 24, marginTop: 1, borderRadius: 2, background: accentColor, flexShrink: 0 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-            <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>{item.name}</span>
-            {(showFrequency && itemFreq !== 'monthly') || dateLabel || notStarted || onTogglePaid ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className={cx('mt-0.5 h-6 w-[3px] shrink-0 rounded-sm', ACCENTS[accent].bar)} aria-hidden="true" />
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="font-medium [overflow-wrap:anywhere]">{item.name}</span>
+            {hasTags && (
+              <div className="flex flex-wrap items-center gap-1.5">
                 {showFrequency && itemFreq !== 'monthly' && (
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                    color: accentColor,
-                    background: `${accentColor}1f`,
-                    border: `1px solid ${accentColor}40`,
-                    borderRadius: 5,
-                    padding: '1px 6px',
-                  }}>
-                    {FREQUENCY_LABELS[itemFreq]}
-                  </span>
+                  <Pill tone={accent}>{FREQUENCY_LABELS[itemFreq]}</Pill>
                 )}
                 {incomeOccurrences.length > 0 && (
-                  <span style={{ color: receivedCount === incomeOccurrences.length ? 'var(--color-income)' : 'var(--color-text-muted)', fontSize: 10, fontWeight: 700 }}>
+                  <span className={cx('text-[10px] font-bold', allReceived ? 'text-income' : 'text-muted')}>
                     {receivedCount} of {incomeOccurrences.length} received this month
                   </span>
                 )}
                 {notStarted && (
-                  <span title="Hasn't started yet — it enters the forecast on its first occurrence." style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                    color: 'var(--color-future)',
-                    background: 'color-mix(in srgb, var(--color-future) 14%, transparent)',
-                    border: '1px solid color-mix(in srgb, var(--color-future) 45%, transparent)',
-                    borderRadius: 5,
-                    padding: '1px 6px',
-                  }}>
+                  <Pill tone="future" title="Hasn't started yet — it enters the forecast on its first occurrence.">
                     Future
-                  </span>
+                  </Pill>
                 )}
-                {dateLabel && (
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600 }}>
-                    {dateLabel}
-                  </span>
-                )}
-                {onTogglePaid && (
-                  <button
-                    onClick={onTogglePaid}
-                    title={paid ? 'Paid this month — this month’s expense is excluded from the forecast. Click to mark unpaid.' : 'Not paid this month — click to mark paid (skips this month’s expense in the forecast).'}
-                    style={{
-                      background: paid ? 'rgba(34, 197, 94, 0.12)' : 'var(--color-surface-2)',
-                      color: paid ? 'var(--color-income)' : 'var(--color-text-muted)',
-                      border: `1px solid ${paid ? 'rgba(34, 197, 94, 0.55)' : 'var(--color-border)'}`,
-                      padding: '3px 8px',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    <Check size={12} strokeWidth={2.6} aria-hidden="true" />
-                    {paid ? 'Paid this month' : 'Mark paid'}
-                  </button>
-                )}
+                {dateLabel && <span className="text-[10px] font-semibold text-muted">{dateLabel}</span>}
+                {onTogglePaid && <PaidToggle paid={!!paid} onToggle={onTogglePaid} noun="expense" />}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
-        <span style={{ fontWeight: 600, color: accentColor }}>
-          {formatMoney(item.monthly_amount)}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            onClick={openEditor}
-            style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', padding: '5px 10px', border: '1px solid var(--color-border)' }}
-          >
-            Edit
-          </button>
-          <ConfirmButton
-            onConfirm={() => onDelete(item.id)}
-            title={`Delete ${item.name}`}
-            triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '5px 10px', border: '1px solid transparent' }}
-          >
+
+        <span className={cx('font-semibold', ACCENTS[accent].text)}>{formatMoney(item.monthly_amount)}</span>
+
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" onClick={openEditor}>Edit</Button>
+          <ConfirmButton onConfirm={() => onDelete(item.id)} title={`Delete ${item.name}`}>
             <X size={14} strokeWidth={2.2} aria-hidden="true" />
           </ConfirmButton>
         </div>
@@ -276,110 +221,93 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
         />
       ) : (
         <Modal title={`Edit ${item.name}`} onClose={() => setEditing(false)}>
-          <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Name
-              </span>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name"
-                autoFocus
-                required
-              />
-            </label>
+          <form onSubmit={handleSave} className="flex flex-col gap-4">
+            <Field label="Name">
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" autoFocus required />
+            </Field>
 
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {showFrequency ? 'Amount Per Payment' : 'Monthly Amount'}
-              </span>
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }}>$</span>
-                <input
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  min={0}
-                  step="any"
-                  style={{ width: '100%', paddingLeft: 24 }}
-                  required
-                />
-              </div>
-            </label>
+            <Field label={showFrequency ? 'Amount Per Payment' : 'Monthly Amount'}>
+              <MoneyInput value={amount} onChange={(e) => setAmount(e.target.value)} required />
+            </Field>
 
             {showFrequency && (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Frequency
-                </span>
-                <select
-                  value={frequency}
-                  onChange={(e) => setFrequency(e.target.value as Frequency)}
-                  style={{ width: '100%' }}
-                >
+              <Field label="Frequency">
+                <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} className="w-full">
                   {(showAccount ? INCOME_FREQUENCIES : FREQUENCIES).map((f) => (
                     <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
                   ))}
                 </select>
-              </label>
+              </Field>
             )}
 
             {showAccount && frequency === 'semimonthly' && (
-              <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="flex flex-col gap-2.5 rounded-control border border-border bg-surface-2 p-3">
                 <div>
-                  <strong style={{ fontSize: 13 }}>Twice-monthly pay schedule</strong>
-                  <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>Day 31 automatically means the last day of shorter months.</p>
+                  <strong className="text-[13px]">Twice-monthly pay schedule</strong>
+                  <p className="mt-0.5 text-[11.5px] text-muted">Day 31 automatically means the last day of shorter months.</p>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>First payday</span>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <Field label="First payday">
                     <input type="number" min={1} max={31} value={payday1} onChange={(e) => setPayday1(Number(e.target.value))} />
-                  </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Second payday</span>
+                  </Field>
+                  <Field label="Second payday">
                     <input type="number" min={1} max={31} value={payday2} onChange={(e) => setPayday2(Number(e.target.value))} />
-                  </label>
+                  </Field>
                 </div>
               </div>
             )}
 
             {showAccount && frequency !== 'semimonthly' && (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  First occurrence
-                </span>
-                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: '100%' }} />
-                <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>Anchors the recurring schedule.</span>
-              </label>
+              <Field label="First occurrence" hint="Anchors the recurring schedule.">
+                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="w-full" />
+              </Field>
             )}
 
             {showAccount && frequency === 'semimonthly' && incomeOccurrences.length > 0 && onUpdateOccurrence && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  This month
-                </span>
+              <div className="flex flex-col gap-2">
+                <span className="text-[12px] font-semibold uppercase tracking-wider text-muted">This month</span>
                 {incomeOccurrences.map((occurrence, index) => {
                   const complete = occurrence.status === 'received' || occurrence.status === 'detected';
                   return (
-                    <div key={occurrence.scheduledDate} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 10 }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <strong style={{ fontSize: 12.5 }}>Payment {index + 1}</strong>
+                    <div
+                      key={occurrence.scheduledDate}
+                      className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-control border border-border bg-bg p-2.5"
+                    >
+                      <div className="flex flex-col gap-1">
+                        <strong className="text-[12.5px]">Payment {index + 1}</strong>
                         <input
                           type="date"
                           value={occurrence.date}
                           onChange={(e) => onUpdateOccurrence(occurrence.scheduledDate, e.target.value, occurrence.status === 'detected' ? 'received' : occurrence.status as 'expected' | 'received' | 'skipped')}
-                          style={{ width: '100%' }}
+                          className="w-full"
                         />
-                        {occurrence.status === 'detected' && <span style={{ color: 'var(--color-income)', fontSize: 10.5 }}>Detected from {occurrence.transactionName ?? 'bank transactions'}</span>}
+                        {occurrence.status === 'detected' && (
+                          <span className="text-[10.5px] text-income">
+                            Detected from {occurrence.transactionName ?? 'bank transactions'}
+                          </span>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                        <button type="button" onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, complete ? 'expected' : 'received')} style={{ background: complete ? 'rgba(34,197,94,.12)' : 'var(--color-surface-2)', color: complete ? 'var(--color-income)' : 'var(--color-text)', border: `1px solid ${complete ? 'var(--color-income)' : 'var(--color-border)'}`, padding: '5px 8px', fontSize: 11 }}>
+                      <div className="flex flex-col items-stretch gap-1.5">
+                        <Button
+                          size="sm"
+                          onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, complete ? 'expected' : 'received')}
+                          variant={complete ? 'bare' : 'secondary'}
+                          className={complete ? 'border-income/55 bg-income/12 text-income hover:bg-income/20' : undefined}
+                        >
                           {complete ? <><Check size={12} strokeWidth={2.6} aria-hidden="true" /> Received</> : 'Mark received'}
-                        </button>
-                        <button type="button" onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, 'skipped')} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', padding: '4px 8px', fontSize: 10.5 }}>Skip</button>
-                        {onResetOccurrence && occurrence.date !== occurrence.scheduledDate && <button type="button" onClick={() => onResetOccurrence(occurrence.scheduledDate)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: 'none', padding: 2, fontSize: 10 }}>Reset date</button>}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => onUpdateOccurrence!(occurrence.scheduledDate, occurrence.date, 'skipped')}>
+                          Skip
+                        </Button>
+                        {onResetOccurrence && occurrence.date !== occurrence.scheduledDate && (
+                          <button
+                            type="button"
+                            onClick={() => onResetOccurrence(occurrence.scheduledDate)}
+                            className="text-[10px] text-muted underline transition-colors hover:text-text"
+                          >
+                            Reset date
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -388,81 +316,58 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
             )}
 
             {showFunding && (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  When
-                </span>
-                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required style={{ width: '100%' }} />
-                <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>
-                  First occurrence; repeats according to the selected frequency.
-                </span>
-              </label>
+              <Field label="When" hint="First occurrence; repeats according to the selected frequency.">
+                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required className="w-full" />
+              </Field>
             )}
 
             {showFunding && frequency !== 'one-time' && (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Ends (optional)
-                </span>
-                <input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} style={{ width: '100%' }} />
-                <span style={{ color: 'var(--color-text-muted)', fontSize: 11.5 }}>
-                  Last occurrence. Leave blank for an ongoing cost.
-                </span>
-              </label>
+              <Field label="Ends (optional)" hint="Last occurrence. Leave blank for an ongoing cost.">
+                <input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} className="w-full" />
+              </Field>
             )}
 
             {groups && (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Group
-                </span>
+              <Field label="Group">
                 <select
                   value={groupId ?? ''}
                   onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}
-                  style={{ width: '100%' }}
+                  className="w-full"
                 >
                   <option value="">No group</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
-              </label>
+              </Field>
             )}
 
             {showAccount && accounts && accounts.length > 0 && (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Lands in account
-                </span>
+              <Field label="Lands in account">
                 <select
                   value={account ?? primaryId ?? ''}
                   onChange={(e) => setAccount(e.target.value ? Number(e.target.value) : null)}
-                  style={{ width: '100%' }}
+                  className="w-full"
                 >
                   {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
                 </select>
-              </label>
+              </Field>
             )}
 
             {showFunding && (accounts?.length || debts?.length) ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Paid from
-                </span>
+              <Field label="Paid from">
                 {advancedFunding ? (
-                  <>
-                    <p style={{ fontSize: 13, color: 'var(--color-text)' }}>{summarizeFundingPlan(fundingRules, allocations)}</p>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[13px] text-text">{summarizeFundingPlan(fundingRules, allocations)}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => setEditingFunding(true)} className="border-dashed">
                         Edit funding plan
-                      </button>
-                      <button type="button" onClick={() => { setFundingRules([]); setAllocations([]); }} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5 }}>
+                      </Button>
+                      <Button size="sm" onClick={() => { setFundingRules([]); setAllocations([]); }}>
                         Use one source
-                      </button>
+                      </Button>
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <>
+                  <div className="flex flex-col gap-2">
                     <select
                       value={payFromValue}
                       onChange={(e) => {
@@ -471,7 +376,7 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                         const [t, id] = v.split(':');
                         setAllocations([{ source_type: t as AllocationSourceType, source_id: Number(id), alloc_type: 'percent', value: 100 }]);
                       }}
-                      style={{ width: '100%' }}
+                      className="w-full"
                     >
                       <option value="">Primary account</option>
                       {accounts && accounts.length > 0 && (
@@ -486,43 +391,33 @@ export default function LineItemRow({ item, onUpdate, onDelete, accentColor, sho
                       )}
                     </select>
                     {selectedCard && cardAvail != null && (
-                      <p style={{ fontSize: 12, margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', color: cardSpill > 0.005 ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
-                        {cardSpill > 0.005 && <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />}
-                        <span>
-                          {cardSpill > 0.005
-                            ? `${selectedCard.name} has ${formatMoney(cardAvail)} available — this charge would put it ${formatMoney(cardSpill)} over its limit.`
-                            : `${formatMoney(cardAvail)} available on this card.`}
-                        </span>
-                      </p>
+                      cardSpill > 0.005 ? (
+                        <FieldError>
+                          {selectedCard.name} has {formatMoney(cardAvail)} available — this charge would put it {formatMoney(cardSpill)} over its limit.
+                        </FieldError>
+                      ) : (
+                        <p className="text-[12px] text-muted">{formatMoney(cardAvail)} available on this card.</p>
+                      )
                     )}
-                    <button type="button" onClick={() => setEditingFunding(true)} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 12.5, alignSelf: 'flex-start' }}>
+                    <Button size="sm" onClick={() => setEditingFunding(true)} className="self-start border-dashed">
                       Split or schedule…
-                    </button>
-                  </>
+                    </Button>
+                  </div>
                 )}
-              </div>
+              </Field>
             ) : null}
 
-            {!nameValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Enter a name.</p>}
-            {!amountValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Enter an amount greater than zero.</p>}
-            {!startValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>Choose the first occurrence date.</p>}
-            {!rangeValid && <p style={{ fontSize: 12, color: 'var(--color-expense)', marginTop: -6 }}>The end date must be on or after the first occurrence.</p>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '9px 16px' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving || !valid}
-                style={{ background: 'var(--color-primary)', color: '#fff', padding: '9px 18px' }}
-              >
+            {!nameValid && <FieldError className="-mt-2">Enter a name.</FieldError>}
+            {!amountValid && <FieldError className="-mt-2">Enter an amount greater than zero.</FieldError>}
+            {!startValid && <FieldError className="-mt-2">Choose the first occurrence date.</FieldError>}
+            {!rangeValid && <FieldError className="-mt-2">The end date must be on or after the first occurrence.</FieldError>}
+
+            <ModalActions>
+              <Button onClick={() => setEditing(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" disabled={saving || !valid}>
                 {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            </div>
+              </Button>
+            </ModalActions>
           </form>
         </Modal>
       ))}

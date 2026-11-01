@@ -275,7 +275,7 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
               {syncing ? 'Syncing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Sync</>}
             </button>
           )}
-          <ConfirmButton onConfirm={onUnlink} title={`Unlink ${item.institution_name ?? 'institution'}`} triggerStyle={{ background: 'transparent', color: 'var(--color-expense)', padding: '4px 8px', fontSize: 12 }}>Unlink</ConfirmButton>
+          <ConfirmButton onConfirm={onUnlink} title={`Unlink ${item.institution_name ?? 'institution'}`}>Unlink</ConfirmButton>
         </div>
       </div>
       {!collapsed && (
