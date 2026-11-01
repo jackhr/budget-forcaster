@@ -17,9 +17,14 @@ describe('icons render as SVG, not glyphs', () => {
         <AppShell groups={NAV} current="home" onSelect={() => {}} title="Home"><p /></AppShell>
       </AuthProvider>,
     );
-    const svgs = html.match(/<svg[^>]*lucide/g) ?? [];
-    // one per nav item, plus the brand mark is a plain svg (not lucide)
-    expect(svgs.length).toBe(NAV.flatMap((g) => g.items).length);
+    // Every destination draws a Lucide icon, and no two share one. Counting
+    // every svg in the shell would also count the brand mark and the sidebar
+    // collapse control, which aren't destinations.
+    const drawn = new Set(html.match(/lucide-[a-z-]+/g) ?? []);
+    for (const item of NAV.flatMap((g) => g.items)) {
+      const expected = `lucide-${item.icon.displayName!.replace(/(?<!^)([A-Z])/g, '-$1').toLowerCase()}`;
+      expect({ id: item.id, drawn: drawn.has(expected) }).toEqual({ id: item.id, drawn: true });
+    }
     expect(html).toContain('lucide-layout-dashboard');
     expect(html).toContain('lucide-wallet');
     expect(html).toContain('lucide-credit-card');
