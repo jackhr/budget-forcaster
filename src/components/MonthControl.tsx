@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { IconButton, cx } from '../ui';
 
 interface Props {
   month: number;
@@ -44,57 +45,44 @@ export default function MonthControl({ month, onMonthChange }: Props) {
     onMonthChange(Math.max(0, Math.min(MAX_MONTH, offset)));
   };
 
-  const buttonStyle: React.CSSProperties = {
-    background: 'var(--color-surface-2)',
-    color: 'var(--color-text)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 6,
-    width: 36,
-    height: 32,
-    padding: 0,
-    display: 'grid',
-    placeItems: 'center',
-  };
-
   return (
-    <div ref={containerRef} style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
-      <button type="button" onClick={() => onMonthChange(month - 1)} disabled={month <= 0} aria-label="Previous month" title="Previous month" style={buttonStyle}><ChevronLeft size={15} strokeWidth={2.2} aria-hidden="true" /></button>
+    <div ref={containerRef} className="relative flex items-center gap-1.5">
+      <IconButton
+        tone="neutral"
+        onClick={() => onMonthChange(month - 1)}
+        disabled={month <= 0}
+        aria-label="Previous month"
+        title="Previous month"
+      >
+        <ChevronLeft size={15} strokeWidth={2.2} aria-hidden="true" />
+      </IconButton>
+
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         title="Choose month"
-        style={{
-          background: 'var(--color-surface-2)',
-          color: 'var(--color-text)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 6,
-          padding: '6px 12px',
-          minWidth: 152,
-          fontSize: 12.5,
-          fontWeight: 600,
-          fontVariantNumeric: 'tabular-nums',
-        }}
+        className="min-w-[152px] rounded-control border border-border bg-surface-2 px-3 py-1.5 text-[12.5px] font-semibold tabular-nums transition-colors hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
         {MONTH_NAMES[selected.getMonth()]} {selected.getFullYear()}
       </button>
-      <button type="button" onClick={() => onMonthChange(month + 1)} disabled={month >= MAX_MONTH} aria-label="Next month" title="Next month" style={buttonStyle}><ChevronRight size={15} strokeWidth={2.2} aria-hidden="true" /></button>
+
+      <IconButton
+        tone="neutral"
+        onClick={() => onMonthChange(month + 1)}
+        disabled={month >= MAX_MONTH}
+        aria-label="Next month"
+        title="Next month"
+      >
+        <ChevronRight size={15} strokeWidth={2.2} aria-hidden="true" />
+      </IconButton>
 
       {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 42, zIndex: 20,
-          background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-sm)', padding: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
-          display: 'flex', flexDirection: 'column', gap: 8, minWidth: 220,
-        }}>
-          <select
-            value={selected.getFullYear()}
-            onChange={(e) => chooseYear(Number(e.target.value))}
-            style={{ background: 'var(--color-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: 6, padding: '6px 8px' }}
-          >
+        <div className="absolute right-[42px] top-[calc(100%+6px)] z-20 flex min-w-[220px] flex-col gap-2 rounded-control border border-border bg-surface-2 p-2.5 shadow-pop">
+          <select value={selected.getFullYear()} onChange={(e) => chooseYear(Number(e.target.value))}>
             {years.map((year) => <option key={year} value={year}>{year}</option>)}
           </select>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+          <div className="grid grid-cols-3 gap-1">
             {MONTH_NAMES.map((name, index) => {
               const offset = (selected.getFullYear() - now.getFullYear()) * 12 + index - now.getMonth();
               const disabled = offset < 0 || offset > MAX_MONTH;
@@ -105,12 +93,12 @@ export default function MonthControl({ month, onMonthChange }: Props) {
                   type="button"
                   disabled={disabled}
                   onClick={() => choose(selected.getFullYear(), index)}
-                  style={{
-                    background: active ? 'var(--color-primary)' : 'var(--color-bg)',
-                    color: active ? '#fff' : 'var(--color-text)',
-                    border: '1px solid var(--color-border)', borderRadius: 5,
-                    padding: '5px 4px', fontSize: 11,
-                  }}
+                  aria-pressed={active}
+                  className={cx(
+                    'rounded-md border border-border px-1 py-1.5 text-[11px] transition-colors',
+                    'disabled:cursor-not-allowed disabled:opacity-40',
+                    active ? 'bg-primary text-white' : 'bg-bg text-text hover:bg-surface-3',
+                  )}
                 >
                   {name.slice(0, 3)}
                 </button>

@@ -21,7 +21,7 @@ import AppShell from './components/AppShell';
 import { DEFAULT_HOME_LAYOUT, resolveHomeLayout, type HomeLayout } from './lib/homeLayout';
 import { NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS, type ProjectionView, type Tab } from './lib/nav';
 import Home from './components/Home';
-import { Banner, Segmented } from './ui';
+import { Banner, Panel, Segmented } from './ui';
 import Toolbar from './components/Toolbar';
 import type { PayoffMarker } from './components/NetWorthChart';
 
@@ -96,7 +96,7 @@ async function migrateLocalPaidFlags(status: PaidStatus): Promise<PaidStatus> {
 
 function ChartFallback() {
   return (
-    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', height: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
+    <div className="grid h-[420px] place-items-center rounded-card border border-border bg-surface text-[13px] text-muted">
       Loading chart…
     </div>
   );
@@ -529,10 +529,9 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
-        <div style={{ width: 40, height: 40, border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div className="flex h-screen flex-col items-center justify-center gap-4">
+        <div className="h-10 w-10 animate-spin-slow rounded-full border-[3px] border-border border-t-primary" />
+        <p className="text-muted">Loading…</p>
       </div>
     );
   }
@@ -647,12 +646,12 @@ export default function App() {
           })();
           return (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>
+              <div className="flex items-center gap-2 text-[13px] text-muted">
                 Showing
                 <select
                   value={selectedId ?? ''}
                   onChange={(e) => setSavingsAccountId(e.target.value ? Number(e.target.value) : null)}
-                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 10px', fontSize: 13, fontWeight: 600 }}
+                  className="font-semibold"
                 >
                   <option value="">All accounts (total cash)</option>
                   {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
@@ -681,7 +680,7 @@ export default function App() {
             ...debts.map((d) => ({ id: d.id, name: d.name, kind: 'debt' as const })),
           ];
           if (entities.length === 0) {
-            return <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24, color: 'var(--color-text-muted)' }}>Add an account or debt to see its activity.</div>;
+            return <Panel className="p-6 text-muted">Add an account or debt to see its activity.</Panel>;
           }
           const valid = (v: string) => {
             const [k, idS] = v.split(':'); const id = Number(idS);
@@ -726,39 +725,25 @@ export default function App() {
         })()}
         {tab === 'breakdown' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
-                {([['range', 'Range'], ['month', 'Month']] as [BreakdownMode, string][]).map(([id, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => setBreakdownMode(id)}
-                    style={{
-                      background: breakdownMode === id ? 'var(--color-primary)' : 'transparent',
-                      color: breakdownMode === id ? '#fff' : 'var(--color-text-muted)',
-                      border: 'none', padding: '6px 16px', fontWeight: 600, fontSize: 13,
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <Segmented
+                ariaLabel="Breakdown mode"
+                options={[{ id: 'range', label: 'Range' }, { id: 'month', label: 'Month' }]}
+                value={breakdownMode}
+                onChange={setBreakdownMode}
+              />
               {breakdownMode === 'range' && (
-                <div style={{ display: 'flex', gap: 6, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', width: 'fit-content' }}>
-                  {([['account', 'Accounts'], ['income', 'Income'], ['expense', 'Expenses'], ['debt', 'Debts']] as [BreakdownSection, string][]).map(([id, label]) => (
-                    <button
-                      key={id}
-                      onClick={() => setBreakdownSection(id)}
-                      style={{
-                        background: breakdownSection === id ? 'var(--color-surface-2)' : 'transparent',
-                        color: breakdownSection === id ? 'var(--color-text)' : 'var(--color-text-muted)',
-                        border: `1px solid ${breakdownSection === id ? 'var(--color-border)' : 'transparent'}`,
-                        padding: '6px 16px', fontWeight: 600, fontSize: 13,
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  ariaLabel="Breakdown section"
+                  options={[
+                    { id: 'account', label: 'Accounts' },
+                    { id: 'income', label: 'Income' },
+                    { id: 'expense', label: 'Expenses' },
+                    { id: 'debt', label: 'Debts' },
+                  ]}
+                  value={breakdownSection}
+                  onChange={setBreakdownSection}
+                />
               )}
             </div>
             {breakdownMode === 'range' ? (

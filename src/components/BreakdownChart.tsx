@@ -5,6 +5,7 @@ import {
 import type { Breakdown } from '../lib/forecast';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
+import { Button, ChartPanel, ChartTooltip, EmptyState, SeriesToggle, cx } from '../ui';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface DebtMonthDetail { charges: { label: string; amount: number; kind: string }[]; payment: number }
@@ -51,19 +52,21 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
   };
 
   return (
-    <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '12px 16px', fontSize: 13, maxWidth: 320 }}>
-      <p style={{ fontWeight: 600, marginBottom: 8 }}>{label}</p>
+    <ChartTooltip className="max-w-[320px]">
+      <p className="mb-2 font-semibold">{label}</p>
       {rows.map((p) => {
         const d = detail(p.dataKey);
+        const isTotal = p.dataKey === TOTAL_KEY;
         return (
-          <div key={p.dataKey} style={{ marginBottom: d ? 6 : 3 }}>
-            <p style={{ color: p.dataKey === TOTAL_KEY ? 'var(--color-text)' : p.color, fontWeight: p.dataKey === TOTAL_KEY ? 700 : 400 }}>
+          <div key={p.dataKey} className={d ? 'mb-1.5' : 'mb-0.5'}>
+            {/* Each series' colour is set by the chart, so it stays a value. */}
+            <p className={isTotal ? 'font-bold text-text' : undefined} style={isTotal ? undefined : { color: p.color }}>
               {p.name}: {formatMoney(p.value)}
             </p>
             {d && (
-              <div style={{ marginLeft: 12, fontSize: 12, color: 'var(--color-text-muted)' }}>
+              <div className="ml-3 text-[12px] text-muted">
                 {d.charges.map((c, i) => (
-                  <p key={i}>+{formatMoney(c.amount)} {c.label} <span style={{ opacity: 0.7 }}>(expense)</span></p>
+                  <p key={i}>+{formatMoney(c.amount)} {c.label} <span className="opacity-70">(expense)</span></p>
                 ))}
                 {d.payment > 0.005 && <p>−{formatMoney(d.payment)} payment</p>}
               </div>
@@ -71,7 +74,7 @@ function CustomTooltip({ active, payload, label, debtMonthInfo }: {
           </div>
         );
       })}
-    </div>
+    </ChartTooltip>
   );
 }
 
@@ -119,28 +122,22 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
   const metaById = new Map(series.map((s, i) => [s.id, { name: s.name, color: colorOf(i), paid: paidIds?.has(s.id) }]));
 
   // A single toggle chip (used for the flat legend and the standalone Total chip).
-  const renderChip = (c: { key: string; name: string; color: string; paid?: boolean }) => {
-    const off = hidden.has(c.key);
-    return (
-      <button
-        key={c.key}
-        onClick={() => toggle(c.key)}
-        title={off ? 'Show' : 'Hide'}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          background: off ? 'transparent' : 'var(--color-surface-2)',
-          border: `1px solid var(--color-border)`, borderRadius: 999,
-          padding: '3px 10px', fontSize: 12, fontWeight: c.key === TOTAL_KEY ? 700 : 500,
-          color: off ? 'var(--color-text-muted)' : 'var(--color-text)',
-          opacity: off ? 0.55 : 1, textDecoration: off ? 'line-through' : 'none', cursor: 'pointer',
-        }}
-      >
-        <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color === TOTAL_COLOR ? 'var(--color-text)' : c.color, flexShrink: 0 }} />
-        {c.name}
-        {c.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', display: 'inline-grid', placeItems: 'center' }}><Check size={13} strokeWidth={2.6} aria-hidden="true" /></span>}
-      </button>
-    );
-  };
+  const renderChip = (c: { key: string; name: string; color: string; paid?: boolean }) => (
+    <SeriesToggle
+      key={c.key}
+      color={c.color === TOTAL_COLOR ? 'var(--color-text)' : c.color}
+      label={<span className={c.key === TOTAL_KEY ? 'font-bold' : undefined}>{c.name}</span>}
+      off={hidden.has(c.key)}
+      onClick={() => toggle(c.key)}
+      title={hidden.has(c.key) ? 'Show' : 'Hide'}
+    >
+      {c.paid && (
+        <span title="Paid this month" className="inline-grid place-items-center text-income">
+          <Check size={13} strokeWidth={2.6} aria-hidden="true" />
+        </span>
+      )}
+    </SeriesToggle>
+  );
 
   // A group dropdown: a button showing the group + visible count, opening a panel of per-debt toggles.
   const renderGroup = (grp: ChipGroup) => {
@@ -154,45 +151,42 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
       return next;
     });
     return (
-      <div key={grp.id} style={{ position: 'relative' }}>
+      <div key={grp.id} className="relative">
         <button
+          type="button"
           onClick={() => setOpenGroup(open ? null : grp.id)}
           title={open ? 'Close' : 'Show debts in this group'}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: open ? 'var(--color-surface-2)' : (allHidden ? 'transparent' : 'var(--color-surface-2)'),
-            border: `1px solid var(--color-border)`, borderRadius: 999,
-            padding: '3px 10px', fontSize: 12, fontWeight: 600,
-            color: allHidden ? 'var(--color-text-muted)' : 'var(--color-text)', cursor: 'pointer',
-            opacity: allHidden ? 0.7 : 1,
-          }}
+          aria-expanded={open}
+          className={cx(
+            'inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[12px] font-semibold transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+            allHidden && !open ? 'bg-transparent text-muted' : 'bg-surface-2 text-text hover:border-border-strong',
+          )}
         >
-          <span style={{ display: 'inline-flex', gap: 2 }}>
+          <span className="inline-flex gap-0.5">
             {grp.seriesIds.slice(0, 3).map((id) => (
-              <span key={id} style={{ width: 8, height: 8, borderRadius: 2, background: metaById.get(id)?.color, flexShrink: 0 }} />
+              // Series colours come from the palette, so they stay values.
+              <span key={id} className="inline-block h-2 w-2 shrink-0 rounded-xs" style={{ background: metaById.get(id)?.color }} />
             ))}
           </span>
           {grp.name}
-          <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>{visibleCount}/{keys.length}</span>
-          <span style={{ opacity: 0.7, display: 'inline-grid', placeItems: 'center' }}>{open ? <ChevronUp size={12} strokeWidth={2.4} aria-hidden="true" /> : <ChevronDown size={12} strokeWidth={2.4} aria-hidden="true" />}</span>
+          <span className="text-[11px] text-muted">{visibleCount}/{keys.length}</span>
+          <span className="inline-grid place-items-center opacity-70">
+            {open
+              ? <ChevronUp size={12} strokeWidth={2.4} aria-hidden="true" />
+              : <ChevronDown size={12} strokeWidth={2.4} aria-hidden="true" />}
+          </span>
         </button>
         {open && (
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 20, minWidth: 220,
-            background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8,
-            padding: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-          }}>
+          <div className="absolute left-0 top-[calc(100%+4px)] z-20 min-w-[220px] rounded-lg border border-border bg-surface-2 p-1.5 shadow-pop">
             <button
+              type="button"
               onClick={() => setGroupHidden(!allHidden)}
-              style={{
-                display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
-                border: 'none', padding: '4px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                color: 'var(--color-text-muted)',
-              }}
+              className="block w-full rounded-md px-2 py-1 text-left text-[11px] font-semibold text-muted transition-colors hover:bg-surface-3 hover:text-text"
             >
               {allHidden ? 'Show all' : 'Hide all'}
             </button>
-            <div style={{ height: 1, background: 'var(--color-border)', margin: '4px 0' }} />
+            <div className="my-1 h-px bg-border" />
             {grp.seriesIds.map((id) => {
               const key = `k${id}`;
               const off = hidden.has(key);
@@ -200,20 +194,24 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
               return (
                 <button
                   key={id}
+                  type="button"
                   onClick={() => toggle(key)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
-                    background: 'transparent', border: 'none', padding: '5px 8px', borderRadius: 6,
-                    fontSize: 12, cursor: 'pointer', color: off ? 'var(--color-text-muted)' : 'var(--color-text)',
-                  }}
+                  aria-pressed={!off}
+                  className={cx(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-3',
+                    off ? 'text-muted' : 'text-text',
+                  )}
                 >
-                  <span style={{
-                    width: 12, height: 12, borderRadius: 3, flexShrink: 0,
-                    border: `1.5px solid ${m?.color ?? 'var(--color-border)'}`,
-                    background: off ? 'transparent' : m?.color,
-                  }} />
-                  <span style={{ flex: 1, textDecoration: off ? 'line-through' : 'none' }}>{m?.name}</span>
-                  {m?.paid && <span title="Paid this month" style={{ color: 'var(--color-income)', display: 'inline-grid', placeItems: 'center' }}><Check size={13} strokeWidth={2.6} aria-hidden="true" /></span>}
+                  <span
+                    className="inline-block h-3 w-3 shrink-0 rounded-sm border-[1.5px]"
+                    style={{ borderColor: m?.color ?? 'var(--color-border)', background: off ? 'transparent' : m?.color }}
+                  />
+                  <span className={cx('flex-1', off && 'line-through')}>{m?.name}</span>
+                  {m?.paid && (
+                    <span title="Paid this month" className="inline-grid place-items-center text-income">
+                      <Check size={13} strokeWidth={2.6} aria-hidden="true" />
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -224,44 +222,39 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
   };
 
   return (
-    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>{title}</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 2 }}>{subtitle}</p>
-        </div>
-        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
-      </div>
-
+    <ChartPanel
+      title={title}
+      subtitle={subtitle}
+      actions={<RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />}
+    >
       {series.length === 0 ? (
-        <div style={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
-          Nothing to break down yet — add some items.
+        <div className="grid h-80 place-items-center">
+          <EmptyState>Nothing to break down yet — add some items.</EmptyState>
         </div>
       ) : (
         <>
           {/* Legend — flat chips per series, or (Debt Breakdown) grouped dropdowns */}
-          <div ref={legendRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 16 }}>
+          <div ref={legendRef} className="mb-4 flex flex-wrap items-center gap-1.5">
             {chipGroups
               ? [renderChip(chips[0]), ...chipGroups.map(renderGroup)]
               : chips.map(renderChip)}
-            <button
+            <Button
+              size="sm"
+              className="ml-1 border-dashed"
               onClick={() => setHidden(anyHidden ? new Set() : new Set(chips.map((c) => c.key)))}
-              style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, marginLeft: 4 }}
             >
               {anyHidden ? 'Show all' : 'Hide all'}
-            </button>
+            </Button>
             {hasLimits && (
-              <button
+              <Button
+                size="sm"
+                className={cx('ml-1', showLimits && 'bg-surface-3 text-text')}
                 onClick={() => setShowLimits((v) => !v)}
+                aria-pressed={showLimits}
                 title="Show each card's credit limit as a dashed line"
-                style={{
-                  background: showLimits ? 'var(--color-surface-2)' : 'transparent', color: showLimits ? 'var(--color-text)' : 'var(--color-text-muted)',
-                  border: '1px solid var(--color-border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, marginLeft: 4,
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                }}
               >
                 {showLimits && <Check size={12} strokeWidth={2.6} aria-hidden="true" />}Credit limits
-              </button>
+              </Button>
             )}
           </div>
 
@@ -294,6 +287,6 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
           </ResponsiveContainer>
         </>
       )}
-    </div>
+    </ChartPanel>
   );
 }

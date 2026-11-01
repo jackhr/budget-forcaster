@@ -5,6 +5,7 @@ import {
 import type { ForecastPoint } from '../types';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
+import { ChartPanel, ChartTooltip } from '../ui';
 
 interface Props {
   data: ForecastPoint[];
@@ -23,20 +24,15 @@ function CustomTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: 'var(--color-surface-2)',
-      border: '1px solid var(--color-border)',
-      borderRadius: '8px',
-      padding: '12px 16px',
-      fontSize: '13px',
-    }}>
-      <p style={{ fontWeight: 600, marginBottom: 8, color: 'var(--color-text)' }}>{label}</p>
+    <ChartTooltip>
+      <p className="mb-2 font-semibold text-text">{label}</p>
       {payload.map((p) => (
-        <p key={p.name} style={{ color: p.color, marginBottom: 4 }}>
+        // Each series' colour is set by the chart, so it stays a value.
+        <p key={p.name} className="mb-1" style={{ color: p.color }}>
           {p.name}: <strong>{formatMoney(p.value)}</strong>
         </p>
       ))}
-    </div>
+    </ChartTooltip>
   );
 }
 
@@ -44,22 +40,11 @@ export default function ForecastChart({ data, startMonth, months, onStartMonthCh
   const duration = months - startMonth;
   const merged = compareData ? data.map((d, i) => ({ ...d, compare: compareData[i] })) : data;
   return (
-    <div style={{
-      background: 'var(--color-surface)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 'var(--radius)',
-      padding: '24px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Cash Flow Forecast</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginTop: 2 }}>
-            Actual monthly in/out over {duration} month{duration !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
-      </div>
-
+    <ChartPanel
+      title="Cash Flow Forecast"
+      subtitle={`Actual monthly in/out over ${duration} month${duration !== 1 ? 's' : ''}`}
+      actions={<RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />}
+    >
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={merged} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
@@ -80,7 +65,7 @@ export default function ForecastChart({ data, startMonth, months, onStartMonthCh
           <Tooltip content={<CustomTooltip />} />
           <Legend
             wrapperStyle={{ fontSize: '13px', paddingTop: 16 }}
-            formatter={(value) => <span style={{ color: 'var(--color-text)' }}>{value}</span>}
+            formatter={(value) => <span className="text-text">{value}</span>}
           />
           <ReferenceLine y={0} stroke="var(--color-border)" strokeDasharray="4 4" />
           <Line
@@ -116,6 +101,6 @@ export default function ForecastChart({ data, startMonth, months, onStartMonthCh
           )}
         </LineChart>
       </ResponsiveContainer>
-    </div>
+    </ChartPanel>
   );
 }

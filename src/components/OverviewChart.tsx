@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
+import { Button, ChartPanel, ChartTooltip, SeriesToggle } from '../ui';
 
 export interface OverviewPoint {
   label: string;
@@ -53,15 +54,16 @@ function CustomTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '12px 16px', fontSize: 13, maxWidth: 260 }}>
-      <p style={{ fontWeight: 600, marginBottom: 8 }}>{label}</p>
+    <ChartTooltip className="max-w-[260px]">
+      <p className="mb-2 font-semibold">{label}</p>
       {payload.map((p) => (
-        <p key={p.dataKey} style={{ color: p.color, marginBottom: 3 }}>
+        // Each series' colour is set by the chart, so it stays a value.
+        <p key={p.dataKey} className="mb-0.5" style={{ color: p.color }}>
           {p.name}: <strong>{formatMoney(p.value)}</strong>
-          <span style={{ opacity: 0.6 }}> {AXIS_NAME[p.dataKey as SeriesKey] === 'balance' ? '' : '/mo'}</span>
+          <span className="opacity-60"> {AXIS_NAME[p.dataKey as SeriesKey] === 'balance' ? '' : '/mo'}</span>
         </p>
       ))}
-    </div>
+    </ChartTooltip>
   );
 }
 
@@ -76,46 +78,31 @@ export default function OverviewChart({ data, startMonth, months, onStartMonthCh
   const anyHidden = hidden.size > 0;
 
   return (
-    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Overview</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 2 }}>
-            Everything together — monthly flows (left axis), balances (right axis), and debt-payoff markers
-          </p>
-        </div>
-        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
-      </div>
-
+    <ChartPanel
+      title="Overview"
+      subtitle="Everything together — monthly flows (left axis), balances (right axis), and debt-payoff markers"
+      actions={<RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />}
+    >
       {/* Toggle chips — payoff markers are always shown */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 16 }}>
-        {SERIES.map((s) => {
-          const off = hidden.has(s.key);
-          return (
-            <button
-              key={s.key}
-              onClick={() => toggle(s.key)}
-              title={off ? 'Show' : 'Hide'}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                background: off ? 'transparent' : 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)', borderRadius: 999,
-                padding: '3px 10px', fontSize: 12, fontWeight: 500,
-                color: off ? 'var(--color-text-muted)' : 'var(--color-text)',
-                opacity: off ? 0.55 : 1, textDecoration: off ? 'line-through' : 'none',
-              }}
-            >
-              <span style={{ width: 10, height: 10, borderRadius: s.kind === 'bar' ? 2 : 3, background: s.color, flexShrink: 0 }} />
-              {s.name}
-            </button>
-          );
-        })}
-        <button
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
+        {SERIES.map((s) => (
+          <SeriesToggle
+            key={s.key}
+            color={s.color}
+            label={s.name}
+            square={s.kind === 'bar'}
+            off={hidden.has(s.key)}
+            onClick={() => toggle(s.key)}
+            title={hidden.has(s.key) ? 'Show' : 'Hide'}
+          />
+        ))}
+        <Button
+          size="sm"
+          className="ml-1 border-dashed"
           onClick={() => setHidden(anyHidden ? new Set() : new Set(SERIES.map((s) => s.key)))}
-          style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, marginLeft: 4 }}
         >
           {anyHidden ? 'Show all' : 'Hide all'}
-        </button>
+        </Button>
       </div>
 
       <ResponsiveContainer width="100%" height={380}>
@@ -141,6 +128,6 @@ export default function OverviewChart({ data, startMonth, months, onStartMonthCh
           <Line yAxisId="bal" type="monotone" dataKey="debt" name="Debt (balance)" stroke="#a78bfa" strokeWidth={2.5} dot={false} hide={hidden.has('debt')} />
         </ComposedChart>
       </ResponsiveContainer>
-    </div>
+    </ChartPanel>
   );
 }

@@ -172,7 +172,7 @@ export const PasswordInput = forwardRef<
 
 /* ---------------------------------- Pill --------------------------------- */
 
-type Tone = 'neutral' | 'income' | 'expense' | 'debt' | 'cash' | 'danger' | 'future' | 'warning' | 'primary';
+type Tone = 'neutral' | 'income' | 'expense' | 'debt' | 'cash' | 'charge' | 'danger' | 'future' | 'warning' | 'primary';
 
 const TONES: Record<Tone, string> = {
   neutral: 'text-muted border-border bg-surface-2',
@@ -180,6 +180,8 @@ const TONES: Record<Tone, string> = {
   expense: 'text-expense border-expense/40 bg-expense/10',
   debt: 'text-net-neg border-net-neg/40 bg-net-neg/15',
   cash: 'text-net-pos border-net-pos/40 bg-net-pos/15',
+  // A charge or payment on a card, in the calendar's debt colour.
+  charge: 'text-kind-debt border-kind-debt/40 bg-kind-debt/15',
   // A solid border, not a tinted one — this one is meant to be noticed.
   danger: 'text-expense border-expense bg-expense/15',
   future: 'text-future border-future/45 bg-future/12',
@@ -500,6 +502,109 @@ export function Segmented<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+/* -------------------------------- StatGrid ------------------------------- */
+
+/** A row of headline figures that reflows to the available width. */
+export function StatGrid({ className, ...rest }: Div) {
+  return <div className={cx('grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4', className)} {...rest} />;
+}
+
+export function StatCard({
+  label, value, sub, className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  /** The value's colour — usually a semantic text utility. */
+  className?: string;
+}) {
+  return (
+    <Card className="flex flex-col gap-1.5 p-5">
+      <span className="text-[12px] font-medium uppercase tracking-wider text-muted">{label}</span>
+      <span className={cx('text-2xl font-bold tracking-tight tabular-nums', className ?? 'text-text')}>{value}</span>
+      {sub && <span className="text-[12px] text-muted">{sub}</span>}
+    </Card>
+  );
+}
+
+/* --------------------------------- Charts -------------------------------- */
+
+/**
+ * The floating card behind a chart tooltip. Recharts renders `content` as DOM,
+ * not SVG, so this is ordinary styling and belongs here with everything else.
+ */
+export function ChartTooltip({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cx('rounded-lg border border-border bg-surface-2 px-4 py-3 text-[13px] shadow-pop', className)}>
+      {children}
+    </div>
+  );
+}
+
+/** A chart with a title, a line of explanation, and its own controls. */
+export function ChartPanel({
+  title, subtitle, actions, children, className,
+}: {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Panel className={cx('p-6', className)}>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-[13px] text-muted">{subtitle}</p>}
+        </div>
+        {actions}
+      </div>
+      {children}
+    </Panel>
+  );
+}
+
+/**
+ * A toggle for one chart series. The swatch takes its colour from the series,
+ * so that one value stays inline; everything else is a utility.
+ */
+export function SeriesToggle({
+  color, label, off, square, onClick, title, children,
+}: {
+  color: string;
+  label: React.ReactNode;
+  off?: boolean;
+  /** Bars get a square swatch, lines a rounded one. */
+  square?: boolean;
+  onClick: () => void;
+  title?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={!off}
+      className={cx(
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+        off
+          ? 'border-border bg-transparent text-faint line-through'
+          : 'border-border bg-surface-2 text-text hover:border-border-strong',
+      )}
+    >
+      <span
+        className={cx('inline-block h-2.5 w-2.5 shrink-0', square ? 'rounded-xs' : 'rounded-sm')}
+        style={{ background: off ? 'transparent' : color, boxShadow: off ? `inset 0 0 0 1px ${color}` : undefined }}
+      />
+      {label}
+      {children}
+    </button>
   );
 }
 

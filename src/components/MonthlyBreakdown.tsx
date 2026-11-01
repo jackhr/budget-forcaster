@@ -3,7 +3,7 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import type { MonthBreakdown, MonthObligation, MonthObligationKind } from '../lib/monthlyBreakdown';
 import { formatCompactMoney, formatMoney, formatSignedMoney } from '../lib/format';
 import MonthControl from './MonthControl';
-import { Panel, Segmented, cx } from '../ui';
+import { ChartTooltip, Panel, Segmented, cx } from '../ui';
 
 interface Props {
   breakdown: MonthBreakdown;
@@ -28,15 +28,6 @@ function LegendSwatch({ className, label }: { className: string; label: string }
   );
 }
 
-/** The shell every chart tooltip in this view shares. */
-function TooltipCard({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cx('rounded-lg border border-border bg-surface-2 px-3.5 py-2.5 text-[12px] shadow-pop', className)}>
-      {children}
-    </div>
-  );
-}
-
 function roundForDisplay(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -56,7 +47,7 @@ function DailyTooltip({ active, payload, label }: { active?: boolean; payload?: 
     </div>
   ));
   return (
-    <TooltipCard className="min-w-[280px] max-w-[460px]">
+    <ChartTooltip className="min-w-[280px] max-w-[460px]">
       <strong>Day {label}</strong>
       {incoming.length > 0 && (
         <div className="mt-2">
@@ -72,7 +63,7 @@ function DailyTooltip({ active, payload, label }: { active?: boolean; payload?: 
       )}
       {row.events.length === 0 && <p className="mt-1.5 text-muted">No activity scheduled.</p>}
       <p className="mt-1.5 text-muted">Cumulative net: {formatSignedMoney(row.net)}</p>
-    </TooltipCard>
+    </ChartTooltip>
   );
 }
 
@@ -343,7 +334,7 @@ function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?
     </div>
   );
   return (
-    <TooltipCard className="min-w-[240px] max-w-[420px]">
+    <ChartTooltip className="min-w-[240px] max-w-[420px]">
       <strong>Day {label} · {name}</strong>
       <p className="mt-1.5 font-bold text-primary">{formatMoney(row.liquidity)} available</p>
       {effects.length > 0 && (
@@ -353,6 +344,6 @@ function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?
           {section('From', from, 'text-expense')}
         </div>
       )}
-    </TooltipCard>
+    </ChartTooltip>
   );
 }

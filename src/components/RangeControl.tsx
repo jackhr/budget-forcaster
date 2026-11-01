@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { IconButton, cx } from '../ui';
 
 interface Props {
   startMonth: number;
@@ -24,62 +25,97 @@ function monthLabel(offset: number): string {
 
 const MAX_END_MONTH = 120;
 
+/** One end of the range: a label between two nudge arrows. */
+function Boundary({
+  label, value, onBack, onForward, backDisabled, forwardDisabled, noun,
+}: {
+  label: string;
+  value: string;
+  onBack: () => void;
+  onForward: () => void;
+  backDisabled: boolean;
+  forwardDisabled: boolean;
+  noun: string;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <IconButton
+        tone="neutral"
+        size="sm"
+        onClick={onBack}
+        disabled={backDisabled}
+        aria-label={`Move ${noun} one month earlier`}
+        title={`${label} one month earlier`}
+      >
+        <ChevronLeft size={15} strokeWidth={2.2} aria-hidden="true" />
+      </IconButton>
+      <span className="min-w-[78px] whitespace-nowrap text-center text-[12.5px] tabular-nums text-muted">
+        <span className="block text-[10px] uppercase tracking-wider">{label}</span>
+        <strong className="text-text">{value}</strong>
+      </span>
+      <IconButton
+        tone="neutral"
+        size="sm"
+        onClick={onForward}
+        disabled={forwardDisabled}
+        aria-label={`Move ${noun} one month later`}
+        title={`${label} one month later`}
+      >
+        <ChevronRight size={15} strokeWidth={2.2} aria-hidden="true" />
+      </IconButton>
+    </div>
+  );
+}
+
 // Quick duration presets plus independent controls for each date boundary.
 export default function RangeControl({ startMonth, endMonth, onStartMonthChange, onEndMonthChange }: Props) {
   const duration = endMonth - startMonth;
   const setDuration = (months: number) => onEndMonthChange(Math.min(MAX_END_MONTH, startMonth + months));
 
-  const arrowStyle: React.CSSProperties = {
-    background: 'var(--color-surface-2)',
-    color: 'var(--color-text)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 6,
-    width: 34,
-    height: 30,
-    padding: 0,
-    display: 'grid',
-    placeItems: 'center',
-  };
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 300 }}>
-      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+    <div className="flex min-w-[300px] flex-col gap-2">
+      <div className="flex flex-wrap justify-end gap-1">
         {PRESETS.map((p) => {
           const active = duration === p.months;
           return (
             <button
               key={p.months}
+              type="button"
               onClick={() => setDuration(p.months)}
-              style={{
-                background: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
-                color: active ? '#fff' : 'var(--color-text-muted)',
-                border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                borderRadius: 6, padding: '3px 11px', fontSize: 12, fontWeight: 600,
-              }}
+              aria-pressed={active}
+              className={cx(
+                'rounded-md border px-2.5 py-0.5 text-[12px] font-semibold transition-colors',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+                active
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-border bg-surface-2 text-muted hover:border-border-strong hover:text-text',
+              )}
             >
               {p.label}
             </button>
           );
         })}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button type="button" onClick={() => onStartMonthChange(startMonth - 1)} disabled={startMonth <= 0} aria-label="Move start one month earlier" title="Start one month earlier" style={arrowStyle}><ChevronLeft size={15} strokeWidth={2.2} aria-hidden="true" /></button>
-          <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)', whiteSpace: 'nowrap', minWidth: 78, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
-            <span style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Start</span>
-            <strong style={{ color: 'var(--color-text)' }}>{monthLabel(startMonth)}</strong>
-          </span>
-          <button type="button" onClick={() => onStartMonthChange(startMonth + 1)} disabled={startMonth >= endMonth - 1} aria-label="Move start one month later" title="Start one month later" style={arrowStyle}><ChevronRight size={15} strokeWidth={2.2} aria-hidden="true" /></button>
-        </div>
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{duration} mo</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button type="button" onClick={() => onEndMonthChange(endMonth - 1)} disabled={endMonth <= startMonth + 1} aria-label="Move end one month earlier" title="End one month earlier" style={arrowStyle}><ChevronLeft size={15} strokeWidth={2.2} aria-hidden="true" /></button>
-          <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)', whiteSpace: 'nowrap', minWidth: 78, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
-            <span style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>End</span>
-            <strong style={{ color: 'var(--color-text)' }}>{monthLabel(endMonth - 1)}</strong>
-          </span>
-          <button type="button" onClick={() => onEndMonthChange(endMonth + 1)} disabled={endMonth >= MAX_END_MONTH} aria-label="Move end one month later" title="End one month later" style={arrowStyle}><ChevronRight size={15} strokeWidth={2.2} aria-hidden="true" /></button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <Boundary
+          label="Start"
+          noun="start"
+          value={monthLabel(startMonth)}
+          onBack={() => onStartMonthChange(startMonth - 1)}
+          onForward={() => onStartMonthChange(startMonth + 1)}
+          backDisabled={startMonth <= 0}
+          forwardDisabled={startMonth >= endMonth - 1}
+        />
+        <span className="whitespace-nowrap text-[12px] text-muted">{duration} mo</span>
+        <Boundary
+          label="End"
+          noun="end"
+          value={monthLabel(endMonth - 1)}
+          onBack={() => onEndMonthChange(endMonth - 1)}
+          onForward={() => onEndMonthChange(endMonth + 1)}
+          backDisabled={endMonth <= startMonth + 1}
+          forwardDisabled={endMonth >= MAX_END_MONTH}
+        />
       </div>
     </div>
   );

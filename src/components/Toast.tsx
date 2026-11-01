@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { AlertTriangle, CircleCheck } from 'lucide-react';
+import { cx } from '../ui';
 
 type ToastKind = 'error' | 'success' | 'info';
 
@@ -23,10 +24,10 @@ export function useToast(): ToastApi {
   return ctx;
 }
 
-const COLORS: Record<ToastKind, { bg: string; border: string; fg: string }> = {
-  error: { bg: '#3b1318', border: '#7f1d1d', fg: '#fca5a5' },
-  success: { bg: '#0f2a1a', border: '#15803d', fg: '#86efac' },
-  info: { bg: 'var(--color-surface-2)', border: 'var(--color-border)', fg: 'var(--color-text)' },
+const TONES: Record<ToastKind, string> = {
+  error: 'border-danger/50 bg-danger/15 text-danger',
+  success: 'border-income/50 bg-income/15 text-income',
+  info: 'border-border bg-surface-2 text-text',
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -52,45 +53,26 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div style={{
-        position: 'fixed',
-        bottom: 20,
-        right: 20,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        zIndex: 200,
-        maxWidth: 'min(90vw, 360px)',
-      }}>
-        {toasts.map((t) => {
-          const c = COLORS[t.kind];
-          return (
-            <div
-              key={t.id}
-              onClick={() => remove(t.id)}
-              style={{
-                background: c.bg,
-                border: `1px solid ${c.border}`,
-                color: c.fg,
-                borderRadius: 'var(--radius-sm)',
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 8,
-                padding: '10px 14px',
-                fontSize: 13,
-                boxShadow: 'var(--shadow)',
-                cursor: 'pointer',
-                animation: 'toastIn 0.18s ease-out',
-              }}
-            >
-              {t.kind === 'error' && <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />}
-              {t.kind === 'success' && <CircleCheck size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />}
-              <span>{t.message}</span>
-            </div>
-          );
-        })}
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-5 right-5 z-[200] flex max-w-[min(90vw,360px)] flex-col gap-2"
+      >
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            onClick={() => remove(t.id)}
+            className={cx(
+              'flex animate-toast-in cursor-pointer items-start gap-2 rounded-control border px-3.5 py-2.5 text-[13px] shadow-pop',
+              TONES[t.kind],
+            )}
+          >
+            {t.kind === 'error' && <AlertTriangle size={14} strokeWidth={2} className="mt-0.5 shrink-0" aria-hidden="true" />}
+            {t.kind === 'success' && <CircleCheck size={14} strokeWidth={2} className="mt-0.5 shrink-0" aria-hidden="true" />}
+            <span>{t.message}</span>
+          </div>
+        ))}
       </div>
-      <style>{`@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </ToastContext.Provider>
   );
 }

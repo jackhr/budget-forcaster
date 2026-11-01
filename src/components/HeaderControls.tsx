@@ -8,36 +8,29 @@ interface Props {
   onInflationChange: (value: number) => void;
 }
 
+/** A labelled readout or control in the app header. */
+function Chip({ label, title, children }: { label: string; title?: string; children: React.ReactNode }) {
+  return (
+    <div
+      title={title}
+      className="flex items-center gap-2 rounded-control border border-border bg-bg px-2.5 py-1"
+    >
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 export default function HeaderControls({ totalCash, currency, onCurrencyChange, inflation, onInflationChange }: Props) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        background: 'var(--color-bg)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-sm)',
-        padding: '5px 10px',
-      }}
-        title="Total across all accounts — edit balances in the Accounts section"
-      >
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-          Total Cash
-        </span>
-        <span style={{ color: 'var(--color-primary)', fontWeight: 700, fontSize: 15 }}>
+    <div className="flex items-center gap-2.5">
+      <Chip label="Total Cash" title="Total across all accounts — edit balances in the Accounts section">
+        <span className="text-[15px] font-bold tabular-nums text-primary">
           {formatMoney(totalCash, { whole: true })}
         </span>
-      </div>
+      </Chip>
 
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-sm)', padding: '5px 10px',
-      }}>
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-          Inflation
-        </span>
+      <Chip label="Inflation">
         <input
           type="number"
           value={inflation}
@@ -46,25 +39,12 @@ export default function HeaderControls({ totalCash, currency, onCurrencyChange, 
           max={50}
           step="any"
           title="Annual inflation applied to ongoing expenses"
-          style={{ width: 52, padding: '2px 4px', fontWeight: 600 }}
+          className="min-h-0 w-[52px] px-1 py-0.5 font-semibold"
         />
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>%</span>
-      </div>
+        <span className="text-[12px] text-muted">%</span>
+      </Chip>
 
-      <select
-        value={currency}
-        onChange={(e) => onCurrencyChange(e.target.value)}
-        title="Display currency"
-        style={{
-          background: 'var(--color-bg)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--color-text)',
-          padding: '7px 8px',
-          fontSize: 12,
-          fontFamily: 'inherit',
-        }}
-      >
+      <select value={currency} onChange={(e) => onCurrencyChange(e.target.value)} title="Display currency">
         {CURRENCIES.map((c) => (
           <option key={c.code} value={c.code}>{c.label}</option>
         ))}

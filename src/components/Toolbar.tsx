@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import type { Scenario } from '../api/client';
 import ConfirmButton from './ConfirmButton';
-import { Save, X } from 'lucide-react';
+import { Download, Save, Upload, X } from 'lucide-react';
+import { Button, IconButton, Panel } from '../ui';
 
 interface Props {
   scenarios: Scenario[];
@@ -13,11 +14,6 @@ interface Props {
   onExport: () => void;
   onImport: (file: File) => void;
 }
-
-const btn: React.CSSProperties = {
-  background: 'var(--color-surface-2)', color: 'var(--color-text)',
-  border: '1px solid var(--color-border)', padding: '6px 12px', fontSize: 13,
-};
 
 export default function Toolbar({ scenarios, compareId, onSave, onRestore, onDelete, onCompareChange, onExport, onImport }: Props) {
   const [savingOpen, setSavingOpen] = useState(false);
@@ -33,37 +29,38 @@ export default function Toolbar({ scenarios, compareId, onSave, onRestore, onDel
   }
 
   return (
-    <div style={{
-      background: 'var(--color-surface)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 'var(--radius)',
-      padding: '12px 16px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      flexWrap: 'wrap',
-    }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-        Scenarios
-      </span>
+    <Panel className="flex flex-wrap items-center gap-3 px-4 py-3">
+      <span className="text-[12px] font-semibold uppercase tracking-wider text-muted">Scenarios</span>
 
       {savingOpen ? (
-        <form onSubmit={save} style={{ display: 'flex', gap: 6 }}>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Scenario name" autoFocus style={{ width: 160 }} required />
-          <button type="submit" style={{ background: 'var(--color-primary)', color: '#fff', padding: '6px 12px' }}>Save</button>
-          <button type="button" onClick={() => setSavingOpen(false)} aria-label="Cancel" style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '6px 8px', display: 'grid', placeItems: 'center' }}><X size={14} strokeWidth={2.2} aria-hidden="true" /></button>
+        <form onSubmit={save} className="flex gap-1.5">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Scenario name"
+            autoFocus
+            required
+            className="w-40"
+          />
+          <Button type="submit" variant="primary" size="sm">Save</Button>
+          <IconButton tone="neutral" size="sm" onClick={() => setSavingOpen(false)} aria-label="Cancel">
+            <X size={14} strokeWidth={2.2} aria-hidden="true" />
+          </IconButton>
         </form>
       ) : (
-        <button onClick={() => setSavingOpen(true)} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Save size={14} strokeWidth={1.9} aria-hidden="true" />Save current</button>
+        <Button size="sm" onClick={() => setSavingOpen(true)}>
+          <Save size={14} strokeWidth={1.9} aria-hidden="true" />Save current
+        </Button>
       )}
 
       {scenarios.length > 0 && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--color-text-muted)' }}>
+        <label className="flex items-center gap-1.5 text-[13px] text-muted">
           Compare:
           <select
             value={compareId ?? ''}
             onChange={(e) => onCompareChange(e.target.value ? Number(e.target.value) : null)}
-            style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 8px', fontSize: 13 }}
+            className="min-h-0 py-1.5"
           >
             <option value="">None</option>
             {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -71,23 +68,30 @@ export default function Toolbar({ scenarios, compareId, onSave, onRestore, onDel
         </label>
       )}
 
-      <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-        <button onClick={onExport} style={btn} title="Download a JSON backup">⤓ Export</button>
-        <button onClick={() => fileRef.current?.click()} style={btn} title="Restore from a JSON backup">⤒ Import</button>
+      <div className="ml-auto flex gap-1.5">
+        <Button size="sm" onClick={onExport} title="Download a JSON backup">
+          <Download size={14} strokeWidth={1.9} aria-hidden="true" />Export
+        </Button>
+        <Button size="sm" onClick={() => fileRef.current?.click()} title="Restore from a JSON backup">
+          <Upload size={14} strokeWidth={1.9} aria-hidden="true" />Import
+        </Button>
         <input
           ref={fileRef}
           type="file"
           accept="application/json,.json"
-          style={{ display: 'none' }}
+          className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }}
         />
       </div>
 
       {scenarios.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexBasis: '100%' }}>
+        <div className="flex basis-full flex-wrap gap-2">
           {scenarios.map((s) => (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12.5 }}>
-              <span style={{ fontWeight: 500 }}>{s.name}</span>
+            <div
+              key={s.id}
+              className="flex items-center gap-1.5 rounded-control border border-border bg-bg px-2 py-1 text-[12.5px]"
+            >
+              <span className="font-medium">{s.name}</span>
               <ConfirmButton
                 onConfirm={() => onRestore(s.id)}
                 title={`Replace all current data with "${s.name}"`}
@@ -96,16 +100,13 @@ export default function Toolbar({ scenarios, compareId, onSave, onRestore, onDel
               >
                 Load
               </ConfirmButton>
-              <ConfirmButton
-                onConfirm={() => onDelete(s.id)}
-                title={`Delete scenario "${s.name}"`}
-              >
+              <ConfirmButton onConfirm={() => onDelete(s.id)} title={`Delete scenario "${s.name}"`}>
                 <X size={14} strokeWidth={2.2} aria-hidden="true" />
               </ConfirmButton>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

@@ -1,5 +1,6 @@
 import type { SavingsPoint } from '../types';
 import { formatMoney, formatSignedMoney } from '../lib/format';
+import { StatCard, StatGrid } from '../ui';
 
 interface Props {
   data: SavingsPoint[];
@@ -16,48 +17,28 @@ export default function SavingsSummary({ data, startingBalance }: Props) {
     {
       label: 'Projected Balance',
       value: formatMoney(ending, { whole: true }),
-      color: ending >= 0 ? 'var(--color-net-pos)' : 'var(--color-net-neg)',
+      className: ending >= 0 ? 'text-net-pos' : 'text-net-neg',
       sub: 'end of period',
     },
     {
       label: 'Net Change',
       value: formatSignedMoney(change, { whole: true }),
-      color: change >= 0 ? 'var(--color-income)' : 'var(--color-expense)',
+      className: change >= 0 ? 'text-income' : 'text-expense',
       sub: 'over selected period',
     },
     {
       label: 'Lowest Balance',
       value: formatMoney(lowest, { whole: true }),
-      color: goesNegative ? 'var(--color-expense)' : 'var(--color-text)',
+      className: goesNegative ? 'text-expense' : 'text-text',
       sub: goesNegative ? 'goes negative' : 'stays positive',
     },
   ];
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-      gap: '16px',
-    }}>
+    <StatGrid>
       {cards.map((card) => (
-        <div key={card.label} style={{
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius)',
-          padding: '20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px',
-        }}>
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {card.label}
-          </span>
-          <span style={{ fontSize: '24px', fontWeight: 700, color: card.color, letterSpacing: '-0.02em' }}>
-            {card.value}
-          </span>
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{card.sub}</span>
-        </div>
+        <StatCard key={card.label} label={card.label} value={card.value} sub={card.sub} className={card.className} />
       ))}
-    </div>
+    </StatGrid>
   );
 }

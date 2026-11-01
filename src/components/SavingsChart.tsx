@@ -5,6 +5,7 @@ import {
 import type { SavingsPoint } from '../types';
 import { formatCompactMoney, formatMoney } from '../lib/format';
 import RangeControl from './RangeControl';
+import { ChartPanel, ChartTooltip } from '../ui';
 
 interface PayoffMarker { label: string; name: string }
 
@@ -27,31 +28,18 @@ function CustomTooltip({ active, payload, label }: {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
-    <div style={{
-      background: 'var(--color-surface-2)',
-      border: '1px solid var(--color-border)',
-      borderRadius: '8px',
-      padding: '12px 16px',
-      fontSize: '13px',
-      minWidth: 190,
-    }}>
-      <p style={{ fontWeight: 600, marginBottom: 8, color: 'var(--color-text)' }}>{label}</p>
-      <p style={{ color: 'var(--color-net-pos)', marginBottom: 4 }}>
-        Balance: <strong>{formatMoney(p.balance)}</strong>
-      </p>
-      <p style={{ color: 'var(--color-income)', marginBottom: 4 }}>
+    <ChartTooltip className="min-w-[190px]">
+      <p className="mb-2 font-semibold text-text">{label}</p>
+      <p className="mb-1 text-net-pos">Balance: <strong>{formatMoney(p.balance)}</strong></p>
+      <p className="mb-1 text-income">
         Income in: <strong>{formatMoney(p.income)}</strong>
-        {p.incomeLump > 0 && <span style={{ opacity: 0.7 }}> (incl. {formatMoney(p.incomeLump)} lump)</span>}
+        {p.incomeLump > 0 && <span className="opacity-70"> (incl. {formatMoney(p.incomeLump)} lump)</span>}
       </p>
-      <p style={{ color: 'var(--color-expense)', marginBottom: 4 }}>
-        Expenses: <strong>{formatMoney(p.expenses)}</strong>
-      </p>
+      <p className="mb-1 text-expense">Expenses: <strong>{formatMoney(p.expenses)}</strong></p>
       {p.debtOut > 0 && (
-        <p style={{ color: 'var(--color-net-neg)' }}>
-          Debt payments: <strong>−{formatMoney(p.debtOut)}</strong>
-        </p>
+        <p className="text-net-neg">Debt payments: <strong>−{formatMoney(p.debtOut)}</strong></p>
       )}
-    </div>
+    </ChartTooltip>
   );
 }
 
@@ -60,22 +48,11 @@ export default function SavingsChart({ data, startMonth, months, onStartMonthCha
   const todayLabel = startMonth === 0 ? data[0]?.label : undefined;
   const merged = compareData ? data.map((d, i) => ({ ...d, compare: compareData[i] })) : data;
   return (
-    <div style={{
-      background: 'var(--color-surface)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 'var(--radius)',
-      padding: '24px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Accumulated Savings</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginTop: 2 }}>
-            Running balance over {duration} month{duration !== 1 ? 's' : ''} — green bars are lump income
-          </p>
-        </div>
-        <RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />
-      </div>
-
+    <ChartPanel
+      title="Accumulated Savings"
+      subtitle={`Running balance over ${duration} month${duration !== 1 ? 's' : ''} — green bars are lump income`}
+      actions={<RangeControl startMonth={startMonth} endMonth={months} onStartMonthChange={onStartMonthChange} onEndMonthChange={onMonthsChange} />}
+    >
       <ResponsiveContainer width="100%" height={360}>
         <ComposedChart data={merged} margin={{ top: 16, right: 16, left: 8, bottom: 4 }}>
           <defs>
@@ -102,7 +79,7 @@ export default function SavingsChart({ data, startMonth, months, onStartMonthCha
           <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
           <Legend
             wrapperStyle={{ fontSize: '13px', paddingTop: 16 }}
-            formatter={(value) => <span style={{ color: 'var(--color-text)' }}>{value}</span>}
+            formatter={(value) => <span className="text-text">{value}</span>}
           />
           <ReferenceLine y={0} stroke="var(--color-expense)" strokeDasharray="4 4" />
           {todayLabel && (
@@ -138,6 +115,6 @@ export default function SavingsChart({ data, startMonth, months, onStartMonthCha
           )}
         </ComposedChart>
       </ResponsiveContainer>
-    </div>
+    </ChartPanel>
   );
 }
