@@ -9,6 +9,9 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Change name and/or email, keeping the signed-in user in step. */
+  updateProfile: (data: { name?: string | null; email?: string }) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -51,9 +54,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateProfile = useCallback(async (data: { name?: string | null; email?: string }) => {
+    setUser((await authApi.updateProfile(data)).user);
+  }, []);
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    // The server revokes every other session and re-issues this one.
+    setUser((await authApi.changePassword(currentPassword, newPassword)).user);
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, login, register, logout }),
-    [user, loading, login, register, logout],
+    () => ({ user, loading, login, register, logout, updateProfile, changePassword }),
+    [user, loading, login, register, logout, updateProfile, changePassword],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

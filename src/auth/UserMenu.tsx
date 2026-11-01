@@ -8,7 +8,7 @@ function initials(name: string | null, email: string) {
   return (parts[0]?.[0] ?? '?').toUpperCase() + (parts.length > 1 ? parts[1][0].toUpperCase() : '');
 }
 
-export default function UserMenu() {
+export default function UserMenu({ onGoToAccount }: { onGoToAccount?: () => void }) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -50,7 +50,18 @@ export default function UserMenu() {
             {user.name && <p className="truncate text-[13px] font-semibold">{user.name}</p>}
             <p className="truncate text-[12px] text-muted">{user.email}</p>
           </div>
-          <div className="pt-2">
+          <div className="flex flex-col pt-2">
+            {onGoToAccount && (
+              <Button
+                variant="ghost"
+                size="sm"
+                block
+                className="justify-start"
+                onClick={() => { setOpen(false); onGoToAccount(); }}
+              >
+                Account & settings
+              </Button>
+            )}
             <Button variant="ghost" size="sm" block className="justify-start" onClick={() => logout()}>
               Sign out
             </Button>

@@ -17,12 +17,14 @@ interface Props {
   actions?: React.ReactNode;
   /** Full-width warnings shown above the page content. */
   banners?: React.ReactNode;
+  /** Where the user menu's "Account & settings" item goes. */
+  onGoToAccount?: () => void;
   children: React.ReactNode;
 }
 
 
 export default function AppShell({
-  groups, current, onSelect, title, subtitle, actions, banners, children,
+  groups, current, onSelect, title, subtitle, actions, banners, onGoToAccount, children,
 }: Props) {
   const compact = useMediaQuery('(max-width: 900px)');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -152,7 +154,7 @@ export default function AppShell({
           </div>
           <div className="flex items-center gap-2.5">
             {actions}
-            <UserMenu />
+            <UserMenu onGoToAccount={onGoToAccount} />
           </div>
         </header>
 

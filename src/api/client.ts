@@ -46,6 +46,8 @@ export const authApi = {
   logout: () => req<void>('/auth/logout', { method: 'POST' }),
   changePassword: (current_password: string, new_password: string) =>
     req<{ user: AuthUser }>('/auth/password', { method: 'PUT', body: JSON.stringify({ current_password, new_password }) }),
+  updateProfile: (data: { name?: string | null; email?: string }) =>
+    req<{ user: AuthUser }>('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
 };
 
 type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at' | 'occurrences'>;

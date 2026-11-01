@@ -3,7 +3,7 @@
 // entry crashed the whole app once, because the title lookup is unguarded.
 import {
   ArrowLeftRight, ArrowUpRight, BarChart3, CreditCard, LayoutDashboard,
-  LineChart, List, Receipt, TrendingUp, Wallet, type LucideIcon,
+  LineChart, List, Receipt, Settings, TrendingUp, Wallet, type LucideIcon,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -22,7 +22,9 @@ export interface NavGroup {
 export type Tab =
   | 'home'
   | 'accounts' | 'income' | 'expenses' | 'debts'
-  | 'projections' | 'breakdown' | 'account' | 'outflows' | 'transactions';
+  | 'projections' | 'breakdown' | 'account' | 'outflows' | 'transactions'
+  // Labelled "Account"; the id `account` was already taken by the Activity view.
+  | 'settings';
 
 // Planning and viewing are deliberately separate: the editors live under PLAN
 // and nowhere else, so a view is just a view.
@@ -47,13 +49,14 @@ export const NAV: NavGroup[] = [
       { id: 'transactions', label: 'Transactions', icon: List },
     ],
   },
+  { items: [{ id: 'settings', label: 'Account', icon: Settings }] },
 ];
 
 export const TAB_IDS = NAV.flatMap((group) => group.items.map((item) => item.id)) as Tab[];
 
 export const PAGE_META: Record<Tab, { title: string; subtitle?: string }> = {
   home: { title: 'Home', subtitle: 'Where you stand, and what’s coming' },
-  accounts: { title: 'Accounts', subtitle: 'Cash piles, and the bank connections behind them' },
+  accounts: { title: 'Accounts', subtitle: 'The cash piles income lands in and bills are paid from' },
   income: { title: 'Income', subtitle: 'Money coming in, by pay frequency' },
   expenses: { title: 'Expenses', subtitle: 'Ongoing and time-boxed costs, and what funds each' },
   debts: { title: 'Debts', subtitle: 'Balances, payoff strategy, and projected free dates' },
@@ -62,6 +65,7 @@ export const PAGE_META: Record<Tab, { title: string; subtitle?: string }> = {
   account: { title: 'Activity', subtitle: 'What moves in and out of one account or debt' },
   outflows: { title: 'Outflows', subtitle: 'What each account pays for, month by month' },
   transactions: { title: 'Transactions', subtitle: 'Synced from your linked institutions' },
+  settings: { title: 'Account', subtitle: 'Your profile, how the app looks, and your data' },
 };
 
 // The four chart tabs that used to be separate are one page with a switcher.

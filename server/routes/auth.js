@@ -141,4 +141,41 @@ router.put('/password', requireAuth, (req, res) => {
   issueSession(req, res, user);
 });
 
+// Update the profile. Email is the login, so changing it must not be able to
+// collide with another account — the uniqueness check and the write happen in
+// one transaction so two requests can't both pass it.
+router.put('/profile', requireAuth, (req, res) => {
+  const { name, email } = req.body ?? {};
+
+  const nextName = name == null ? null : String(name).trim();
+  if (nextName != null && nextName.length > 120) {
+    return res.status(400).json({ error: 'Name is too long' });
+  }
+
+  const nextEmail = email == null ? null : normalizeEmail(email);
+  if (nextEmail != null && !validEmail(nextEmail)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+
+  const update = db.transaction(() => {
+    if (nextEmail != null && nextEmail !== req.user.email_normalized) {
+      const taken = db.prepare('SELECT id FROM users WHERE email_normalized = ? AND id != ?')
+        .get(nextEmail, req.user.id);
+      if (taken) return { conflict: true };
+      db.prepare("UPDATE users SET email = ?, email_normalized = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(String(email).trim(), nextEmail, req.user.id);
+    }
+    if (nextName != null) {
+      db.prepare("UPDATE users SET name = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(nextName || null, req.user.id);
+    }
+    return { user: db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id) };
+  });
+
+  const result = update();
+  // Same message either way: whether an address is registered isn't ours to say.
+  if (result.conflict) return res.status(409).json({ error: 'That email address is not available' });
+  res.json({ user: publicUser(result.user) });
+});
+
 module.exports = router;

@@ -15,8 +15,7 @@ import LineItemTable from './components/LineItemTable';
 import SavingsSummary from './components/SavingsSummary';
 import Debts from './components/Debts';
 import Accounts from './components/Accounts';
-import PlaidConnect from './components/PlaidConnect';
-import HeaderControls from './components/HeaderControls';
+import AccountSettings from './components/AccountSettings';
 import AppShell from './components/AppShell';
 import { DEFAULT_HOME_LAYOUT, resolveHomeLayout, type HomeLayout } from './lib/homeLayout';
 import { NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS, type ProjectionView, type Tab } from './lib/nav';
@@ -536,7 +535,9 @@ export default function App() {
     );
   }
 
-  // Scenarios + export/import live inside the navigation drawer.
+  // Scenarios + export/import are managed on the Account page. Projections
+  // gets the compare picker on its own, since that's a viewing choice rather
+  // than a management one.
   const toolbar = (
     <Toolbar
       scenarios={scenarios}
@@ -580,14 +581,17 @@ export default function App() {
       title={page.title}
       subtitle={page.subtitle}
       banners={banners}
+      onGoToAccount={() => setTab('settings')}
       actions={
-        <HeaderControls
-          totalCash={totalCash}
-          currency={currency}
-          onCurrencyChange={changeCurrency}
-          inflation={inflation}
-          onInflationChange={changeInflation}
-        />
+        <div
+          title="Total across all accounts — edit balances under Plan › Accounts"
+          className="flex items-center gap-2 rounded-control border border-border bg-bg px-2.5 py-1"
+        >
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Total Cash</span>
+          <span className="text-[15px] font-bold tabular-nums text-primary">
+            {formatMoney(totalCash, { whole: true })}
+          </span>
+        </div>
       }
     >
         {tab === 'home' && (
@@ -605,6 +609,19 @@ export default function App() {
             onGoToProjections={() => setTab('projections')}
             onGoToAccounts={() => setTab('accounts')}
             onGoToDebts={() => setTab('debts')}
+          />
+        )}
+
+        {tab === 'settings' && (
+          <AccountSettings
+            currency={currency}
+            onCurrencyChange={changeCurrency}
+            inflation={inflation}
+            onInflationChange={changeInflation}
+            homeLayout={homeLayout}
+            onHomeLayoutChange={changeHomeLayout}
+            dataTools={toolbar}
+            onPlaidImported={load}
           />
         )}
 
@@ -781,7 +798,20 @@ export default function App() {
             />
           </Suspense>
         )}
-        {tab === 'projections' && toolbar}
+        {tab === 'projections' && scenarios.length > 0 && (
+          <label className="flex items-center gap-2 text-[13px] text-muted">
+            Compare against
+            <select
+              value={compareId ?? ''}
+              onChange={(e) => setCompareId(e.target.value ? Number(e.target.value) : null)}
+              className="font-semibold"
+            >
+              <option value="">Nothing</option>
+              {scenarios.map((sc) => <option key={sc.id} value={sc.id}>{sc.name}</option>)}
+            </select>
+            <span className="text-[12px] text-faint">Saved scenarios live under Account.</span>
+          </label>
+        )}
 
         {tab === 'transactions' && (
           <Suspense fallback={<ChartFallback />}>
@@ -797,7 +827,6 @@ export default function App() {
         onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount}
         onMakePrimary={makePrimary} onReorder={reorderAccounts}
       />
-            <PlaidConnect onImported={load} />
           </>
         )}
 

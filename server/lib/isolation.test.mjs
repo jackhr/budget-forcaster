@@ -153,6 +153,26 @@ describe('tenant isolation', () => {
     expect((await (await api('/settings', { cookie: bob })).json()).currency).toBeUndefined();
   });
 
+  it('lets a user change their own profile but not take another email', async () => {
+    const profile = (body, cookie) => api('/auth/profile', { method: 'PUT', body, cookie });
+
+    const renamed = await profile({ name: 'Alice A.' }, alice);
+    expect(renamed.status).toBe(200);
+    expect((await renamed.json()).user.name).toBe('Alice A.');
+
+    // Bob's address is taken; the attempt must not move it or silently no-op.
+    const bobEmail = (await (await api('/auth/me', { cookie: bob })).json()).user.email;
+    const clash = await profile({ email: bobEmail }, alice);
+    expect(clash.status).toBe(409);
+    expect((await (await api('/auth/me', { cookie: bob })).json()).user.email).toBe(bobEmail);
+
+    const invalid = await profile({ email: 'not-an-email' }, alice);
+    expect(invalid.status).toBe(400);
+
+    const anonymous = await profile({ name: 'nobody' });
+    expect(anonymous.status).toBe(401);
+  });
+
   it('keeps the home layout per user, and rejects one it does not offer', async () => {
     const set = (value, cookie) => api('/settings/home_layout', { method: 'PUT', body: { value }, cookie });
 
