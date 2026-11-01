@@ -1,4 +1,4 @@
-import type { Account, AuthUser, Debt, Expense, GroupKind, IncomeSource, LineItemGroup, PaidStatus } from '../types';
+import type { Account, AuthUser, Debt, Expense, Goal, GroupKind, IncomeSource, LineItemGroup, PaidStatus } from '../types';
 
 const BASE = '/api';
 
@@ -48,6 +48,17 @@ export const authApi = {
     req<{ user: AuthUser }>('/auth/password', { method: 'PUT', body: JSON.stringify({ current_password, new_password }) }),
   updateProfile: (data: { name?: string | null; email?: string }) =>
     req<{ user: AuthUser }>('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
+};
+
+type GoalInput = Omit<Goal, 'id' | 'start_amount' | 'sort_order' | 'created_at' | 'updated_at'>;
+
+export const goalsApi = {
+  getAll: () => req<Goal[]>('/goals'),
+  create: (data: GoalInput) => req<Goal>('/goals', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: Partial<GoalInput>) =>
+    req<Goal>(`/goals/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => req<void>(`/goals/${id}`, { method: 'DELETE' }),
+  reorder: (ids: number[]) => reorder('goals', ids),
 };
 
 type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at' | 'occurrences'>;

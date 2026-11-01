@@ -9,6 +9,7 @@ const TABLES = [
   'income_occurrences',
   'expenses',
   'debts',
+  'goals',
   'app_settings',
   'paid_status',
 ];
@@ -23,6 +24,24 @@ function referenceExists(db, table, row, userId) {
     return !!parent && !!db.prepare(`SELECT 1 FROM ${parent} WHERE id = ? AND user_id = ?`).get(row.entity_id, userId);
   }
   return true;
+}
+
+/**
+ * A goal whose account or debt isn't in the restored plan comes back
+ * untargeted rather than dangling. Foreign keys are on, so inserting a goal
+ * that points at a row the snapshot didn't bring along would abort the whole
+ * import; and a goal silently tracking nothing is worse than one the user can
+ * see needs re-pointing. Goals are imported after accounts and debts, so by
+ * this point the parents either exist or never will.
+ */
+function untargetMissing(db, row, userId) {
+  const present = (table, id) =>
+    id == null || !!db.prepare(`SELECT 1 FROM ${table} WHERE id = ? AND user_id = ?`).get(id, userId);
+  return {
+    ...row,
+    account_id: present('accounts', row.account_id) ? row.account_id : null,
+    debt_id: present('debts', row.debt_id) ? row.debt_id : null,
+  };
 }
 
 // user_id is an implementation detail of multi-tenancy, not part of the user's
@@ -56,7 +75,8 @@ function importData(db, data, userId) {
     for (const t of TABLES) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(userId);
     for (const t of TABLES) {
       const incoming = Array.isArray(data?.[t]) ? data[t].map(withoutUserId) : [];
-      const rows = kept[t] ? kept[t].filter((row) => referenceExists(db, t, row, userId)) : incoming;
+      const rows = (kept[t] ? kept[t].filter((row) => referenceExists(db, t, row, userId)) : incoming)
+        .map((row) => (t === 'goals' ? untargetMissing(db, row, userId) : row));
       for (const row of rows) {
         const cols = Object.keys(row);
         if (cols.length === 0) continue;

@@ -77,6 +77,23 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- A destination: an amount to reach, or a debt to clear, optionally by a date.
+  -- Goals are a feature, not a requirement — the rest of the app works with none.
+  CREATE TABLE IF NOT EXISTS goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,            -- 'savings' | 'debt_payoff' | 'net_worth'
+    target_amount REAL,            -- null for debt_payoff, where the target is zero
+    start_amount REAL,             -- the value when the goal was set, so progress has a baseline
+    target_date TEXT,              -- YYYY-MM-DD; null = no deadline
+    account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,  -- savings: null = all cash
+    debt_id INTEGER REFERENCES debts(id) ON DELETE CASCADE,         -- debt_payoff: null = every debt
+    note TEXT,
+    sort_order INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS scenarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -309,7 +326,7 @@ db.exec(`
 // Added nullable so an existing single-user database keeps working; the first
 // account registered adopts every unowned row (see claimUnownedData).
 const OWNED_TABLES = [
-  'accounts', 'income_sources', 'expenses', 'debts', 'line_item_groups',
+  'accounts', 'income_sources', 'expenses', 'debts', 'line_item_groups', 'goals',
   'scenarios', 'income_occurrences', 'plaid_items', 'plaid_accounts', 'plaid_transactions',
 ];
 for (const table of OWNED_TABLES) {

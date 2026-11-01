@@ -26,7 +26,9 @@ This is not a bug list — confirmed bugs and gaps live in [business-logic/10-kn
 
 **What:** the user describes a goal ("pay off the cards", "$25k emergency fund by mid-2028") and the app proposes concrete ways to reach it from their actual numbers — raise this payment, cut this expense, reorder the payoff strategy, move this bill off the card.
 
-**Why deferred:** goals themselves ship first (see the goals entity work). Suggestions are a different and much harder problem: it's an optimization over the forecast, and a wrong suggestion in a money app is worse than no suggestion.
+**Why deferred:** goals themselves have now shipped — `goals` table, `/api/goals`, a Plan page, and the `goal` home layout. What exists says *where you stand* and *when the current plan gets you there*; it proposes nothing. Suggestions are a different and much harder problem: an optimization over the forecast, where a wrong suggestion in a money app is worse than none.
+
+**Starting point:** `src/lib/goals.ts:goalProgress` already computes the projected month for a candidate plan. A suggestion engine re-runs it under modified inputs and ranks the results.
 
 **What has to change:**
 - Needs a *search* over the forecast, not a single projection: re-run `buildForecast`/`simulateDebtPlan` under candidate changes and rank the results. The engine is pure and takes `now`, so this is feasible, but it has to stay fast enough to run on every render or move off the render path.
@@ -46,7 +48,7 @@ This is not a bug list — confirmed bugs and gaps live in [business-logic/10-kn
 **Done since:** the preference is a server-side per-user setting (`app_settings.home_layout`), with an in-page picker on Home. Two layouts exist — `runway` and `balance`. Adding one means an entry in `src/lib/homeLayout.ts`, the matching id in `server/lib/settings.js`, and a branch in `Home.tsx`.
 
 **What has to change:**
-- A third layout, **goal progress**, needs the goals entity to exist. Until it does, a first-run picker would be choosing between two options, which isn't worth a flow.
+- There are now five home layouts, so a first-run picker has something to choose between. What's still missing is the "have you finished setting up?" signal below.
 - An onboarding flow also wants a "have you finished setting up?" signal: an account, some income, some expenses. That state doesn't exist today.
 
 **Open question:** whether onboarding should instead be about *getting data in* (connect a bank, add your income) rather than about choosing a view. Connecting Plaid first would populate every layout and make the choice obvious.

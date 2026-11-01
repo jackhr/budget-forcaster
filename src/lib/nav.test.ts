@@ -38,7 +38,7 @@ describe('navigation', () => {
 
   it('separates planning from viewing', () => {
     const plan = NAV.find((g) => g.heading === 'Plan');
-    expect(plan?.items.map((i) => i.id)).toEqual(['accounts', 'income', 'expenses', 'debts']);
+    expect(plan?.items.map((i) => i.id)).toEqual(['accounts', 'income', 'expenses', 'debts', 'goals']);
   });
 });
 

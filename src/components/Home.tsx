@@ -3,6 +3,8 @@ import type { Breakdown } from '../lib/forecast';
 import type { MonthBreakdown } from '../lib/monthlyBreakdown';
 import type { Account, Debt, NetWorthPoint } from '../types';
 import type { DebtPlan } from '../lib/debt';
+import type { Goal } from '../types';
+import { STATUS_LABEL, goalBoard, type GoalInputs, type GoalProgress } from '../lib/goals';
 import {
   buildBalanceSheet, findCashLow, findRunwayRisk, monthLabelAt, monthProgress, netWorthTrend,
   payoffOrder, totalsFor, upcomingEvents, whenLabel,
@@ -24,6 +26,10 @@ interface Props {
   debts: Debt[];
   /** The combined payoff plan, for the payoff layout. */
   debtPlan: DebtPlan;
+  goals: Goal[];
+  /** The series each goal is measured against. */
+  goalInputs: GoalInputs;
+  onGoToGoals: () => void;
   /** This month and the next, for the upcoming list. */
   monthBreakdowns: MonthBreakdown[];
   onGoToPlan: () => void;
@@ -34,7 +40,8 @@ interface Props {
 
 export default function Home({
   layout, onLayoutChange, totalCash, netWorth, accountSeries, accounts, debts, debtPlan,
-  monthBreakdowns, onGoToPlan, onGoToProjections, onGoToAccounts, onGoToDebts,
+  goals, goalInputs, monthBreakdowns, onGoToPlan, onGoToProjections, onGoToAccounts, onGoToDebts,
+  onGoToGoals,
 }: Props) {
   const risk = findRunwayRisk(accountSeries);
   const low = findCashLow(accountSeries);
@@ -92,6 +99,16 @@ export default function Home({
           events={events}
           totals={totals}
           onGoToPlan={onGoToPlan}
+        />
+      ) : layout === 'goal' ? (
+        <GoalLayout
+          goals={goals}
+          inputs={goalInputs}
+          chartData={chartData}
+          lowIndex={low?.monthIndex}
+          events={events}
+          totals={totals}
+          onGoToGoals={onGoToGoals}
         />
       ) : layout === 'payoff' ? (
         <PayoffLayout
@@ -535,6 +552,132 @@ function PayoffRow({ step, position }: { step: PayoffStep; position: number }) {
         />
       </div>
     </li>
+  );
+}
+
+
+/* ----------------------------- Goal progress ----------------------------- */
+
+const GOAL_TONE: Record<GoalProgress['status'], string> = {
+  met: 'text-income',
+  'on-track': 'text-primary',
+  ahead: 'text-income',
+  behind: 'text-warning',
+  'off-track': 'text-expense',
+  untracked: 'text-muted',
+};
+
+const GOAL_BAR: Record<GoalProgress['status'], string> = {
+  met: 'bg-income',
+  'on-track': 'bg-primary',
+  ahead: 'bg-income',
+  behind: 'bg-warning',
+  'off-track': 'bg-expense',
+  untracked: 'bg-border-strong',
+};
+
+function GoalLayout({
+  goals, inputs, chartData, lowIndex, events, totals, onGoToGoals,
+}: {
+  goals: Goal[];
+  inputs: GoalInputs;
+  chartData: ChartPoint[];
+  lowIndex?: number;
+  events: UpcomingEvent[];
+  totals: UpcomingTotals;
+  onGoToGoals: () => void;
+}) {
+  const board = goalBoard(goals, inputs);
+  const met = board.filter((p) => p.status === 'met').length;
+  const atRisk = board.filter((p) => p.status === 'behind' || p.status === 'off-track');
+  const lead = atRisk[0] ?? board.find((p) => p.status !== 'met') ?? board[0] ?? null;
+
+  return (
+    <>
+      <Card className={cx('p-5', atRisk.length > 0 && 'border-warning/45 bg-warning/8')}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            {goals.length === 0 ? (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Goals</p>
+                <p className="mt-1.5 text-[15px] font-semibold">No goals set.</p>
+                <p className="mt-1 text-[13px] text-muted">
+                  Goals are optional — everything else works without them. Add one and this
+                  screen will say when the current plan gets you there.
+                </p>
+              </>
+            ) : atRisk.length > 0 ? (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Needs attention</p>
+                <p className="mt-1.5 text-[15px] font-semibold">
+                  {atRisk.length === 1
+                    ? <>“{atRisk[0].goal.name}” is {STATUS_LABEL[atRisk[0].status].toLowerCase()}.</>
+                    : <>{atRisk.length} goals are off their plan.</>}
+                </p>
+                {lead?.projectedLabel && (
+                  <p className="mt-1 text-[13px] text-muted">
+                    The current plan reaches “{lead.goal.name}” in {lead.projectedLabel}
+                    {lead.slackMonths != null && lead.slackMonths < 0 && (
+                      <>, {Math.abs(lead.slackMonths)} month{Math.abs(lead.slackMonths) === 1 ? '' : 's'} after the date you set</>
+                    )}.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-income">On plan</p>
+                <p className="mt-1.5 text-[15px] font-semibold">
+                  {met === goals.length
+                    ? <>Every goal reached.</>
+                    : <>{met} of {goals.length} reached, and the rest are on track.</>}
+                </p>
+                {lead?.projectedLabel && (
+                  <p className="mt-1 text-[13px] text-muted">
+                    Next up: “{lead.goal.name}”, around {lead.projectedLabel}.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+          <Button variant="secondary" onClick={onGoToGoals}>
+            {goals.length === 0 ? 'Add a goal' : 'Open goals'}
+          </Button>
+        </div>
+      </Card>
+
+      {board.length > 0 && (
+        <Card className="p-5">
+          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Progress</h2>
+          <ul className="flex flex-col gap-3">
+            {board.map((progress) => (
+              <li key={progress.goal.id}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{progress.goal.name}</span>
+                  <span className={cx('shrink-0 text-[12px] font-semibold', GOAL_TONE[progress.status])}>
+                    {STATUS_LABEL[progress.status]}
+                  </span>
+                  <span className="w-[120px] shrink-0 text-right text-[12px] text-muted">
+                    {progress.projectedLabel ?? (progress.status === 'met' ? 'done' : '—')}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                  {/* A proportion, so the width has to be computed. */}
+                  <div
+                    className={cx('h-full rounded-full', GOAL_BAR[progress.status])}
+                    style={{ width: `${Math.round(progress.fraction * 100)}%` }}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+        <TrajectoryCard title="Cash and debt, next 12 months" data={chartData} lowIndex={lowIndex} />
+        <UpcomingCard events={events} totals={totals} />
+      </div>
+    </>
   );
 }
 

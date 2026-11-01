@@ -78,8 +78,10 @@ describe('inline styles', () => {
 
   it('keeps the count low enough to stay reviewable', () => {
     const total = files.reduce((sum, f) => sum + inlineStyles(readFileSync(f, 'utf8')).length, 0);
-    // Was 373 before the migration. Each survivor is a computed value; if this
-    // climbs, something is styling itself locally again.
-    expect(total).toBeLessThanOrEqual(12);
+    // Was 373 before the migration. Each survivor is a computed value — a
+    // palette colour, a proportion, a dialog's own width. Raise this only when
+    // the new ones are genuinely computed; the two checks above are what stop
+    // a literal sneaking in either way.
+    expect(total).toBeLessThanOrEqual(16);
   });
 });

@@ -158,6 +158,32 @@ export interface NetWorthPoint {
   netWorth: number; // cash - debt
 }
 
+export type GoalKind = 'savings' | 'debt_payoff' | 'net_worth';
+
+/**
+ * A destination. Optional by design: the app works with none, and nothing
+ * nags for one.
+ */
+export interface Goal {
+  id: number;
+  name: string;
+  kind: GoalKind;
+  /** The amount to reach. Null for `debt_payoff`, whose target is zero. */
+  target_amount: number | null;
+  /** What was owed when a payoff goal was set, so progress has a baseline. */
+  start_amount: number | null;
+  /** YYYY-MM-DD, or null for no deadline. */
+  target_date: string | null;
+  /** `savings`: which account, or null for all cash. */
+  account_id: number | null;
+  /** `debt_payoff`: which debt, or null for everything owed. */
+  debt_id: number | null;
+  note: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type LineItem = IncomeSource | Expense;
 
 export interface ItemFormData {

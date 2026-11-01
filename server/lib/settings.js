@@ -8,7 +8,7 @@
 // asserts the two agree, since a layout the client offers but the server
 // rejects would fail silently on save.
 
-const HOME_LAYOUTS = ['runway', 'balance', 'month', 'payoff'];
+const HOME_LAYOUTS = ['runway', 'balance', 'month', 'payoff', 'goal'];
 const DEBT_STRATEGIES = ['none', 'avalanche', 'snowball'];
 
 const oneOf = (allowed) => (value) =>

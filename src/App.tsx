@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import type { Account, Debt, Expense, GroupKind, IncomeSource, ItemFormData, LineItemGroup, PaidStatus } from './types';
+import type { Account, Debt, Expense, Goal, GroupKind, IncomeSource, ItemFormData, LineItemGroup, PaidStatus } from './types';
 import {
-  accountsApi, dataApi, debtsApi, expensesApi, groupsApi, incomeApi, paidApi, scenariosApi, settingsApi,
+  accountsApi, dataApi, debtsApi, expensesApi, goalsApi, groupsApi, incomeApi, paidApi, scenariosApi, settingsApi,
   type Scenario,
 } from './api/client';
 import { buildForecast, buildSavings, buildNetWorth, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
@@ -16,6 +16,7 @@ import SavingsSummary from './components/SavingsSummary';
 import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import AccountSettings from './components/AccountSettings';
+import Goals, { type GoalInput } from './components/Goals';
 import AppShell from './components/AppShell';
 import { DEFAULT_HOME_LAYOUT, resolveHomeLayout, type HomeLayout } from './lib/homeLayout';
 import { NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS, type ProjectionView, type Tab } from './lib/nav';
@@ -107,6 +108,7 @@ export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [groups, setGroups] = useState<LineItemGroup[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [currency, setCurrencyState] = useState('USD');
@@ -158,13 +160,13 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [inc, exp, dbts, accts, grps, scen, settings, paid] = await Promise.all([
+      const [inc, exp, dbts, accts, grps, scen, settings, paid, gls] = await Promise.all([
         incomeApi.getAll(), expensesApi.getAll(),
         debtsApi.getAll(), accountsApi.getAll(), groupsApi.getAll(), scenariosApi.getAll(), settingsApi.getAll(),
-        paidApi.get(),
+        paidApi.get(), goalsApi.getAll(),
       ]);
       setIncomeSources(inc); setExpenses(exp); setDebts(dbts);
-      setAccounts(accts); setGroups(grps); setScenarios(scen);
+      setAccounts(accts); setGroups(grps); setScenarios(scen); setGoals(gls);
       setPaidStatus(await migrateLocalPaidFlags(paid));
       setInflation(parseFloat(settings.inflation_rate ?? '0') || 0);
       setDebtExtra(parseFloat(settings.debt_extra ?? '0') || 0);
@@ -258,6 +260,18 @@ export default function App() {
   // Per-item breakdown for the selected section.
   // Per-account balances drive Home's runway warning, so build them always.
   const accountSeries = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, debtOutByAccount);
+
+  // What a goal is measured against: today's balances for where it stands, and
+  // the projections for when the plan gets there.
+  const goalInputs = {
+    accountSeries,
+    netWorth,
+    remainingByDebt: plan.remainingByDebt,
+    debtRemaining: plan.remaining,
+    accounts,
+    debts,
+    totalCash,
+  };
 
   let breakdown: Breakdown;
   let breakdownTitle: string;
@@ -456,6 +470,23 @@ export default function App() {
     await accountsApi.reorder(ids);
   }, 'Could not reorder accounts');
 
+  const addGoal = (data: GoalInput) => guard(async () => {
+    const goal = await goalsApi.create(data);
+    setGoals((prev) => [...prev, goal]);
+  }, 'Could not create goal');
+  const updateGoal = (id: number, data: GoalInput) => guard(async () => {
+    const goal = await goalsApi.update(id, data);
+    setGoals((prev) => prev.map((g) => (g.id === id ? goal : g)));
+  }, 'Could not update goal');
+  const deleteGoal = (id: number) => guard(async () => {
+    await goalsApi.delete(id);
+    setGoals((prev) => prev.filter((g) => g.id !== id));
+  }, 'Could not delete goal');
+  const reorderGoals = (ids: number[]) => guard(async () => {
+    setGoals((prev) => reorderBy(prev, ids));
+    await goalsApi.reorder(ids);
+  }, 'Could not reorder goals');
+
   const changeCurrency = (code: string) => guard(async () => {
     setCurrency(code); setCurrencyState(code); await settingsApi.set('currency', code);
   }, 'Could not save currency');
@@ -604,11 +635,27 @@ export default function App() {
             accounts={accounts}
             debts={debts}
             debtPlan={plan}
+            goals={goals}
+            goalInputs={goalInputs}
+            onGoToGoals={() => setTab('goals')}
             monthBreakdowns={[thisMonth, nextMonth]}
             onGoToPlan={() => setTab('expenses')}
             onGoToProjections={() => setTab('projections')}
             onGoToAccounts={() => setTab('accounts')}
             onGoToDebts={() => setTab('debts')}
+          />
+        )}
+
+        {tab === 'goals' && (
+          <Goals
+            goals={goals}
+            accounts={accounts}
+            debts={debts}
+            inputs={goalInputs}
+            onAdd={addGoal}
+            onUpdate={updateGoal}
+            onDelete={deleteGoal}
+            onReorder={reorderGoals}
           />
         )}
 

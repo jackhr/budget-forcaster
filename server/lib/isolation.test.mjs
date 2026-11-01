@@ -67,7 +67,7 @@ afterAll(() => {
 
 describe('authentication', () => {
   it('rejects every data endpoint without a session', async () => {
-    for (const route of ['/income', '/expenses', '/debts', '/accounts', '/groups', '/settings', '/paid', '/scenarios', '/export', '/plaid/status']) {
+    for (const route of ['/income', '/expenses', '/debts', '/accounts', '/goals', '/groups', '/settings', '/paid', '/scenarios', '/export', '/plaid/status']) {
       const res = await api(route);
       expect({ route, status: res.status }).toEqual({ route, status: 401 });
     }
@@ -125,6 +125,7 @@ describe('tenant isolation', () => {
       debt: await mk('/debts', { name: 'Alice Card', balance: 900, apr: 20, monthly_payment: 100, debt_type: 'credit_card' }),
       group: await mk('/groups', { name: 'Alice Group', kind: 'expense' }),
     };
+    aliceIds.goal = await mk('/goals', { name: 'Alice Fund', kind: 'savings', target_amount: 10000 });
     await api('/settings/currency', { method: 'PUT', body: { value: 'GBP' }, cookie: alice });
   });
 
@@ -134,6 +135,7 @@ describe('tenant isolation', () => {
       ['/expenses', 'Alice Rent'],
       ['/debts', 'Alice Card'],
       ['/groups', 'Alice Group'],
+      ['/goals', 'Alice Fund'],
     ]) {
       const mine = await (await api(route, { cookie: alice })).json();
       expect(mine.map((r) => r.name)).toContain(aliceName);
@@ -151,6 +153,54 @@ describe('tenant isolation', () => {
   it('keeps settings per user', async () => {
     expect((await (await api('/settings', { cookie: alice })).json()).currency).toBe('GBP');
     expect((await (await api('/settings', { cookie: bob })).json()).currency).toBeUndefined();
+  });
+
+  it("refuses to point a goal at another user's account or debt", async () => {
+    // Accepting the id would silently attach Bob's goal to Alice's balance.
+    const stolenAccount = await api('/goals', {
+      method: 'POST',
+      body: { name: 'Theirs', kind: 'savings', target_amount: 100, account_id: aliceIds.account },
+      cookie: bob,
+    });
+    expect(stolenAccount.status).toBe(400);
+
+    const stolenDebt = await api('/goals', {
+      method: 'POST',
+      body: { name: 'Theirs', kind: 'debt_payoff', debt_id: aliceIds.debt },
+      cookie: bob,
+    });
+    expect(stolenDebt.status).toBe(400);
+
+    expect((await (await api('/goals', { cookie: bob })).json())).toEqual([]);
+  });
+
+  it('validates what a goal can be', async () => {
+    const post = (body) => api('/goals', { method: 'POST', body, cookie: alice });
+
+    expect((await post({ kind: 'savings', target_amount: 1 })).status).toBe(400);           // no name
+    expect((await post({ name: 'x', kind: 'retire', target_amount: 1 })).status).toBe(400); // unknown kind
+    expect((await post({ name: 'x', kind: 'savings' })).status).toBe(400);                  // no amount
+    expect((await post({ name: 'x', kind: 'savings', target_amount: 0 })).status).toBe(400);
+    expect((await post({ name: 'x', kind: 'savings', target_amount: 1, target_date: 'soon' })).status).toBe(400);
+
+    // A payoff goal needs no amount — its target is zero by definition.
+    const payoff = await post({ name: 'Clear it', kind: 'debt_payoff', debt_id: aliceIds.debt });
+    expect(payoff.status).toBe(201);
+    const row = await payoff.json();
+    expect(row.target_amount).toBeNull();
+    // The balance owed when it was set, so progress has a baseline.
+    expect(row.start_amount).toBe(900);
+  });
+
+  it('keeps a goal out of an export belonging to someone else', async () => {
+    const exported = async (cookie) => (await (await api('/export', { cookie })).json()).data;
+
+    expect((await exported(bob)).goals.map((g) => g.name)).not.toContain('Alice Fund');
+
+    const mine = (await exported(alice)).goals;
+    expect(mine.map((g) => g.name)).toContain('Alice Fund');
+    // user_id is stripped so a snapshot restores into any account.
+    expect(mine.every((g) => !('user_id' in g))).toBe(true);
   });
 
   it('lets a user change their own profile but not take another email', async () => {
@@ -193,6 +243,7 @@ describe('tenant isolation', () => {
       ['/debts', aliceIds.debt, { name: 'hacked', balance: 1, monthly_payment: 1 }],
       ['/accounts', aliceIds.account, { name: 'hacked', balance: 1 }],
       ['/groups', aliceIds.group, { name: 'hacked' }],
+      ['/goals', aliceIds.goal, { name: 'hacked', kind: 'savings', target_amount: 1 }],
     ];
     for (const [route, id, body] of targets) {
       const put = await api(`${route}/${id}`, { method: 'PUT', body, cookie: bob });

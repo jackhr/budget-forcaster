@@ -39,11 +39,29 @@ const debtPlan = {
   chargeOverflow: [0], totalInterest: 600, debtFreeMonthIndex: 18,
 };
 
+const goals = [{
+  id: 3, name: 'Emergency fund', kind: 'savings' as const, target_amount: 10000,
+  start_amount: null, target_date: null, account_id: null, debt_id: null,
+  note: null, sort_order: 0, ...stamps,
+}];
+
+const goalInputs = {
+  // Climbs, so a goal can be reached late rather than only never.
+  accountSeries: { labels: ['Nov', 'Dec', 'Jan'], total: [4000, 20000, 45000], series: [] },
+  netWorth: nw,
+  remainingByDebt: new Map([[7, [2500]]]),
+  debtRemaining: [2500],
+  accounts,
+  debts,
+  totalCash: 12500,
+};
+
 /** Everything Home needs beyond what a given test is actually asserting. */
 const homeProps = {
   layout: 'runway' as const, onLayoutChange: () => {}, totalCash: 12500, netWorth: nw,
-  accounts, debts, debtPlan, monthBreakdowns: [], onGoToPlan: () => {}, onGoToProjections: () => {},
-  onGoToAccounts: () => {}, onGoToDebts: () => {},
+  accounts, debts, debtPlan, goals, goalInputs, monthBreakdowns: [],
+  onGoToPlan: () => {}, onGoToProjections: () => {}, onGoToAccounts: () => {},
+  onGoToDebts: () => {}, onGoToGoals: () => {},
 };
 
 describe('AppShell', () => {
@@ -177,7 +195,10 @@ describe('Home layouts', () => {
 
   it('survives having no accounts, debts or months at all', () => {
     for (const { id } of HOME_LAYOUTS) {
-      const empty = { ...homeProps, accounts: [], debts: [], netWorth: [], monthBreakdowns: [] };
+      const empty = {
+        ...homeProps, accounts: [], debts: [], netWorth: [], monthBreakdowns: [], goals: [],
+        goalInputs: { ...goalInputs, accounts: [], debts: [], netWorth: [], remainingByDebt: new Map() },
+      };
       expect(() => renderToStaticMarkup(
         <Home {...empty} layout={id} accountSeries={{ labels: [], total: [], series: [] }} />,
       )).not.toThrow();
@@ -248,5 +269,36 @@ describe('Debt payoff layout', () => {
       <Home {...homeProps} layout="payoff" debts={[]} accountSeries={bd([900])} />,
     );
     expect(html).toContain('No debts tracked');
+  });
+});
+
+describe('Goal progress layout', () => {
+  it('leads with how the goals are doing', () => {
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="goal" accountSeries={bd([900])} />,
+    );
+    expect(html).toContain('Emergency fund');
+    expect(html).toContain('Progress');
+  });
+
+  it('invites a first goal rather than showing an empty board', () => {
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="goal" goals={[]} accountSeries={bd([900])} />,
+    );
+    expect(html).toContain('No goals set');
+    expect(html).toContain('Goals are optional');
+    expect(html).toContain('Add a goal');
+    expect(html).not.toContain('Progress</h2>');
+  });
+
+  it('calls out a goal that is behind its date', () => {
+    // Not yet met, and reached two months out — a goal already met can't be
+    // behind, and one never reached is off-track rather than late.
+    const late = [{ ...homeProps.goals[0], target_amount: 40000, target_date: '2026-01-01' }];
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="goal" goals={late} accountSeries={bd([900])} />,
+    );
+    expect(html).toContain('Needs attention');
+    expect(html).toContain('Behind schedule');
   });
 });

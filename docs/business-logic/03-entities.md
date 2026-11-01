@@ -76,6 +76,22 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 - Display only: subtotal, collapse (state in localStorage), rename, and drag-reorder within the group. **No effect on any calculation.**
 - Deleting a group ungroups its items (`group_id = NULL`). It never deletes them.
 
+## Goal (`goals`)
+
+A destination. **Optional by design** — the whole app works with none, and nothing asks for one.
+
+- `kind`: `savings` (reach an amount), `debt_payoff` (clear a balance), `net_worth` (reach an overall figure).
+- `target_amount`: required above zero, except for `debt_payoff`, whose target is zero by definition.
+- `start_amount`: what was owed when a payoff goal was set, captured once at creation. Without it "40% paid off" has no baseline; re-reading it later would make progress vanish every time the balance moved. Re-baselined only when an edit changes *what* the goal tracks, never when it changes the name or the date.
+- `target_date`: optional. With no date a goal still gets a **projected** date from the forecast; with one it is also **ahead** or **behind**.
+- `account_id` (savings; null = all cash) and `debt_id` (payoff; null = everything owed). The route rejects an id belonging to another user, so a goal can't be attached to someone else's balance.
+
+**Status** (`src/lib/goals.ts`, pure and tested): `met` → `ahead`/`behind` (dated) or `on-track` (undated) → `off-track` when the forecast never reaches it → `untracked` when the account or debt has been deleted. `met` wins over a deadline: a goal already reached isn't late.
+
+Goals are part of export/import and scenarios. A goal pointing at an account or debt the snapshot doesn't carry comes back **untargeted** rather than dangling — foreign keys are on, so inserting it as-is would abort the whole restore.
+
+Suggesting *how* to reach a goal is deliberately not here; see [ICEBOX I2](../ICEBOX.md).
+
 ## Settings (`app_settings`, key/value strings)
 
 | key | meaning | default |
@@ -84,7 +100,7 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 | `inflation_rate` | Annual %, compounded monthly, **applied to expenses only**. | `0` |
 | `debt_strategy` | `none \| avalanche \| snowball` | `none` |
 | `debt_extra` | Extra monthly debt budget (ignored when strategy is `none`). | `0` |
-| `home_layout` | Which shape the Home screen takes: `runway \| balance \| month \| payoff`. | `runway` |
+| `home_layout` | Which shape the Home screen takes: `runway \| balance \| month \| payoff \| goal`. | `runway` |
 | `starting_balance` | Legacy, pre-accounts. Only used to seed the first account and as a fallback when comparing old scenarios. | — |
 
 `PUT /api/settings/:key` validates the value of every key above (`server/lib/settings.js`); an unknown key is still stored as-is. A stored value the client doesn't recognize resolves to the default rather than rendering nothing — see `src/lib/homeLayout.ts`.
@@ -99,6 +115,7 @@ Both layouts answer "where do I stand?", and differ in what they lead with. Each
 | `balance` | Where net worth is heading over the window, then **today's** balances on each side — what's held, and what's owed, each line as a share of its side. |
 | `month` | How far through the current month the money is: settled vs. still to come on each side, and the list of what's left to pay. Uses `paid`, so it only means anything for the month containing today — `monthProgress` treats any other month as fully elapsed. |
 | `payoff` | The debt-free date, which debt clears next, and the full payoff order. A debt whose payment can't cover its interest never clears; it sorts to the bottom and is labelled rather than given a date ([06](06-debt.md)). |
+| `goal` | How close each goal is and what the plan says about reaching it. With no goals set it invites a first one rather than showing an empty board. |
 
 **The two sides are today's balances, deliberately**, so they agree with the Accounts and Debts pages rather than with the forecast. The headline "Net worth" stat comes from the projection's first month instead, which is a different basis — so the balance layout shows no second net-worth total ([10 G10](10-known-gaps-and-decisions.md#g10)).
 
@@ -106,7 +123,7 @@ Goal progress is the intended third layout; it needs the goals entity first ([IC
 
 ## Scenario (`scenarios`)
 
-- A full JSON snapshot of `server/lib/data.js:TABLES`: `accounts, line_item_groups, income_sources, income_occurrences, expenses, debts, app_settings, paid_status`.
+- A full JSON snapshot of `server/lib/data.js:TABLES`: `accounts, line_item_groups, income_sources, income_occurrences, expenses, debts, goals, app_settings, paid_status`.
 - **Not included:** the Plaid cache tables and other scenarios.
 - **Compare** re-runs a simplified pipeline over the snapshot (no paid-this-month, no occurrences) and overlays net, savings, and net worth.
 - **Restore** is destructive: it deletes those tables and re-inserts the snapshot with the same ids. Export/Import use the same code. A table **missing from the snapshot** (older backups) keeps its current rows, minus rows whose parent no longer exists ([10 G8](10-known-gaps-and-decisions.md#g8)).
