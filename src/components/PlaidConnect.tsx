@@ -5,8 +5,8 @@ import { formatMoney } from '../lib/format';
 import { useCollapsed } from '../lib/useCollapsed';
 import { useToast } from './Toast';
 import ConfirmButton from './ConfirmButton';
-import CollapseToggle from './CollapseToggle';
 import { Check, Landmark, RefreshCw } from 'lucide-react';
+import { Button, CollapseToggle, Panel, Pill, cx } from '../ui';
 
 interface Props {
   onImported: () => void; // reload app accounts after import
@@ -153,23 +153,20 @@ export default function PlaidConnect({ onImported }: Props) {
     });
   }
 
-  const card: React.CSSProperties = {
-    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius)', padding: 20,
-  };
-
   const env = status?.env ?? 'sandbox';
   const isProd = env === 'production';
   const secretVar = isProd ? 'PLAID_PROD_SECRET' : 'PLAID_SANDBOX_SECRET';
 
   if (status && !status.configured) {
     return (
-      <div style={card}>
-        <h2 style={{ fontSize: 16, fontWeight: 600 }}>Connect a bank <Badge>Plaid {env}</Badge></h2>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 6 }}>
+      <Panel>
+        <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight">
+          Connect a bank <Pill tone="primary">Plaid {env}</Pill>
+        </h2>
+        <p className="mt-1.5 text-[13px] text-muted">
           Plaid isn’t configured for the <code>{env}</code> environment. Add <code>PLAID_CLIENT_ID</code> and <code>{secretVar}</code> to <code>.env</code> and restart the server.
         </p>
-      </div>
+      </Panel>
     );
   }
 
@@ -178,27 +175,29 @@ export default function PlaidConnect({ onImported }: Props) {
   });
 
   return (
-    <div style={card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: sectionCollapsed ? 0 : 12 }}>
-        <div onClick={toggleSection} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+    <Panel>
+      <div className={cx('flex flex-wrap items-start justify-between gap-3', sectionCollapsed ? 'mb-0' : 'mb-3')}>
+        <div onClick={toggleSection} className="flex min-w-0 cursor-pointer items-start gap-1.5">
           <CollapseToggle collapsed={sectionCollapsed} onToggle={toggleSection} label="Connect a bank" />
-          <div>
-            <h2 style={{ fontSize: 16, fontWeight: 600 }}>Connect a bank <Badge>Plaid {env}</Badge></h2>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
+          <div className="min-w-0 pt-1">
+            <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight">
+              Connect a bank <Pill tone="primary">Plaid {env}</Pill>
+            </h2>
+            <p className="mt-0.5 text-[12.5px] text-muted">
               {isProd
                 ? 'Pull live balances from your real bank and import them as accounts.'
                 : <>Pull real (sandbox) balances and import them as accounts. Use Plaid’s test login (e.g. <code>user_good</code> / <code>pass_good</code>).</>}
             </p>
           </div>
         </div>
-        <button onClick={connect} disabled={busy} style={{ background: 'var(--color-primary)', color: '#fff', padding: '8px 16px', fontSize: 13, fontWeight: 600 }}>
+        <Button variant="primary" onClick={connect} disabled={busy} className="font-semibold">
           {busy ? '…' : '+ Connect bank'}
-        </button>
+        </Button>
       </div>
 
       {!sectionCollapsed && (<>
       {status?.items.length ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="flex flex-col gap-3">
           {status.items.map((it) => (
             <InstitutionBlock
               key={it.id}
@@ -218,19 +217,24 @@ export default function PlaidConnect({ onImported }: Props) {
       ) : null}
 
       {accounts.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
           {accounts.some((a) => a.imported) && (
-            <button onClick={() => resync()} disabled={syncingId != null} title="Update every imported balance from Plaid" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              {syncingId === '__all__' ? 'Syncing all…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Sync all</>}
-            </button>
+            <Button onClick={() => resync()} disabled={syncingId != null} title="Update every imported balance from Plaid" className="font-semibold">
+              {syncingId === '__all__' ? 'Syncing all…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" />Sync all</>}
+            </Button>
           )}
-          <button onClick={importSelected} disabled={importCount === 0} style={{ background: 'var(--color-income)', color: '#04210f', padding: '8px 16px', fontSize: 13, fontWeight: 700 }}>
+          <Button
+            variant="bare"
+            onClick={importSelected}
+            disabled={importCount === 0}
+            className="bg-income font-bold text-[#04210f] hover:bg-income/90"
+          >
             Import {importCount} item{importCount !== 1 ? 's' : ''}
-          </button>
+          </Button>
         </div>
       )}
       </>)}
-    </div>
+    </Panel>
   );
 }
 
@@ -248,40 +252,65 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
 }) {
   const { collapsed, toggle } = useCollapsed(`plaid-item-${item.item_id}`);
   const hasImported = itemAccounts.some((a) => a.imported);
+  // One action, whose meaning depends on what the item needs: a fresh login, a
+  // liabilities consent, or a chance to re-pick which accounts it shares.
+  const needsReconnect = !!item.error_code;
+  const needsLiabilities = !needsReconnect && (!item.liabilities_synced_at || item.liabilities_consent_required === 1);
+
   return (
-    <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 13, background: 'var(--color-surface-2)', padding: '8px 12px' }}>
-        <div onClick={toggle} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', minWidth: 0 }}>
-          <CollapseToggle collapsed={collapsed} onToggle={toggle} label={item.institution_name ?? 'institution'} />
-          <span style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Landmark size={14} strokeWidth={1.9} aria-hidden="true" />{item.institution_name ?? 'Linked institution'}</span>
-          <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>· {itemAccounts.length} account{itemAccounts.length !== 1 ? 's' : ''}</span>
+    <div className="overflow-hidden rounded-control border border-border">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-surface-2 px-3 py-2 text-[13px]">
+        <div onClick={toggle} className="flex min-w-0 cursor-pointer items-center gap-2">
+          <CollapseToggle collapsed={collapsed} onToggle={toggle} label={item.institution_name ?? 'institution'} size="sm" />
+          <span className="inline-flex items-center gap-1.5 font-semibold">
+            <Landmark size={14} strokeWidth={1.9} aria-hidden="true" />
+            {item.institution_name ?? 'Linked institution'}
+          </span>
+          <span className="text-muted">· {itemAccounts.length} account{itemAccounts.length !== 1 ? 's' : ''}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {item.error_code ? (
-            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title={`Log in again (${item.error_code}). Also check any new or replacement cards so Plaid can see them.`} style={{ background: 'var(--color-primary)', color: '#fff', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>
+        <div className="flex items-center gap-2">
+          {needsReconnect ? (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={onEnableLiabilities}
+              disabled={syncingAny || enabling}
+              title={`Log in again (${item.error_code}). Also check any new or replacement cards so Plaid can see them.`}
+            >
               {enabling ? 'Opening…' : 'Reconnect'}
-            </button>
-          ) : (!item.liabilities_synced_at || item.liabilities_consent_required === 1) ? (
-            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title="Authorize minimum payment, APR, statement, and due-date details" style={{ background: 'transparent', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
+            </Button>
+          ) : needsLiabilities ? (
+            <Button
+              size="sm"
+              onClick={onEnableLiabilities}
+              disabled={syncingAny || enabling}
+              title="Authorize minimum payment, APR, statement, and due-date details"
+              className="text-primary"
+            >
               {enabling ? 'Opening…' : 'Enable liabilities'}
-            </button>
+            </Button>
           ) : (
-            <button onClick={onEnableLiabilities} disabled={syncingAny || enabling} title="Choose which accounts this login shares — use this when a card was reissued with a new number" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
+            <Button
+              size="sm"
+              onClick={onEnableLiabilities}
+              disabled={syncingAny || enabling}
+              title="Choose which accounts this login shares — use this when a card was reissued with a new number"
+            >
               {enabling ? 'Opening…' : 'Update accounts'}
-            </button>
+            </Button>
           )}
           {hasImported && (
-            <button onClick={onResync} disabled={syncingAny} title="Update this bank's imported balances" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Button size="sm" onClick={onResync} disabled={syncingAny} title="Update this bank's imported balances">
               {syncing ? 'Syncing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" />Sync</>}
-            </button>
+            </Button>
           )}
           <ConfirmButton onConfirm={onUnlink} title={`Unlink ${item.institution_name ?? 'institution'}`}>Unlink</ConfirmButton>
         </div>
       </div>
       {!collapsed && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 8 }}>
+        <div className="flex flex-col gap-1 p-2">
           {itemAccounts.length === 0 ? (
-            <p style={{ color: item.error_code ? 'var(--color-expense)' : 'var(--color-text-muted)', fontSize: 12.5, padding: '4px 6px' }}>
+            <p className={cx('px-1.5 py-1 text-[12.5px]', item.error_code ? 'text-expense' : 'text-muted')}>
               {item.error_code
                 ? `${item.institution_name ?? 'This bank'} needs you to log in again before Plaid can load its accounts. Click Reconnect.`
                 : 'No accounts found for this login.'}
@@ -298,19 +327,23 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
 }
 
 function AccountRow({ a, selected, onToggle }: { a: PlaidAccount; selected: boolean; onToggle: () => void }) {
+  // An imported or replaced account can't be imported again; it resyncs instead.
   const locked = a.imported || a.replaced;
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1 }}>
+    <label className={cx(
+      'flex items-center gap-2.5 rounded-control px-2.5 py-2 transition-colors',
+      locked ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-surface-2',
+    )}>
       <input type="checkbox" checked={selected && !locked} disabled={locked} onChange={onToggle} />
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span>
-          <span style={{ fontWeight: 500 }}>{a.name}</span>
-          {a.mask && <span style={{ color: 'var(--color-text-muted)' }}> ••{a.mask}</span>}
-          <span style={{ color: 'var(--color-text-muted)', fontSize: 12 }}> · {a.subtype ?? a.type}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-1 gap-y-1">
+          <span className="font-medium">{a.name}</span>
+          {a.mask && <span className="text-muted">••{a.mask}</span>}
+          <span className="text-[12px] text-muted">· {a.subtype ?? a.type}</span>
           {a.replaced ? <ReplacedBadge /> : a.imported ? <ImportedBadge /> : <DestBadge type={a.type} />}
         </span>
         {(a.apr != null || a.minimum_payment_amount != null || a.next_payment_due_date) && (
-          <span style={{ display: 'block', color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+          <span className="mt-0.5 block text-[11.5px] text-muted">
             {a.apr != null ? `${a.apr}% APR` : ''}
             {a.apr != null && a.minimum_payment_amount != null ? ' · ' : ''}
             {a.minimum_payment_amount != null ? `${formatMoney(a.minimum_payment_amount)} minimum` : ''}
@@ -319,7 +352,9 @@ function AccountRow({ a, selected, onToggle }: { a: PlaidAccount; selected: bool
           </span>
         )}
       </span>
-      <span style={{ fontWeight: 600, color: isDebtType(a.type) ? 'var(--color-net-neg)' : 'var(--color-net-pos)' }}>{formatMoney(a.current ?? 0)}</span>
+      <span className={cx('shrink-0 font-semibold tabular-nums', isDebtType(a.type) ? 'text-net-neg' : 'text-net-pos')}>
+        {formatMoney(a.current ?? 0)}
+      </span>
     </label>
   );
 }
@@ -329,48 +364,25 @@ function isDebtType(type: string): boolean {
   return type === 'credit' || type === 'loan';
 }
 
+/** Where this Plaid account would land if imported. */
 function DestBadge({ type }: { type: string }) {
-  const debt = isDebtType(type);
   const label = type === 'credit' ? 'Credit card' : type === 'loan' ? 'Loan' : 'Account';
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
-      color: debt ? 'var(--color-net-neg)' : 'var(--color-net-pos)',
-      background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-    }}>
-      {label}
-    </span>
-  );
+  return <Pill tone={isDebtType(type) ? 'debt' : 'cash'}>{label}</Pill>;
 }
 
 function ReplacedBadge() {
   return (
-    <span title="This card number was reissued; the imported debt now follows the new number" style={{
-      fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
-      color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', border: '1px dashed var(--color-border)',
-    }}>
+    <Pill title="This card number was reissued; the imported debt now follows the new number" className="border-dashed">
       Replaced
-    </span>
+    </Pill>
   );
 }
 
 function ImportedBadge() {
   return (
-    <span style={{
-      fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
-      color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-    }}>
+    <Pill className="gap-1">
       <Check size={12} strokeWidth={2.6} aria-hidden="true" />Imported
-    </span>
-  );
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 5, padding: '1px 6px', marginLeft: 6 }}>
-      {children}
-    </span>
+    </Pill>
   );
 }
 

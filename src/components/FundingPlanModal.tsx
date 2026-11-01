@@ -3,7 +3,8 @@ import type { AllocationSourceType, AllocationType, ExpenseAllocation, Frequency
 import { FREQUENCIES, FREQUENCY_LABELS } from '../lib/forecast';
 import { formatMoney } from '../lib/format';
 import Modal from './Modal';
-import { AlertTriangle, X } from 'lucide-react';
+import { X } from 'lucide-react';
+import { Button, Field, FieldError, IconButton, ModalActions, cx } from '../ui';
 
 interface AccountOpt { id: number; name: string; is_primary: 0 | 1 }
 interface DebtOpt { id: number; name: string; group_id?: number | null; available?: number | null; overLimit?: boolean } // available credit (limit − balance); null = no limit
@@ -39,7 +40,6 @@ function defaultRule(accounts?: AccountOpt[]): FundingRule {
     end_date: null,
   };
 }
-
 
 export function rulesFromLegacy(allocations?: ExpenseAllocation[]): FundingRule[] {
   return (allocations ?? []).map((a) => ({
@@ -100,17 +100,6 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
   const dateInvalid = draft.some((r) => r.frequency !== 'one-time' && !!r.start_date && !!r.end_date && r.end_date < r.start_date);
   const percentInvalid = draft.some((r) => r.alloc_type === 'percent' && r.value > 100);
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 12,
-    fontWeight: 600,
-    color: 'var(--color-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  };
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-  };
-
   function update(index: number, patch: Partial<FundingRule>) {
     setDraft((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   }
@@ -130,24 +119,24 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
 
   return (
     <Modal title={title} onClose={onCancel} maxWidth={720}>
-      <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <form onSubmit={save} className="flex flex-col gap-3.5">
         {draft.map((rule, idx) => (
-          <div key={idx} className="funding-rule-card">
-            <div className="funding-rule-main">
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Source</span>
+          <div key={idx} className="flex flex-col gap-3 rounded-card border border-border bg-surface-2/60 p-3.5">
+            {/* Source, split type, amount, remove — one row once there's width. */}
+            <div className="grid grid-cols-1 items-end gap-2.5 sm:grid-cols-[minmax(0,1fr)_86px_110px_36px]">
+              <Field label="Source">
                 <select
                   value={rule.source_id == null ? '' : encodeSource(rule.source_type, rule.source_id)}
                   onChange={(e) => {
                     const [sourceType, sourceId] = e.target.value.split(':');
                     update(idx, { source_type: sourceType as AllocationSourceType, source_id: Number(sourceId) });
                   }}
-                  style={inputStyle}
+                  className="w-full"
                 >
                   <option value="" disabled>Choose source...</option>
                   {accounts.length > 0 && (
                     <optgroup label="Accounts">
-                      {accounts.map((a) => <option key={`a${a.id}`} value={encodeSource('account', a.id)}>{a.name}{a.is_primary ? ' *' : ''}</option>)}
+                      {accounts.map((a) => <option key={`a${a.id}`} value={encodeSource('account', a.id)}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
                     </optgroup>
                   )}
                   {allowDebt && debts.length > 0 && (
@@ -156,9 +145,9 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
                     </optgroup>
                   )}
                 </select>
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Type</span>
+              </Field>
+
+              <Field label="Type">
                 <select
                   value={rule.alloc_type}
                   onChange={(e) => {
@@ -167,109 +156,116 @@ export default function FundingPlanModal({ title, amount, accounts = [], debts =
                       ? { alloc_type: allocType, frequency: 'monthly' }
                       : { alloc_type: allocType });
                   }}
-                  style={inputStyle}
+                  className="w-full"
                 >
                   <option value="percent">%</option>
                   <option value="fixed">$</option>
                 </select>
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Amount</span>
+              </Field>
+
+              <Field label="Amount">
                 <input
                   type="number" min={0} max={rule.alloc_type === 'percent' ? 100 : undefined} step="any"
                   value={rule.value || ''}
                   onChange={(e) => update(idx, { value: parseFloat(e.target.value) || 0 })}
-                  style={inputStyle}
+                  className="w-full"
                 />
-              </label>
-              <button
-                type="button"
-                className="funding-rule-remove"
+              </Field>
+
+              <IconButton
+                tone="danger"
                 aria-label="Remove funding rule"
                 title="Remove funding rule"
                 onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
+                className="h-[42px] justify-self-end sm:w-full"
               >
                 <X size={15} strokeWidth={2.2} aria-hidden="true" />
-              </button>
+              </IconButton>
             </div>
 
             {cardAvailable(rule) != null && (
-              <p style={{ fontSize: 12, margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', color: overLimit(rule) ? 'var(--color-expense)' : 'var(--color-text-muted)' }}>
-                {overLimit(rule) && <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />}
-                <span>
-                  {overLimit(rule)
-                    ? cardAlreadyOverLimit(rule)
-                      ? `Card is already over its limit — this rule adds another ${formatMoney(ruleDollar(rule))}.`
-                      : `Card has ${formatMoney(cardAvailable(rule)!)} available — this rule would put it ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} over its limit.`
-                    : `${formatMoney(cardAvailable(rule)!)} available on this card.`}
-                </span>
-              </p>
+              overLimit(rule) ? (
+                <FieldError>
+                  {cardAlreadyOverLimit(rule)
+                    ? `Card is already over its limit — this rule adds another ${formatMoney(ruleDollar(rule))}.`
+                    : `Card has ${formatMoney(cardAvailable(rule)!)} available — this rule would put it ${formatMoney(ruleDollar(rule) - cardAvailable(rule)!)} over its limit.`}
+                </FieldError>
+              ) : (
+                <p className="text-[12px] text-muted">{formatMoney(cardAvailable(rule)!)} available on this card.</p>
+              )
             )}
 
-            <div className={`funding-rule-schedule${rule.frequency === 'one-time' ? ' is-one-time' : ''}`}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>Frequency</span>
+            <div className={cx(
+              'grid grid-cols-1 gap-2.5',
+              rule.frequency === 'one-time' ? 'sm:grid-cols-2' : 'sm:grid-cols-3',
+            )}>
+              <Field label="Frequency">
                 <select
                   value={rule.frequency}
                   onChange={(e) => {
                     const f = e.target.value as Frequency;
                     update(idx, f === 'one-time' ? { frequency: f, end_date: null } : { frequency: f });
                   }}
-                  style={inputStyle}
+                  className="w-full"
                 >
                   {(rule.alloc_type === 'percent' ? PERCENT_FREQUENCIES : FREQUENCIES).map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
                 </select>
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={labelStyle}>{rule.frequency === 'one-time' ? 'Payment date' : 'Starts'}</span>
+              </Field>
+
+              <Field label={rule.frequency === 'one-time' ? 'Payment date' : 'Starts'}>
                 <input
                   type="date"
                   value={rule.start_date ?? ''}
                   onChange={(e) => update(idx, { start_date: e.target.value || null })}
-                  style={inputStyle}
+                  className="w-full"
                 />
-              </label>
+              </Field>
+
               {rule.frequency !== 'one-time' && (
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={labelStyle}>Ends <span style={{ textTransform: 'none', letterSpacing: 0, opacity: 0.75 }}>(optional)</span></span>
+                <Field label={<>Ends <span className="font-normal normal-case tracking-normal opacity-75">(optional)</span></>}>
                   <input
                     type="date"
                     value={rule.end_date ?? ''}
                     min={rule.start_date ?? undefined}
                     onChange={(e) => update(idx, { end_date: e.target.value || null })}
-                    style={inputStyle}
+                    className="w-full"
                   />
-                </label>
+                </Field>
               )}
             </div>
           </div>
         ))}
 
-        <button type="button" onClick={() => setDraft((prev) => [...prev, defaultRule(accounts)])} style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', alignSelf: 'flex-start' }}>
+        <Button onClick={() => setDraft((prev) => [...prev, defaultRule(accounts)])} className="self-start border-dashed">
           + Add rule
-        </button>
+        </Button>
+
         {allowDebt ? (
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+          <p className="text-[12px] text-muted">
             Any unallocated remainder is paid from the primary account. Current simple remainder: {formatMoney(remainderAmt, { whole: true })}.
           </p>
         ) : (
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+          <p className="text-[12px] text-muted">
             Rules override the debt’s monthly payment while their dates are active, and active rules combine. Outside every rule’s dates, the normal monthly payment is made from the debt’s default account.
           </p>
         )}
-        {dateInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>Make sure the end date is not before the start date.</p>}
-        {percentInvalid && <p style={{ fontSize: 12, color: 'var(--color-expense)' }}>A percentage rule cannot exceed 100%. Add separate rules when multiple payments should accumulate.</p>}
+
+        {dateInvalid && <FieldError>Make sure the end date is not before the start date.</FieldError>}
+        {percentInvalid && (
+          <FieldError>A percentage rule cannot exceed 100%. Add separate rules when multiple payments should accumulate.</FieldError>
+        )}
         {cardSpill > 0.005 && (
-          <p style={{ fontSize: 12, color: 'var(--color-expense)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-            <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
-            <span>Selected card rules would exceed available credit by {formatMoney(cardSpill)} per occurrence and put those cards over limit.</span>
-          </p>
+          <FieldError>
+            Selected card rules would exceed available credit by {formatMoney(cardSpill)} per occurrence and put those cards over limit.
+          </FieldError>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button type="button" onClick={onCancel} style={{ background: 'var(--color-border)', color: 'var(--color-text)', padding: '9px 16px' }}>Cancel</button>
-          <button type="submit" disabled={saving || dateInvalid || percentInvalid} style={{ background: 'var(--color-primary)', color: '#fff', padding: '9px 18px' }}>{saving ? 'Saving...' : 'Save Plan'}</button>
-        </div>
+        <ModalActions>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={saving || dateInvalid || percentInvalid}>
+            {saving ? 'Saving...' : 'Save Plan'}
+          </Button>
+        </ModalActions>
       </form>
     </Modal>
   );

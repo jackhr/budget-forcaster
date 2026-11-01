@@ -172,13 +172,14 @@ export const PasswordInput = forwardRef<
 
 /* ---------------------------------- Pill --------------------------------- */
 
-type Tone = 'neutral' | 'income' | 'expense' | 'debt' | 'danger' | 'future' | 'warning' | 'primary';
+type Tone = 'neutral' | 'income' | 'expense' | 'debt' | 'cash' | 'danger' | 'future' | 'warning' | 'primary';
 
 const TONES: Record<Tone, string> = {
   neutral: 'text-muted border-border bg-surface-2',
   income: 'text-income border-income/40 bg-income/10',
   expense: 'text-expense border-expense/40 bg-expense/10',
   debt: 'text-net-neg border-net-neg/40 bg-net-neg/15',
+  cash: 'text-net-pos border-net-pos/40 bg-net-pos/15',
   // A solid border, not a tinted one — this one is meant to be noticed.
   danger: 'text-expense border-expense bg-expense/15',
   future: 'text-future border-future/45 bg-future/12',

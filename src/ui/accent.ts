@@ -2,7 +2,7 @@
 // semantic name and look the classes up here, rather than being handed a color
 // string — Tailwind can only generate utilities it can see as literal text, and
 // a runtime `var(--color-x)` can't be tinted or given an alpha.
-export type Accent = 'income' | 'expense' | 'debt';
+export type Accent = 'income' | 'expense' | 'debt' | 'cash';
 
 interface AccentClasses {
   /** Amounts, subtotals and totals. */
@@ -31,6 +31,14 @@ export const ACCENTS: Record<Accent, AccentClasses> = {
     rail: 'border-l-expense',
     dashed: 'text-expense border-expense/55 hover:border-expense hover:bg-expense/10',
     solid: 'bg-expense text-white hover:bg-expense/90',
+  },
+  // Cash on hand is a holding, not a flow — the same blue the charts use.
+  cash: {
+    text: 'text-net-pos',
+    bar: 'bg-net-pos',
+    rail: 'border-l-net-pos',
+    dashed: 'text-net-pos border-net-pos/55 hover:border-net-pos hover:bg-net-pos/10',
+    solid: 'bg-net-pos text-white hover:bg-net-pos/90',
   },
   // Debt reads as neither income nor expense: a balance, not a flow.
   debt: {
