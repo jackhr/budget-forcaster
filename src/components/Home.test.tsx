@@ -6,6 +6,7 @@ import type { Breakdown } from '../lib/forecast';
 import type { MonthBreakdown } from '../lib/monthlyBreakdown';
 import { AuthProvider } from '../auth/AuthProvider';
 import { LayoutDashboard, Receipt } from 'lucide-react';
+import { HOME_LAYOUTS } from '../lib/homeLayout';
 
 const NAV = [
   { items: [{ id: 'home', label: 'Home', icon: LayoutDashboard }] },
@@ -31,10 +32,17 @@ const debts = [{
   group_id: null, account_id: 1, funding_allocations: [], funding_rules: [], ...stamps,
 }];
 
+const debtPlan = {
+  outflow: [120], outflowByDebt: new Map([[7, [120]]]), remaining: [2500],
+  remainingByDebt: new Map([[7, [2500]]]), interestByDebt: new Map([[7, [40]]]),
+  payoffMonthByDebt: new Map([[7, 18]]), overLimitByDebt: new Map([[7, null]]),
+  chargeOverflow: [0], totalInterest: 600, debtFreeMonthIndex: 18,
+};
+
 /** Everything Home needs beyond what a given test is actually asserting. */
 const homeProps = {
   layout: 'runway' as const, onLayoutChange: () => {}, totalCash: 12500, netWorth: nw,
-  accounts, debts, monthBreakdowns: [], onGoToPlan: () => {}, onGoToProjections: () => {},
+  accounts, debts, debtPlan, monthBreakdowns: [], onGoToPlan: () => {}, onGoToProjections: () => {},
   onGoToAccounts: () => {}, onGoToDebts: () => {},
 };
 
@@ -153,8 +161,92 @@ describe('Home layouts', () => {
     const html = renderToStaticMarkup(
       <Home {...homeProps} layout="balance" accountSeries={bd([900])} />,
     );
-    expect(html).toContain('Runway &amp; safety');
-    expect(html).toContain('Balance sheet');
-    expect(html).toContain('aria-pressed="true"');
+    for (const l of HOME_LAYOUTS) expect({ l: l.label, shown: html.includes(l.label.replace('&', '&amp;')) })
+      .toEqual({ l: l.label, shown: true });
+    expect((html.match(/aria-pressed="true"/g) ?? []).length).toBe(1);
+  });
+
+  it('renders every layout without throwing, whatever the data', () => {
+    // A layout that can't render is how the app went blank before.
+    for (const { id } of HOME_LAYOUTS) {
+      expect(() => renderToStaticMarkup(
+        <Home {...homeProps} layout={id} accountSeries={bd([900, -200])} />,
+      )).not.toThrow();
+    }
+  });
+
+  it('survives having no accounts, debts or months at all', () => {
+    for (const { id } of HOME_LAYOUTS) {
+      const empty = { ...homeProps, accounts: [], debts: [], netWorth: [], monthBreakdowns: [] };
+      expect(() => renderToStaticMarkup(
+        <Home {...empty} layout={id} accountSeries={{ labels: [], total: [], series: [] }} />,
+      )).not.toThrow();
+    }
+  });
+});
+
+describe('This month layout', () => {
+  const ev = (name: string, day: number, dir: 'in' | 'out', amount: number, paid: boolean) => ({
+    key: `${name}${day}`, day, date: `2026-10-${String(day).padStart(2, '0')}`, name,
+    kind: 'expense' as const, direction: dir, amount, detail: '', paid,
+    dateSpecified: true, liquidityChanges: [],
+  });
+
+  it('leads with what is still to pay and lists it', () => {
+    const html = renderToStaticMarkup(
+      <Home
+        {...homeProps}
+        layout="month"
+        accountSeries={bd([900])}
+        monthBreakdowns={[month([ev('Rent', 1, 'out', 1800, true), ev('Card', 20, 'out', 400, false)])]}
+      />,
+    );
+    expect(html).toContain('still to pay');
+    expect(html).toContain('Left to pay this month');
+    expect(html).toContain('Card');
+    // Already paid, so it isn't outstanding.
+    expect(html).not.toContain('Day 1');
+  });
+
+  it('says so when the month is settled', () => {
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="month" accountSeries={bd([900])}
+        monthBreakdowns={[month([ev('Rent', 1, 'out', 1800, true)])]} />,
+    );
+    expect(html).toContain('Everything scheduled this month is settled');
+  });
+
+  it('copes with no month data', () => {
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="month" accountSeries={bd([900])} monthBreakdowns={[]} />,
+    );
+    expect(html).toContain('Nothing scheduled this month yet');
+  });
+});
+
+describe('Debt payoff layout', () => {
+  it('leads with the debt-free date and the payoff order', () => {
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="payoff" accountSeries={bd([900])} />,
+    );
+    expect(html).toContain('Debt-free');
+    expect(html).toContain('Payoff order');
+    expect(html).toContain('Rewards card');
+  });
+
+  it('flags a debt that never clears instead of showing a date', () => {
+    const stuck = { ...debtPlan, payoffMonthByDebt: new Map([[7, null]]), debtFreeMonthIndex: null };
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="payoff" debtPlan={stuck} accountSeries={bd([900])} />,
+    );
+    expect(html).toContain('Not within the forecast');
+    expect(html).toContain('never clears');
+  });
+
+  it('says there is nothing to pay off when there are no debts', () => {
+    const html = renderToStaticMarkup(
+      <Home {...homeProps} layout="payoff" debts={[]} accountSeries={bd([900])} />,
+    );
+    expect(html).toContain('No debts tracked');
   });
 });

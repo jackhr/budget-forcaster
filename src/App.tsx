@@ -599,6 +599,7 @@ export default function App() {
             accountSeries={accountSeries}
             accounts={accounts}
             debts={debts}
+            debtPlan={plan}
             monthBreakdowns={[thisMonth, nextMonth]}
             onGoToPlan={() => setTab('expenses')}
             onGoToProjections={() => setTab('projections')}

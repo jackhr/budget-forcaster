@@ -2,9 +2,9 @@
 // localStorage one: it describes how someone wants to see their money, so it
 // should follow them to another device.
 //
-// Goal progress is the third layout we intend to offer. It needs the goals
+// Goal progress is one more layout we intend to offer. It needs the goals
 // entity to exist first, so it isn't listed yet — adding it means adding an id
-// here, a case in Home, and nothing else.
+// here, the same id in server/lib/settings.js, and a case in Home.
 
 export const HOME_LAYOUTS = [
   {
@@ -16,6 +16,16 @@ export const HOME_LAYOUTS = [
     id: 'balance',
     label: 'Balance sheet',
     description: 'Leads with net worth, and where the money and the debt sit.',
+  },
+  {
+    id: 'month',
+    label: 'This month',
+    description: 'Leads with how far through the month the money is, and what’s left to pay.',
+  },
+  {
+    id: 'payoff',
+    label: 'Debt payoff',
+    description: 'Leads with when you’re debt-free, and which debt clears next.',
   },
 ] as const;
 

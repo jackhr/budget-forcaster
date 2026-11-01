@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildBalanceSheet, findCashLow, findRunwayRisk, netWorthTrend, totalsFor, upcomingEvents, whenLabel } from './home';
+import { buildBalanceSheet, findCashLow, findRunwayRisk, monthProgress, netWorthTrend, payoffOrder, totalsFor, upcomingEvents, whenLabel } from './home';
+import type { MonthBreakdown } from './monthlyBreakdown';
 import type { Breakdown } from './forecast';
 import type { MonthBreakdown, MonthObligation } from './monthlyBreakdown';
 
@@ -234,5 +235,108 @@ describe('netWorthTrend', () => {
 
   it('returns null with nothing to trend', () => {
     expect(netWorthTrend([])).toBeNull();
+  });
+});
+
+describe('monthProgress', () => {
+  const ev = (name: string, day: number, dir: 'in' | 'out', amount: number, paid: boolean) => ({
+    key: `${name}${day}`, day, date: `2026-10-${String(day).padStart(2, '0')}`, name,
+    kind: 'expense' as const, direction: dir, amount, detail: '', paid,
+    dateSpecified: true, liquidityChanges: [],
+  });
+  const breakdown = (events: ReturnType<typeof ev>[]): MonthBreakdown => ({
+    year: 2026, month: 9, label: 'Oct', days: 31, events, daily: [],
+    totalIn: 0, totalOut: 0, net: 0, liquidity: [],
+  });
+  const events = [
+    ev('Paycheck', 1, 'in', 3200, true),
+    ev('Paycheck', 16, 'in', 3200, false),
+    ev('Rent', 1, 'out', 1800, true),
+    ev('Card', 20, 'out', 400, false),
+    ev('Utilities', 20, 'out', 150, false),
+  ];
+
+  it('splits each side into settled and still to come', () => {
+    const p = monthProgress(breakdown(events), new Date(2026, 9, 10));
+    expect(p.receivedIn).toBe(3200);
+    expect(p.expectedIn).toBe(3200);
+    expect(p.paidOut).toBe(1800);
+    expect(p.expectedOut).toBe(550);
+    expect(p.totalIn).toBe(6400);
+    expect(p.totalOut).toBe(2350);
+    expect(p.net).toBe(4050);
+  });
+
+  it('lists only what is still to pay, soonest first', () => {
+    const p = monthProgress(breakdown(events), new Date(2026, 9, 10));
+    expect(p.remaining.map((r) => r.name)).toEqual(['Card', 'Utilities']);
+  });
+
+  it('breaks a same-day tie by size, so the big one reads first', () => {
+    const p = monthProgress(breakdown(events), new Date(2026, 9, 10));
+    expect(p.remaining.map((r) => r.amount)).toEqual([400, 150]);
+  });
+
+  it('reports how far through the month it is', () => {
+    const p = monthProgress(breakdown(events), new Date(2026, 9, 10));
+    expect(p.dayOfMonth).toBe(10);
+    expect(p.days).toBe(31);
+    expect(p.elapsed).toBeCloseTo(10 / 31, 5);
+  });
+
+  it('treats a month that is not the current one as fully elapsed', () => {
+    // The paid flags describe a month that has already closed.
+    const p = monthProgress(breakdown(events), new Date(2027, 0, 5));
+    expect(p.dayOfMonth).toBe(31);
+    expect(p.elapsed).toBe(1);
+  });
+
+  it('handles a month with nothing in it', () => {
+    const p = monthProgress(breakdown([]), new Date(2026, 9, 10));
+    expect({ in: p.totalIn, out: p.totalOut, remaining: p.remaining.length }).toEqual({ in: 0, out: 0, remaining: 0 });
+  });
+});
+
+describe('payoffOrder', () => {
+  const debts = [
+    { id: 1, name: 'Card A', balance: 2000 },
+    { id: 2, name: 'Car loan', balance: 6000 },
+    { id: 3, name: 'Card B', balance: 2000 },
+  ];
+  const now = new Date(2026, 10, 1); // Nov 2026
+
+  it('orders by when each debt clears', () => {
+    const order = payoffOrder(debts, new Map([[1, 10], [2, 3], [3, 24]]), now);
+    expect(order.map((s) => s.name)).toEqual(['Car loan', 'Card A', 'Card B']);
+  });
+
+  it('labels the payoff month', () => {
+    const order = payoffOrder(debts, new Map([[1, 0], [2, 3], [3, 24]]), now);
+    expect(order.find((s) => s.name === 'Card A')!.label).toBe('Nov 2026');
+    expect(order.find((s) => s.name === 'Car loan')!.label).toBe('Feb 2027');
+  });
+
+  it('sinks a debt that never clears to the bottom, biggest last', () => {
+    const order = payoffOrder(debts, new Map([[1, null], [2, 3], [3, null]]), now);
+    expect(order.map((s) => s.name)).toEqual(['Car loan', 'Card A', 'Card B']);
+    expect(order[0].label).toBe('Feb 2027');
+    expect(order[1].label).toBeNull();
+    expect(order[2].label).toBeNull();
+  });
+
+  it('gives each debt its share of the total owed', () => {
+    const order = payoffOrder(debts, new Map([[1, 1], [2, 2], [3, 3]]), now);
+    expect(order.find((s) => s.name === 'Car loan')!.share).toBeCloseTo(0.6, 5);
+    expect(order.reduce((sum, s) => sum + s.share, 0)).toBeCloseTo(1, 5);
+  });
+
+  it('does not divide by zero when everything is paid off', () => {
+    const order = payoffOrder([{ id: 1, name: 'Cleared', balance: 0 }], new Map([[1, 0]]), now);
+    expect(order[0].share).toBe(0);
+  });
+
+  it('treats a debt the plan does not mention as never clearing', () => {
+    const order = payoffOrder(debts, new Map(), now);
+    expect(order.every((s) => s.monthIndex === null)).toBe(true);
   });
 });

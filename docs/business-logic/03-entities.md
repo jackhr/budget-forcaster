@@ -84,7 +84,7 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 | `inflation_rate` | Annual %, compounded monthly, **applied to expenses only**. | `0` |
 | `debt_strategy` | `none \| avalanche \| snowball` | `none` |
 | `debt_extra` | Extra monthly debt budget (ignored when strategy is `none`). | `0` |
-| `home_layout` | Which shape the Home screen takes: `runway \| balance`. | `runway` |
+| `home_layout` | Which shape the Home screen takes: `runway \| balance \| month \| payoff`. | `runway` |
 | `starting_balance` | Legacy, pre-accounts. Only used to seed the first account and as a fallback when comparing old scenarios. | — |
 
 `PUT /api/settings/:key` validates the value of every key above (`server/lib/settings.js`); an unknown key is still stored as-is. A stored value the client doesn't recognize resolves to the default rather than rendering nothing — see `src/lib/homeLayout.ts`.
@@ -97,6 +97,8 @@ Both layouts answer "where do I stand?", and differ in what they lead with. Each
 |---|---|
 | `runway` (default) | Whether any **single account** is projected to go negative, and when. A healthy total can hide one overdrawn account, so `findRunwayRisk` looks per account. |
 | `balance` | Where net worth is heading over the window, then **today's** balances on each side — what's held, and what's owed, each line as a share of its side. |
+| `month` | How far through the current month the money is: settled vs. still to come on each side, and the list of what's left to pay. Uses `paid`, so it only means anything for the month containing today — `monthProgress` treats any other month as fully elapsed. |
+| `payoff` | The debt-free date, which debt clears next, and the full payoff order. A debt whose payment can't cover its interest never clears; it sorts to the bottom and is labelled rather than given a date ([06](06-debt.md)). |
 
 **The two sides are today's balances, deliberately**, so they agree with the Accounts and Debts pages rather than with the forecast. The headline "Net worth" stat comes from the projection's first month instead, which is a different basis — so the balance layout shows no second net-worth total ([10 G10](10-known-gaps-and-decisions.md#g10)).
 

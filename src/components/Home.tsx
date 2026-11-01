@@ -2,9 +2,11 @@ import { Suspense, lazy } from 'react';
 import type { Breakdown } from '../lib/forecast';
 import type { MonthBreakdown } from '../lib/monthlyBreakdown';
 import type { Account, Debt, NetWorthPoint } from '../types';
+import type { DebtPlan } from '../lib/debt';
 import {
-  buildBalanceSheet, findCashLow, findRunwayRisk, netWorthTrend, totalsFor, upcomingEvents, whenLabel,
-  type BalanceLine, type UpcomingEvent, type UpcomingTotals,
+  buildBalanceSheet, findCashLow, findRunwayRisk, monthLabelAt, monthProgress, netWorthTrend,
+  payoffOrder, totalsFor, upcomingEvents, whenLabel,
+  type BalanceLine, type PayoffStep, type UpcomingEvent, type UpcomingTotals,
 } from '../lib/home';
 import { HOME_LAYOUTS, type HomeLayout } from '../lib/homeLayout';
 import { formatMoney } from '../lib/format';
@@ -20,6 +22,8 @@ interface Props {
   accountSeries: Breakdown;
   accounts: Account[];
   debts: Debt[];
+  /** The combined payoff plan, for the payoff layout. */
+  debtPlan: DebtPlan;
   /** This month and the next, for the upcoming list. */
   monthBreakdowns: MonthBreakdown[];
   onGoToPlan: () => void;
@@ -29,7 +33,7 @@ interface Props {
 }
 
 export default function Home({
-  layout, onLayoutChange, totalCash, netWorth, accountSeries, accounts, debts,
+  layout, onLayoutChange, totalCash, netWorth, accountSeries, accounts, debts, debtPlan,
   monthBreakdowns, onGoToPlan, onGoToProjections, onGoToAccounts, onGoToDebts,
 }: Props) {
   const risk = findRunwayRisk(accountSeries);
@@ -79,6 +83,25 @@ export default function Home({
           onGoToAccounts={onGoToAccounts}
           onGoToDebts={onGoToDebts}
           onGoToProjections={onGoToProjections}
+        />
+      ) : layout === 'month' ? (
+        <MonthLayout
+          month={monthBreakdowns[0]}
+          chartData={chartData}
+          lowIndex={low?.monthIndex}
+          events={events}
+          totals={totals}
+          onGoToPlan={onGoToPlan}
+        />
+      ) : layout === 'payoff' ? (
+        <PayoffLayout
+          debts={debts}
+          plan={debtPlan}
+          chartData={chartData}
+          lowIndex={low?.monthIndex}
+          events={events}
+          totals={totals}
+          onGoToDebts={onGoToDebts}
         />
       ) : (
         <RunwayLayout
@@ -304,6 +327,214 @@ function SideCard({
         {actionLabel}
       </Button>
     </Card>
+  );
+}
+
+
+/* ------------------------------ This month ------------------------------- */
+
+function MonthLayout({
+  month, chartData, lowIndex, events, totals, onGoToPlan,
+}: {
+  month?: MonthBreakdown;
+  chartData: ChartPoint[];
+  lowIndex?: number;
+  events: UpcomingEvent[];
+  totals: UpcomingTotals;
+  onGoToPlan: () => void;
+}) {
+  if (!month) {
+    return (
+      <Card className="p-5">
+        <p className="text-[13px] text-muted">Nothing scheduled this month yet.</p>
+      </Card>
+    );
+  }
+  const progress = monthProgress(month);
+  const left = progress.expectedOut;
+
+  return (
+    <>
+      <Card className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted">
+              {month.label} · day {progress.dayOfMonth} of {progress.days}
+            </p>
+            <p className="mt-1.5 text-[15px] font-semibold">
+              {left > 0.005 ? (
+                <>
+                  <span className="text-expense">{formatMoney(left, { whole: true })}</span> still to pay
+                  {progress.expectedIn > 0.005 && (
+                    <>, <span className="text-income">{formatMoney(progress.expectedIn, { whole: true })}</span> still to come in</>
+                  )}.
+                </>
+              ) : (
+                <>Everything scheduled this month is settled.</>
+              )}
+            </p>
+            <p className="mt-1 text-[13px] text-muted">
+              {formatMoney(progress.paidOut, { whole: true })} of{' '}
+              {formatMoney(progress.totalOut, { whole: true })} paid so far.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={onGoToPlan}>Open plan</Button>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2">
+          <Meter label="Money out" done={progress.paidOut} total={progress.totalOut} barClass="bg-expense" />
+          <Meter label="Money in" done={progress.receivedIn} total={progress.totalIn} barClass="bg-income" />
+        </div>
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+        <Card className="flex flex-col p-5">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[15px] font-semibold tracking-tight">Left to pay this month</h2>
+            <span className="text-[13px] font-semibold text-expense">
+              {formatMoney(left, { whole: true })}
+            </span>
+          </div>
+          {progress.remaining.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-muted">Nothing outstanding.</p>
+          ) : (
+            <ul className="-mx-2 flex max-h-[320px] flex-col overflow-y-auto">
+              {progress.remaining.map((item) => (
+                <li key={item.key} className="flex items-baseline gap-3 rounded-control px-2 py-1.5 hover:bg-surface-2">
+                  <span className="w-[42px] shrink-0 text-[11.5px] text-muted">
+                    {item.dateSpecified ? `Day ${item.day}` : '—'}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px]" title={item.detail}>{item.name}</span>
+                  <span className="shrink-0 text-[13px] font-semibold tabular-nums">
+                    {formatMoney(item.amount, { whole: true })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <UpcomingCard events={events} totals={totals} />
+      </div>
+
+      <TrajectoryCard title="Cash and debt, next 12 months" data={chartData} lowIndex={lowIndex} />
+    </>
+  );
+}
+
+/** A labelled progress bar. `total` of 0 renders an empty track, not a full one. */
+function Meter({ label, done, total, barClass }: { label: string; done: number; total: number; barClass: string }) {
+  const pct = total > 0.005 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3 text-[12px]">
+        <span className="text-muted">{label}</span>
+        <span className="tabular-nums text-muted">
+          {formatMoney(done, { whole: true })} / {formatMoney(total, { whole: true })}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
+        {/* A proportion, so the width has to be computed. */}
+        <div className={cx('h-full rounded-full', barClass)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ Debt payoff ------------------------------ */
+
+function PayoffLayout({
+  debts, plan, chartData, lowIndex, events, totals, onGoToDebts,
+}: {
+  debts: Debt[];
+  plan: DebtPlan;
+  chartData: ChartPoint[];
+  lowIndex?: number;
+  events: UpcomingEvent[];
+  totals: UpcomingTotals;
+  onGoToDebts: () => void;
+}) {
+  const steps = payoffOrder(debts, plan.payoffMonthByDebt);
+  const next = steps.find((s) => s.monthIndex != null) ?? null;
+  const stuck = steps.filter((s) => s.monthIndex == null);
+  const freeLabel = plan.debtFreeMonthIndex != null ? monthLabelAt(plan.debtFreeMonthIndex) : null;
+
+  return (
+    <>
+      <Card className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Debt-free</p>
+            {debts.length === 0 ? (
+              <p className="mt-1.5 text-[15px] font-semibold text-income">No debts tracked.</p>
+            ) : freeLabel ? (
+              <>
+                <p className="mt-1.5 text-3xl font-semibold tracking-tight">{freeLabel}</p>
+                <p className="mt-1 text-[13px] text-muted">
+                  {plan.debtFreeMonthIndex} month{plan.debtFreeMonthIndex === 1 ? '' : 's'} away
+                  {plan.totalInterest > 1 && <> · {formatMoney(plan.totalInterest, { whole: true })} interest between now and then</>}
+                  {next && <> · {next.name} clears first, in {next.label}</>}.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1.5 text-[15px] font-semibold text-expense">Not within the forecast.</p>
+                <p className="mt-1 text-[13px] text-muted">
+                  {stuck.length > 0
+                    ? `${stuck.map((s) => s.name).join(', ')} ${stuck.length === 1 ? 'does' : 'do'} not clear — the payment may not cover the interest.`
+                    : 'No debt clears inside the projected horizon.'}
+                </p>
+              </>
+            )}
+          </div>
+          <Button variant="secondary" onClick={onGoToDebts}>Open debts</Button>
+        </div>
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+        <Card className="flex flex-col p-5">
+          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Payoff order</h2>
+          {steps.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-muted">Nothing to pay off.</p>
+          ) : (
+            <ol className="flex flex-col gap-2.5">
+              {steps.map((step, i) => <PayoffRow key={step.id} step={step} position={i + 1} />)}
+            </ol>
+          )}
+        </Card>
+
+        <UpcomingCard events={events} totals={totals} />
+      </div>
+
+      <TrajectoryCard title="Cash and debt, next 12 months" data={chartData} lowIndex={lowIndex} />
+    </>
+  );
+}
+
+function PayoffRow({ step, position }: { step: PayoffStep; position: number }) {
+  const never = step.monthIndex == null;
+  return (
+    <li>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0 flex-1 truncate text-[13px]">
+          <span className="mr-1.5 text-[11px] font-bold text-faint">{position}</span>
+          {step.name}
+        </span>
+        <span className={cx('shrink-0 text-[12.5px] font-semibold', never ? 'text-expense' : 'text-muted')}>
+          {never ? 'never clears' : step.label}
+        </span>
+        <span className="w-[76px] shrink-0 text-right text-[13px] font-semibold tabular-nums">
+          {formatMoney(step.balance, { whole: true })}
+        </span>
+      </div>
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-2">
+        {/* A proportion, so the width has to be computed. */}
+        <div
+          className={cx('h-full rounded-full', never ? 'bg-expense' : 'bg-net-neg')}
+          style={{ width: `${Math.round(step.share * 100)}%` }}
+        />
+      </div>
+    </li>
   );
 }
 

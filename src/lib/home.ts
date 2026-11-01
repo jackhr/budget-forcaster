@@ -227,3 +227,124 @@ export function netWorthTrend(points: { label: string; netWorth: number }[], mon
     monthsAhead: lastIndex,
   };
 }
+
+/* ------------------------------ This month ------------------------------ */
+
+export interface MonthProgress {
+  /** Money already received and already paid this month. */
+  receivedIn: number;
+  paidOut: number;
+  /** Still expected before month end. */
+  expectedIn: number;
+  expectedOut: number;
+  /** Everything, settled or not. */
+  totalIn: number;
+  totalOut: number;
+  net: number;
+  dayOfMonth: number;
+  days: number;
+  /** How far through the month we are, 0–1. */
+  elapsed: number;
+  /** Obligations left to pay, soonest first. */
+  remaining: MonthObligation[];
+}
+
+/**
+ * How far through the current month the money has got. Splits each side into
+ * what has settled and what is still to come, so "I have £2k left to pay" is
+ * answerable without reading the calendar.
+ *
+ * Only meaningful for the month that contains `now`; for any other month the
+ * paid flags describe a month that has already closed or not yet opened.
+ */
+export function monthProgress(month: MonthBreakdown, now: Date = new Date()): MonthProgress {
+  let receivedIn = 0;
+  let paidOut = 0;
+  let expectedIn = 0;
+  let expectedOut = 0;
+  const remaining: MonthObligation[] = [];
+
+  for (const event of month.events) {
+    const settled = event.paid;
+    if (event.direction === 'in') {
+      if (settled) receivedIn += event.amount;
+      else expectedIn += event.amount;
+    } else if (settled) {
+      paidOut += event.amount;
+    } else {
+      expectedOut += event.amount;
+      remaining.push(event);
+    }
+  }
+
+  remaining.sort((a, b) => a.day - b.day || b.amount - a.amount);
+
+  const isThisMonth = now.getFullYear() === month.year && now.getMonth() === month.month;
+  const dayOfMonth = isThisMonth ? now.getDate() : month.days;
+
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return {
+    receivedIn: round(receivedIn),
+    paidOut: round(paidOut),
+    expectedIn: round(expectedIn),
+    expectedOut: round(expectedOut),
+    totalIn: round(receivedIn + expectedIn),
+    totalOut: round(paidOut + expectedOut),
+    net: round(receivedIn + expectedIn - paidOut - expectedOut),
+    dayOfMonth,
+    days: month.days,
+    elapsed: month.days > 0 ? Math.min(1, dayOfMonth / month.days) : 0,
+    remaining,
+  };
+}
+
+/* ------------------------------ Debt payoff ------------------------------ */
+
+export interface PayoffStep {
+  id: number;
+  name: string;
+  balance: number;
+  /** Month index it clears, or null if not within the horizon. */
+  monthIndex: number | null;
+  /** "Mar 2028", or null when it never clears. */
+  label: string | null;
+  /** Share of the current total owed, 0–1. */
+  share: number;
+}
+
+interface PayoffDebt { id: number; name: string; balance: number }
+
+/** When each debt clears, in the order the plan clears them. */
+export function payoffOrder(
+  debts: PayoffDebt[],
+  payoffMonthByDebt: Map<number, number | null>,
+  now: Date = new Date(),
+): PayoffStep[] {
+  const total = debts.reduce((sum, d) => sum + d.balance, 0);
+  return debts
+    .map((debt) => {
+      const monthIndex = payoffMonthByDebt.get(debt.id) ?? null;
+      return {
+        id: debt.id,
+        name: debt.name,
+        balance: debt.balance,
+        monthIndex,
+        label: monthIndex == null ? null : monthLabelAt(monthIndex, now),
+        share: total > 0 ? debt.balance / total : 0,
+      };
+    })
+    // Soonest payoff first; anything that never clears sinks to the bottom,
+    // ordered by balance so the biggest problem is at the end.
+    .sort((a, b) => {
+      if (a.monthIndex == null && b.monthIndex == null) return b.balance - a.balance;
+      if (a.monthIndex == null) return 1;
+      if (b.monthIndex == null) return -1;
+      return a.monthIndex - b.monthIndex || b.balance - a.balance;
+    });
+}
+
+/** "Mar 2028" for a month index counted from the current month. */
+export function monthLabelAt(monthIndex: number, now: Date = new Date()): string {
+  const d = new Date(now.getFullYear(), now.getMonth() + monthIndex, 1);
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
