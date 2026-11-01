@@ -128,8 +128,8 @@ export default function Transactions() {
           <select value={days} onChange={(e) => setDays(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={selectStyle}>
             {DAY_OPTIONS.map((d) => <option key={d} value={d}>{d === 'all' ? 'All available' : `Last ${d} days`}</option>)}
           </select>
-          <button onClick={refresh} disabled={syncing || loading} title="Pull the latest from Plaid" style={{ ...selectStyle, cursor: 'pointer' }}>
-            {syncing ? 'Refreshing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Refresh</>}
+          <button onClick={refresh} disabled={syncing || loading} title="Pull the latest from Plaid" style={{ ...selectStyle, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            {syncing ? 'Refreshing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" />Refresh</>}
           </button>
         </div>
       </div>
@@ -145,9 +145,11 @@ export default function Transactions() {
 
       {loading && <p style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>Loading transactions…</p>}
       {error && (
-        <div style={{ background: '#3b2f12', border: '1px solid #854d0e', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fde68a' }}>
-          <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" /> {error}
+        <div style={{ background: '#3b2f12', border: '1px solid #854d0e', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fde68a', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+          <span>{error}
           {/PRODUCT_NOT_READY/.test(error) && <> — Plaid is still preparing this item’s transactions. Try again in a moment.</>}
+          </span>
         </div>
       )}
       {!loading && !error && txns.length === 0 && (

@@ -170,6 +170,18 @@
     cursor: not-allowed;
   }
 
+  /* Preflight sets `svg { display: block }`, which drops an icon onto its own
+     line whenever it sits beside text in a container that isn't flex — the
+     label ends up stacked under the glyph. Icons are inline by default instead.
+
+     This is safe in a flex or grid container too: a flex/grid item is
+     blockified regardless of its own display value. A utility still wins, so
+     `block` on an icon does what it says. Only Lucide icons are targeted, so
+     the standalone brand-mark SVGs keep preflight's behaviour. */
+  svg.lucide {
+    display: inline-block;
+  }
+
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }

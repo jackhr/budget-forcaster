@@ -257,6 +257,7 @@ export default function BreakdownChart({ title, subtitle, breakdown, startMonth,
                 style={{
                   background: showLimits ? 'var(--color-surface-2)' : 'transparent', color: showLimits ? 'var(--color-text)' : 'var(--color-text-muted)',
                   border: '1px solid var(--color-border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, marginLeft: 4,
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
                 }}
               >
                 {showLimits && <Check size={12} strokeWidth={2.6} aria-hidden="true" />}Credit limits

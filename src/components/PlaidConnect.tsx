@@ -220,7 +220,7 @@ export default function PlaidConnect({ onImported }: Props) {
       {accounts.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
           {accounts.some((a) => a.imported) && (
-            <button onClick={() => resync()} disabled={syncingId != null} title="Update every imported balance from Plaid" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 13, fontWeight: 600 }}>
+            <button onClick={() => resync()} disabled={syncingId != null} title="Update every imported balance from Plaid" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               {syncingId === '__all__' ? 'Syncing all…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Sync all</>}
             </button>
           )}
@@ -271,8 +271,8 @@ function InstitutionBlock({ item, itemAccounts, selected, onToggleSelect, onResy
             </button>
           )}
           {hasImported && (
-            <button onClick={onResync} disabled={syncingAny} title="Update this bank's imported balances" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12 }}>
-              {syncing ? 'Syncing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" /> Sync</>}
+            <button onClick={onResync} disabled={syncingAny} title="Update this bank's imported balances" style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '3px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {syncing ? 'Syncing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" />Sync</>}
             </button>
           )}
           <ConfirmButton onConfirm={onUnlink} title={`Unlink ${item.institution_name ?? 'institution'}`}>Unlink</ConfirmButton>
@@ -359,8 +359,9 @@ function ImportedBadge() {
     <span style={{
       fontSize: 10, fontWeight: 600, marginLeft: 8, padding: '1px 6px', borderRadius: 5,
       color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+      display: 'inline-flex', alignItems: 'center', gap: 4,
     }}>
-      <Check size={13} strokeWidth={2.6} aria-hidden="true" /> Imported
+      <Check size={12} strokeWidth={2.6} aria-hidden="true" />Imported
     </span>
   );
 }
