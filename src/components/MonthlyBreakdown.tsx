@@ -3,6 +3,7 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import type { MonthBreakdown, MonthObligation, MonthObligationKind } from '../lib/monthlyBreakdown';
 import { formatCompactMoney, formatMoney, formatSignedMoney } from '../lib/format';
 import MonthControl from './MonthControl';
+import { Panel, Segmented, cx } from '../ui';
 
 interface Props {
   breakdown: MonthBreakdown;
@@ -11,18 +12,28 @@ interface Props {
   initialView: 'daily' | 'calendar';
 }
 
-const KIND: Record<MonthObligationKind, { label: string; color: string }> = {
-  income: { label: 'Income', color: 'var(--color-income)' },
-  expense: { label: 'Expense', color: 'var(--color-expense)' },
-  debt: { label: 'Debt', color: '#a78bfa' },
+// The rule down the left edge of a calendar event, by what kind of thing it is.
+const KIND_RAIL: Record<MonthObligationKind, string> = {
+  income: 'border-l-income',
+  expense: 'border-l-expense',
+  debt: 'border-l-kind-debt',
 };
 
-function LegendSwatch({ color, label }: { color: string; label: string }) {
+function LegendSwatch({ className, label }: { className: string; label: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color }}>
-      <span style={{ width: 14, height: 2, borderRadius: 1, background: color, display: 'inline-block' }} />
+    <span className={cx('inline-flex items-center gap-1.5', className)}>
+      <span className="inline-block h-0.5 w-3.5 rounded-sm bg-current" />
       {label}
     </span>
+  );
+}
+
+/** The shell every chart tooltip in this view shares. */
+function TooltipCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cx('rounded-lg border border-border bg-surface-2 px-3.5 py-2.5 text-[12px] shadow-pop', className)}>
+      {children}
+    </div>
   );
 }
 
@@ -35,50 +46,57 @@ function DailyTooltip({ active, payload, label }: { active?: boolean; payload?: 
   const row = payload[0].payload;
   const incoming = row.events.filter((event) => event.direction === 'in');
   const outgoing = row.events.filter((event) => event.direction === 'out');
-  const items = (events: MonthObligation[], color: string, sign: string) => events.map((event) => (
-    <div key={event.key} style={{ display: 'flex', gap: 12, justifyContent: 'space-between', marginTop: 4 }}>
-      <span style={{ color: 'var(--color-text)' }}>
+  const items = (events: MonthObligation[], className: string, sign: string) => events.map((event) => (
+    <div key={event.key} className="mt-1 flex justify-between gap-3">
+      <span className="text-text">
         {event.name}
-        <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}> · {event.paid ? (event.kind === 'income' ? 'received' : 'paid') : 'expected'} · {event.detail}</span>
+        <span className="text-[10px] text-muted"> · {event.paid ? (event.kind === 'income' ? 'received' : 'paid') : 'expected'} · {event.detail}</span>
       </span>
-      <strong style={{ color, whiteSpace: 'nowrap' }}>{sign}{formatMoney(event.amount)}</strong>
+      <strong className={cx('whitespace-nowrap', className)}>{sign}{formatMoney(event.amount)}</strong>
     </div>
   ));
   return (
-    <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12, minWidth: 280, maxWidth: 460 }}>
+    <TooltipCard className="min-w-[280px] max-w-[460px]">
       <strong>Day {label}</strong>
       {incoming.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <p style={{ color: 'var(--color-income)', fontWeight: 700 }}>Money in · +{formatMoney(row.dailyIn)}</p>
-          {items(incoming, 'var(--color-income)', '+')}
+        <div className="mt-2">
+          <p className="font-bold text-income">Money in · +{formatMoney(row.dailyIn)}</p>
+          {items(incoming, 'text-income', '+')}
         </div>
       )}
       {outgoing.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <p style={{ color: 'var(--color-expense)', fontWeight: 700 }}>Money out · −{formatMoney(row.dailyOut)}</p>
-          {items(outgoing, 'var(--color-expense)', '−')}
+        <div className="mt-2">
+          <p className="font-bold text-expense">Money out · −{formatMoney(row.dailyOut)}</p>
+          {items(outgoing, 'text-expense', '−')}
         </div>
       )}
-      {row.events.length === 0 && <p style={{ color: 'var(--color-text-muted)', marginTop: 6 }}>No activity scheduled.</p>}
-      <p style={{ color: 'var(--color-text-muted)', marginTop: 6 }}>Cumulative net: {formatSignedMoney(row.net)}</p>
-    </div>
+      {row.events.length === 0 && <p className="mt-1.5 text-muted">No activity scheduled.</p>}
+      <p className="mt-1.5 text-muted">Cumulative net: {formatSignedMoney(row.net)}</p>
+    </TooltipCard>
   );
 }
 
 function Event({ event }: { event: MonthObligation }) {
-  const meta = KIND[event.kind];
   return (
-    <div title={`${event.name} · ${event.detail} · ${formatMoney(event.amount)}`} style={{
-      borderLeft: `3px solid ${meta.color}`, background: 'var(--color-bg)', borderRadius: 5,
-      padding: '4px 6px', opacity: event.paid ? 0.55 : 1, minWidth: 0,
-    }}>
-      <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between', alignItems: 'baseline', minWidth: 0 }}>
-        <strong style={{ fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{event.name}</strong>
-        <span style={{ fontSize: 10, color: event.direction === 'in' ? 'var(--color-income)' : 'var(--color-expense)', whiteSpace: 'nowrap', textDecoration: event.paid ? 'line-through' : 'none' }}>
+    <div
+      title={`${event.name} · ${event.detail} · ${formatMoney(event.amount)}`}
+      className={cx(
+        'min-w-0 rounded-md border-l-[3px] bg-bg px-1.5 py-1',
+        KIND_RAIL[event.kind],
+        event.paid && 'opacity-55',
+      )}
+    >
+      <div className="flex min-w-0 items-baseline justify-between gap-1">
+        <strong className="min-w-0 flex-1 truncate text-[10.5px]">{event.name}</strong>
+        <span className={cx(
+          'whitespace-nowrap text-[10px]',
+          event.direction === 'in' ? 'text-income' : 'text-expense',
+          event.paid && 'line-through',
+        )}>
           {event.direction === 'in' ? '+' : '−'}{formatMoney(event.amount, { whole: true })}
         </span>
       </div>
-      <div style={{ color: 'var(--color-text-muted)', fontSize: 9.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div className="truncate text-[9.5px] text-muted">
         {!event.dateSpecified ? 'Date not set · ' : ''}{event.paid ? `${event.kind === 'income' ? 'Received' : 'Paid'} · ` : ''}{event.detail}
       </div>
     </div>
@@ -126,51 +144,59 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
   const scopedTotalOut = scopedDaily[scopedDaily.length - 1]?.moneyOut ?? 0;
   const scopedNet = roundForDisplay(scopedTotalIn - scopedTotalOut);
 
-  const card = (label: string, value: string, color: string) => (
-    <div style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', minWidth: 130 }}>
-      <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{label}</div>
-      <div style={{ color, fontSize: 18, fontWeight: 700, marginTop: 2 }}>{value}</div>
+  const card = (label: string, value: string, className: string) => (
+    <div className="min-w-[130px] rounded-control border border-border bg-bg px-3.5 py-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
+      <div className={cx('mt-0.5 text-lg font-bold tabular-nums', className)}>{value}</div>
     </div>
   );
 
   return (
-    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Monthly Obligations</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 2 }}>Completed and expected inflows and obligations across {breakdown.label}</p>
+    <Panel className="p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold tracking-tight">Monthly Obligations</h2>
+          <p className="mt-0.5 text-[13px] text-muted">
+            Completed and expected inflows and obligations across {breakdown.label}
+          </p>
         </div>
         <MonthControl month={month} onMonthChange={onMonthChange} />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        {card('Money in', formatMoney(scopedTotalIn, { whole: true }), 'var(--color-income)')}
-        {card('Money out', formatMoney(scopedTotalOut, { whole: true }), 'var(--color-expense)')}
-        {card('Net', formatSignedMoney(scopedNet, { whole: true }), scopedNet >= 0 ? 'var(--color-income)' : 'var(--color-expense)')}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        {card('Money in', formatMoney(scopedTotalIn, { whole: true }), 'text-income')}
+        {card('Money out', formatMoney(scopedTotalOut, { whole: true }), 'text-expense')}
+        {card('Net', formatSignedMoney(scopedNet, { whole: true }), scopedNet >= 0 ? 'text-income' : 'text-expense')}
+        <div className="ml-auto flex flex-wrap items-end justify-end gap-2.5">
           {view !== 'liquidity' && (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Bank account</span>
-              <select value={accountScope} onChange={(event) => setAccountScope(event.target.value)} style={{ minWidth: 220, minHeight: 36, paddingTop: 6, paddingBottom: 6 }}>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Bank account</span>
+              <select
+                value={accountScope}
+                onChange={(event) => setAccountScope(event.target.value)}
+                className="min-h-9 min-w-[220px] py-1.5"
+              >
                 <option value="all">All obligations</option>
                 <option value="accounts">All cash accounts</option>
                 {accountOptions.map((option) => <option key={option.key} value={option.key}>{option.name}</option>)}
               </select>
             </label>
           )}
-          <div style={{ display: 'flex', gap: 4, background: 'var(--color-bg)', padding: 4, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-            {(['daily', 'calendar', 'liquidity'] as const).map((option) => (
-              <button key={option} onClick={() => setView(option)} style={{
-                background: view === option ? 'var(--color-primary)' : 'transparent', color: view === option ? '#fff' : 'var(--color-text-muted)',
-                border: 'none', borderRadius: 5, padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'capitalize',
-              }}>{option === 'daily' ? 'Daily chart' : option === 'calendar' ? 'Calendar' : 'Liquidity'}</button>
-            ))}
-          </div>
+          <Segmented
+            ariaLabel="Month view"
+            options={[
+              { id: 'daily', label: 'Daily chart' },
+              { id: 'calendar', label: 'Calendar' },
+              { id: 'liquidity', label: 'Liquidity' },
+            ]}
+            value={view}
+            onChange={setView}
+          />
         </div>
       </div>
 
       {view === 'daily' ? (
-        <div style={{ marginTop: 20 }}>
+        <div className="mt-5">
           <ResponsiveContainer width="100%" height={390}>
             <LineChart data={scopedDaily} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
@@ -183,23 +209,40 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
               <Line type="stepAfter" dataKey="net" name="Cumulative net" stroke="var(--color-text)" strokeWidth={3} dot={false} />
             </LineChart>
           </ResponsiveContainer>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 16, color: 'var(--color-text-muted)', fontSize: 11, flexWrap: 'wrap' }}>
-            <LegendSwatch color="var(--color-income)" label="Money in" /><LegendSwatch color="var(--color-expense)" label="Money out" /><LegendSwatch color="var(--color-text)" label="Net" />
+          <div className="flex flex-wrap justify-center gap-4 text-[11px] text-muted">
+            <LegendSwatch className="text-income" label="Money in" />
+            <LegendSwatch className="text-expense" label="Money out" />
+            <LegendSwatch className="text-text" label="Net" />
           </div>
         </div>
       ) : view === 'calendar' ? (
-        <div style={{ marginTop: 20, width: '100%' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6, marginBottom: 6 }}>
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} style={{ color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', minWidth: 0 }}>{day}</div>)}
+        <div className="mt-5 w-full">
+          <div className="mb-1.5 grid grid-cols-7 gap-1.5">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              <div key={day} className="min-w-0 text-center text-[10px] font-bold uppercase text-muted">{day}</div>
+            ))}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6 }}>
+          <div className="grid grid-cols-7 gap-1.5">
             {cells.map((day, index) => {
               const events = day ? scopedEvents.filter((event) => event.day === day) : [];
               const current = !!day && isCurrentMonth && day === today.getDate();
               return (
-                <div key={index} style={{ minHeight: 132, minWidth: 0, overflow: 'hidden', background: day ? 'var(--color-surface-2)' : 'transparent', border: `1px solid ${current ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 7, padding: 6 }}>
-                  {day && <div style={{ fontSize: 11, fontWeight: 700, color: current ? 'var(--color-primary)' : 'var(--color-text-muted)', marginBottom: 5 }}>{day}</div>}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>{events.map((event) => <Event key={event.key} event={event} />)}</div>
+                <div
+                  key={index}
+                  className={cx(
+                    'min-h-[132px] min-w-0 overflow-hidden rounded-lg border p-1.5',
+                    day ? 'bg-surface-2' : 'bg-transparent',
+                    current ? 'border-primary' : 'border-border',
+                  )}
+                >
+                  {day && (
+                    <div className={cx('mb-1.5 text-[11px] font-bold', current ? 'text-primary' : 'text-muted')}>
+                      {day}
+                    </div>
+                  )}
+                  <div className="flex min-w-0 flex-col gap-1">
+                    {events.map((event) => <Event key={event.key} event={event} />)}
+                  </div>
                 </div>
               );
             })}
@@ -208,7 +251,7 @@ export default function MonthlyBreakdown({ breakdown, month, onMonthChange, init
       ) : (
         <LiquidityChart breakdown={breakdown} selected={liquidityKey} onSelect={setLiquidityKey} />
       )}
-    </div>
+    </Panel>
   );
 }
 
@@ -220,17 +263,17 @@ function LiquidityChart({ breakdown, selected, onSelect }: { breakdown: MonthBre
   const todayLabel = today.getFullYear() === breakdown.year && today.getMonth() === breakdown.month ? String(today.getDate()) : null;
 
   return (
-    <div style={{ marginTop: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div>
-          <h3 style={{ fontSize: 14, fontWeight: 600 }}>Available to Play With</h3>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+    <div className="mt-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold tracking-tight">Available to Play With</h3>
+          <p className="mt-0.5 text-[11.5px] text-muted">
             Reconstructed completed activity through today, followed by expected cash and card-credit changes.
           </p>
         </div>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Liquidity source</span>
-          <select value={selected} onChange={(event) => onSelect(event.target.value)} style={{ minWidth: 220 }}>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Liquidity source</span>
+          <select value={selected} onChange={(event) => onSelect(event.target.value)} className="min-w-[220px]">
             <option value="total">All liquidity</option>
             <option value="accounts">All cash accounts</option>
             <optgroup label="Cash accounts">
@@ -242,8 +285,8 @@ function LiquidityChart({ breakdown, selected, onSelect }: { breakdown: MonthBre
           </select>
         </label>
       </div>
-      <div style={{ color: finalValue > 0 ? 'var(--color-income)' : 'var(--color-expense)', fontSize: 20, fontWeight: 700, marginBottom: 6 }}>
-        {formatMoney(finalValue)} <span style={{ color: 'var(--color-text-muted)', fontSize: 11, fontWeight: 500 }}>available at month end</span>
+      <div className={cx('mb-1.5 text-xl font-bold tabular-nums', finalValue > 0 ? 'text-income' : 'text-expense')}>
+        {formatMoney(finalValue)} <span className="text-[11px] font-medium text-muted">available at month end</span>
       </div>
       <ResponsiveContainer width="100%" height={390}>
         <LineChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
@@ -278,20 +321,20 @@ function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?
   };
   const to = grouped('to');
   const from = grouped('from');
-  const section = (title: string, groups: ReturnType<typeof grouped>, color: string) => groups.length > 0 && (
-    <div style={{ marginTop: 9 }}>
-      <p style={{ color, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</p>
+  const section = (title: string, groups: ReturnType<typeof grouped>, className: string) => groups.length > 0 && (
+    <div className="mt-2">
+      <p className={cx('text-[10px] font-bold uppercase tracking-wider', className)}>{title}</p>
       {groups.map((group) => (
-        <div key={`${title}:${group.name}`} style={{ marginTop: 6 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-            <strong style={{ fontSize: 11.5 }}>{group.name}</strong>
-            <strong style={{ color, whiteSpace: 'nowrap' }}>{formatSignedMoney(group.total)}</strong>
+        <div key={`${title}:${group.name}`} className="mt-1.5">
+          <div className="flex justify-between gap-3">
+            <strong className="text-[11.5px]">{group.name}</strong>
+            <strong className={cx('whitespace-nowrap', className)}>{formatSignedMoney(group.total)}</strong>
           </div>
-          <div style={{ borderLeft: '1px solid var(--color-border)', marginLeft: 3, paddingLeft: 8 }}>
+          <div className="ml-[3px] border-l border-border pl-2">
             {group.items.map((item, index) => (
-              <div key={`${item.key}:${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 2, color: 'var(--color-text-muted)', fontSize: 10.5 }}>
+              <div key={`${item.key}:${index}`} className="mt-0.5 flex justify-between gap-3 text-[10.5px] text-muted">
                 <span>{item.name}</span>
-                <span style={{ whiteSpace: 'nowrap' }}>{formatSignedMoney(item.amount)}</span>
+                <span className="whitespace-nowrap">{formatSignedMoney(item.amount)}</span>
               </div>
             ))}
           </div>
@@ -300,16 +343,16 @@ function LiquidityTooltip({ active, payload, label, name, seriesKey }: { active?
     </div>
   );
   return (
-    <div style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12, minWidth: 240, maxWidth: 420 }}>
+    <TooltipCard className="min-w-[240px] max-w-[420px]">
       <strong>Day {label} · {name}</strong>
-      <p style={{ color: 'var(--color-primary)', fontWeight: 700, marginTop: 6 }}>{formatMoney(row.liquidity)} available</p>
+      <p className="mt-1.5 font-bold text-primary">{formatMoney(row.liquidity)} available</p>
       {effects.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Day’s balance changes</p>
-          {section('To', to, 'var(--color-income)')}
-          {section('From', from, 'var(--color-expense)')}
+        <div className="mt-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Day’s balance changes</p>
+          {section('To', to, 'text-income')}
+          {section('From', from, 'text-expense')}
         </div>
       )}
-    </div>
+    </TooltipCard>
   );
 }

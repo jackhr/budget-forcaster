@@ -28,6 +28,9 @@
   --color-net-pos: #38bdf8;
   --color-net-neg: #fb923c;
   --color-future: #fb923c;
+  /* The calendar's debt events. Deliberately not the debt accent: in a month
+     grid, orange next to the expense red is hard to tell apart. */
+  --color-kind-debt: #a78bfa;
   --color-warning: #fbbf24;
   --color-danger: #f43f5e;
 

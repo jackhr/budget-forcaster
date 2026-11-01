@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { plaidApi, type PlaidAccount, type PlaidStatus, type PlaidTransaction } from '../api/client';
 import { formatMoney } from '../lib/format';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import { Banner, Button, EmptyState, Panel, cx } from '../ui';
 
 const DAY_OPTIONS: (number | 'all')[] = ['all', 30, 90, 180, 365, 730];
 
@@ -77,7 +78,7 @@ export default function Transactions() {
     return { spend, refunds };
   }, [txns]);
 
-  // Group transactions by date for a Rocket-Money-style sectioned list.
+  // Group transactions by date for a sectioned list.
   const groups = useMemo(() => {
     const map = new Map<string, PlaidTransaction[]>();
     for (const t of txns) {
@@ -87,96 +88,87 @@ export default function Transactions() {
     return [...map.entries()];
   }, [txns]);
 
-  const card: React.CSSProperties = {
-    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius)', padding: 20,
-  };
-
   if (status && (!status.configured || status.items.length === 0)) {
     return (
-      <div style={card}>
-        <h2 style={{ fontSize: 16, fontWeight: 600 }}>Transactions</h2>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 6 }}>
+      <Panel>
+        <h2 className="text-base font-semibold tracking-tight">Transactions</h2>
+        <p className="mt-1.5 text-[13px] text-muted">
           Link a bank under <strong>Account</strong> (Connect a bank) to see transaction history here.
         </p>
-      </div>
+      </Panel>
     );
   }
 
-  const selectStyle: React.CSSProperties = {
-    background: 'var(--color-bg)', border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-sm)', color: 'var(--color-text)', padding: '6px 10px', fontSize: 13, fontWeight: 600,
-  };
-
   return (
-    <div style={card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Transactions</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 2 }}>
-            Available activity cached from Plaid.
-          </p>
+    <Panel>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold tracking-tight">Transactions</h2>
+          <p className="mt-0.5 text-[12.5px] text-muted">Available activity cached from Plaid.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <select value={accountId ?? ''} onChange={(e) => setAccountId(e.target.value || null)} style={selectStyle}>
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={accountId ?? ''}
+            onChange={(e) => setAccountId(e.target.value || null)}
+            className="font-semibold"
+          >
             {accounts.map((a) => (
               <option key={a.account_id} value={a.account_id}>
                 {a.name}{a.mask ? ` ••${a.mask}` : ''}{a.type === 'credit' ? ' (card)' : ''}
               </option>
             ))}
           </select>
-          <select value={days} onChange={(e) => setDays(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={selectStyle}>
+          <select
+            value={days}
+            onChange={(e) => setDays(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            className="font-semibold"
+          >
             {DAY_OPTIONS.map((d) => <option key={d} value={d}>{d === 'all' ? 'All available' : `Last ${d} days`}</option>)}
           </select>
-          <button onClick={refresh} disabled={syncing || loading} title="Pull the latest from Plaid" style={{ ...selectStyle, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Button onClick={refresh} disabled={syncing || loading} title="Pull the latest from Plaid" className="font-semibold">
             {syncing ? 'Refreshing…' : <><RefreshCw size={13} strokeWidth={2.1} aria-hidden="true" />Refresh</>}
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Summary */}
       {!loading && !error && txns.length > 0 && (
-        <div style={{ display: 'flex', gap: 24, marginBottom: 16, flexWrap: 'wrap' }}>
-          <Summary label="Spent" value={formatMoney(spend)} color="var(--color-expense)" />
-          <Summary label="Payments / refunds" value={formatMoney(refunds)} color="var(--color-income)" />
-          <Summary label="Transactions" value={String(txns.length)} color="var(--color-text)" />
+        <div className="mb-4 flex flex-wrap gap-6">
+          <Summary label="Spent" value={formatMoney(spend)} className="text-expense" />
+          <Summary label="Payments / refunds" value={formatMoney(refunds)} className="text-income" />
+          <Summary label="Transactions" value={String(txns.length)} className="text-text" />
         </div>
       )}
 
-      {loading && <p style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>Loading transactions…</p>}
+      {loading && <p className="text-[13px] text-muted">Loading transactions…</p>}
       {error && (
-        <div style={{ background: '#3b2f12', border: '1px solid #854d0e', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fde68a', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
-          <span>{error}
+        <Banner tone="warning">
+          {error}
           {/PRODUCT_NOT_READY/.test(error) && <> — Plaid is still preparing this item’s transactions. Try again in a moment.</>}
-          </span>
-        </div>
+        </Banner>
       )}
-      {!loading && !error && txns.length === 0 && (
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>No transactions in this window.</p>
-      )}
+      {!loading && !error && txns.length === 0 && <EmptyState>No transactions in this window.</EmptyState>}
 
       {!loading && !error && groups.map(([date, items]) => (
-        <div key={date} style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: 6 }}>
-            {fmtDate(date)}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div key={date} className="mb-3.5">
+          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted">{fmtDate(date)}</div>
+          <div className="flex flex-col gap-1">
             {items.map((t) => {
               const isRefund = t.amount < 0; // negative Plaid amount = money in
               return (
-                <div key={t.transaction_id} style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px',
-                  background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
-                }}>
+                <div
+                  key={t.transaction_id}
+                  className="flex items-center gap-3 rounded-control border border-border bg-surface-2 px-2.5 py-2"
+                >
                   <Avatar name={t.name} logo={t.logo_url} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {t.name}{t.pending && <span style={{ color: 'var(--color-text-muted)', fontWeight: 400, fontSize: 12 }}> · pending</span>}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">
+                      {t.name}
+                      {t.pending && <span className="text-[12px] font-normal text-muted"> · pending</span>}
                     </div>
-                    {t.category && <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{titleCase(t.category)}</div>}
+                    {t.category && <div className="text-[12px] text-muted">{titleCase(t.category)}</div>}
                   </div>
-                  <div style={{ fontWeight: 600, color: isRefund ? 'var(--color-income)' : 'var(--color-text)' }}>
+                  <div className={cx('shrink-0 font-semibold tabular-nums', isRefund ? 'text-income' : 'text-text')}>
                     {isRefund ? '+' : '−'}{formatMoney(Math.abs(t.amount))}
                   </div>
                 </div>
@@ -185,29 +177,34 @@ export default function Transactions() {
           </div>
         </div>
       ))}
-    </div>
+    </Panel>
   );
 }
 
-function Summary({ label, value, color }: { label: string; value: string; color: string }) {
+function Summary({ label, value, className }: { label: string; value: string; className: string }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</div>
+      <div className={cx('text-xl font-bold tabular-nums', className)}>{value}</div>
     </div>
   );
 }
 
 function Avatar({ name, logo }: { name: string; logo: string | null }) {
   if (logo) {
-    return <img src={logo} alt="" width={28} height={28} style={{ borderRadius: 6, objectFit: 'contain', background: '#fff', flexShrink: 0 }} />;
+    return (
+      <img
+        src={logo}
+        alt=""
+        width={28}
+        height={28}
+        className="h-7 w-7 shrink-0 rounded-md bg-white object-contain"
+      />
+    );
   }
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   return (
-    <div style={{
-      width: 28, height: 28, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: 13, fontWeight: 700,
-    }}>
+    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-border bg-bg text-[13px] font-bold text-muted">
       {initial}
     </div>
   );
