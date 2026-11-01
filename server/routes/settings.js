@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { settingError } = require('../lib/settings');
 
 // Returns all of this user's settings as a flat key/value object.
 router.get('/', (req, res) => {
@@ -15,6 +16,9 @@ router.put('/:key', (req, res) => {
   const { key } = req.params;
   const { value } = req.body;
   if (value == null) return res.status(400).json({ error: 'value is required' });
+
+  const problem = settingError(key, String(value));
+  if (problem) return res.status(400).json({ error: `${key} ${problem}` });
 
   db.prepare(
     `INSERT INTO app_settings (user_id, key, value) VALUES (?, ?, ?)

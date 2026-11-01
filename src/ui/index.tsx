@@ -462,4 +462,44 @@ export function AddButton({
   );
 }
 
+/* -------------------------------- Segmented ------------------------------ */
+
+/**
+ * A row of mutually exclusive choices, one of them current. Used for switching
+ * a view rather than for submitting anything, so the options are buttons and
+ * the choice takes effect immediately.
+ */
+export function Segmented<T extends string>({
+  options, value, onChange, ariaLabel,
+}: {
+  options: readonly { id: T; label: string; title?: string }[];
+  value: T;
+  onChange: (id: T) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <div role="group" aria-label={ariaLabel} className="flex w-fit gap-1 rounded-control border border-border bg-bg p-1">
+      {options.map((option) => {
+        const current = option.id === value;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => onChange(option.id)}
+            aria-pressed={current}
+            title={option.title}
+            className={cx(
+              'rounded-[6px] px-4 py-1.5 text-[13px] transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+              current ? 'bg-primary font-semibold text-white' : 'font-medium text-muted hover:text-text',
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export { cx };

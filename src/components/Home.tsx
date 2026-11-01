@@ -1,25 +1,36 @@
 import { Suspense, lazy } from 'react';
 import type { Breakdown } from '../lib/forecast';
 import type { MonthBreakdown } from '../lib/monthlyBreakdown';
-import type { NetWorthPoint } from '../types';
-import { findCashLow, findRunwayRisk, totalsFor, upcomingEvents, whenLabel } from '../lib/home';
+import type { Account, Debt, NetWorthPoint } from '../types';
+import {
+  buildBalanceSheet, findCashLow, findRunwayRisk, netWorthTrend, totalsFor, upcomingEvents, whenLabel,
+  type BalanceLine, type UpcomingEvent, type UpcomingTotals,
+} from '../lib/home';
+import { HOME_LAYOUTS, type HomeLayout } from '../lib/homeLayout';
 import { formatMoney } from '../lib/format';
-import { Button, Card, cx } from '../ui';
+import { Button, Card, Segmented, cx } from '../ui';
 
 const RunwayChart = lazy(() => import('./RunwayChart'));
 
 interface Props {
+  layout: HomeLayout;
+  onLayoutChange: (layout: HomeLayout) => void;
   totalCash: number;
   netWorth: NetWorthPoint[];
   accountSeries: Breakdown;
+  accounts: Account[];
+  debts: Debt[];
   /** This month and the next, for the upcoming list. */
   monthBreakdowns: MonthBreakdown[];
   onGoToPlan: () => void;
   onGoToProjections: () => void;
+  onGoToAccounts: () => void;
+  onGoToDebts: () => void;
 }
 
 export default function Home({
-  totalCash, netWorth, accountSeries, monthBreakdowns, onGoToPlan, onGoToProjections,
+  layout, onLayoutChange, totalCash, netWorth, accountSeries, accounts, debts,
+  monthBreakdowns, onGoToPlan, onGoToProjections, onGoToAccounts, onGoToDebts,
 }: Props) {
   const risk = findRunwayRisk(accountSeries);
   const low = findCashLow(accountSeries);
@@ -27,7 +38,6 @@ export default function Home({
   const totals = totalsFor(events);
 
   const now = netWorth[0];
-  const horizon = netWorth[Math.min(11, netWorth.length - 1)];
   const chartData = netWorth.slice(0, 12).map((p, i) => ({
     label: p.label,
     cash: accountSeries.total[i] ?? p.cash,
@@ -37,13 +47,74 @@ export default function Home({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Where you stand */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Stat label="Net worth" value={now?.netWorth ?? 0} tone={(now?.netWorth ?? 0) >= 0 ? 'pos' : 'neg'} />
-        <Stat label="Cash on hand" value={totalCash} tone="plain" />
-        <Stat label="Total debt" value={now?.debt ?? 0} tone="neg" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="grid flex-1 gap-4 sm:grid-cols-3">
+          <Stat label="Net worth" value={now?.netWorth ?? 0} tone={(now?.netWorth ?? 0) >= 0 ? 'pos' : 'neg'} />
+          <Stat label="Cash on hand" value={totalCash} tone="plain" />
+          <Stat label="Total debt" value={now?.debt ?? 0} tone="neg" />
+        </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[12.5px] text-muted">
+          {HOME_LAYOUTS.find((l) => l.id === layout)?.description}
+        </p>
+        <Segmented
+          ariaLabel="Home layout"
+          options={HOME_LAYOUTS.map((l) => ({ id: l.id, label: l.label, title: l.description }))}
+          value={layout}
+          onChange={onLayoutChange}
+        />
+      </div>
+
+      {layout === 'balance' ? (
+        <BalanceLayout
+          accounts={accounts}
+          debts={debts}
+          netWorth={netWorth}
+          chartData={chartData}
+          lowIndex={low?.monthIndex}
+          events={events}
+          totals={totals}
+          onGoToAccounts={onGoToAccounts}
+          onGoToDebts={onGoToDebts}
+          onGoToProjections={onGoToProjections}
+        />
+      ) : (
+        <RunwayLayout
+          risk={risk}
+          low={low}
+          netWorth={netWorth}
+          chartData={chartData}
+          events={events}
+          totals={totals}
+          onGoToPlan={onGoToPlan}
+          onGoToProjections={onGoToProjections}
+        />
+      )}
+    </div>
+  );
+}
+
+type ChartPoint = { label: string; cash: number; debt: number; netWorth: number };
+
+/* ------------------------------ Runway first ----------------------------- */
+
+function RunwayLayout({
+  risk, low, netWorth, chartData, events, totals, onGoToPlan, onGoToProjections,
+}: {
+  risk: ReturnType<typeof findRunwayRisk>;
+  low: ReturnType<typeof findCashLow>;
+  netWorth: NetWorthPoint[];
+  chartData: ChartPoint[];
+  events: UpcomingEvent[];
+  totals: UpcomingTotals;
+  onGoToPlan: () => void;
+  onGoToProjections: () => void;
+}) {
+  const horizon = netWorth[Math.min(11, netWorth.length - 1)];
+  return (
+    <>
       {/* The one thing worth knowing */}
       {risk ? (
         <Card className="border-expense/45 bg-expense/8 p-5">
@@ -82,55 +153,216 @@ export default function Home({
       )}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
-        {/* The shape of the next year */}
-        <Card className="flex flex-col p-5">
-          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-[15px] font-semibold tracking-tight">The next 12 months</h2>
-            {horizon && (
-              <p className="text-[12.5px] text-muted">
-                Net worth {formatMoney(horizon.netWorth, { whole: true })} by {horizon.label}
+        <TrajectoryCard
+          title="The next 12 months"
+          note={horizon && `Net worth ${formatMoney(horizon.netWorth, { whole: true })} by ${horizon.label}`}
+          data={chartData}
+          lowIndex={low?.monthIndex}
+        />
+        <UpcomingCard events={events} totals={totals} />
+      </div>
+    </>
+  );
+}
+
+/* --------------------------- Balance sheet first -------------------------- */
+
+function BalanceLayout({
+  accounts, debts, netWorth, chartData, lowIndex, events, totals,
+  onGoToAccounts, onGoToDebts, onGoToProjections,
+}: {
+  accounts: Account[];
+  debts: Debt[];
+  netWorth: NetWorthPoint[];
+  chartData: ChartPoint[];
+  lowIndex?: number;
+  events: UpcomingEvent[];
+  totals: UpcomingTotals;
+  onGoToAccounts: () => void;
+  onGoToDebts: () => void;
+  onGoToProjections: () => void;
+}) {
+  const sheet = buildBalanceSheet(accounts, debts);
+  const trend = netWorthTrend(netWorth);
+
+  return (
+    <>
+      {/* Where it's heading. Deliberately not a second net-worth total: the
+          headline figure above is the one net worth on this screen, and the two
+          sides below are today's balances, which are a different basis. */}
+      <Card className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Where this is heading</p>
+            {trend && trend.monthsAhead > 0 ? (
+              <>
+                <p className="mt-1.5 text-[15px] font-semibold">
+                  Net worth {trend.change >= 0 ? 'climbs' : 'falls'}{' '}
+                  <span className={trend.change >= 0 ? 'text-income' : 'text-expense'}>
+                    {formatMoney(Math.abs(trend.change), { whole: true })}
+                  </span>
+                  {' '}to {formatMoney(trend.to, { whole: true })} by {trend.toLabel}.
+                </p>
+                <p className="mt-1 text-[13px] text-muted">
+                  Over the next {trend.monthsAhead} month{trend.monthsAhead === 1 ? '' : 's'}, on the current plan.
+                </p>
+              </>
+            ) : (
+              <p className="mt-1.5 text-[13px] text-muted">
+                Add income, expenses or debts to project a trajectory.
               </p>
             )}
           </div>
-          <Suspense fallback={<div className="grid h-[240px] place-items-center text-[13px] text-muted">Loading chart…</div>}>
-            <RunwayChart data={chartData} lowIndex={low?.monthIndex} />
-          </Suspense>
-          <div className="mt-3 flex items-center gap-4 text-[12px] text-muted">
-            <Legend color="var(--color-net-pos)" label="Cash" />
-            <Legend color="var(--color-expense)" label="Debt" />
-          </div>
-        </Card>
+          <Button variant="ghost" onClick={onGoToProjections}>See projections</Button>
+        </div>
+      </Card>
 
-        {/* What's actually about to happen */}
-        <Card className="flex flex-col p-5">
-          <div className="mb-1 flex items-baseline justify-between gap-2">
-            <h2 className="text-[15px] font-semibold tracking-tight">Next 30 days</h2>
-            <span className={cx('text-[13px] font-semibold', totals.net >= 0 ? 'text-income' : 'text-expense')}>
-              {totals.net >= 0 ? '+' : ''}{formatMoney(totals.net, { whole: true })}
-            </span>
-          </div>
-          <p className="mb-3 text-[12px] text-muted">
-            {formatMoney(totals.in, { whole: true })} in · {formatMoney(totals.out, { whole: true })} out
-          </p>
-
-          {events.length === 0 ? (
-            <p className="py-6 text-center text-[13px] text-muted">Nothing scheduled in the next 30 days.</p>
-          ) : (
-            <ul className="-mx-2 flex max-h-[300px] flex-col overflow-y-auto">
-              {events.map((event) => (
-                <li key={event.key} className="flex items-baseline gap-3 rounded-control px-2 py-1.5 hover:bg-surface-2">
-                  <span className="w-[72px] shrink-0 text-[11.5px] text-muted">{whenLabel(event)}</span>
-                  <span className="min-w-0 flex-1 truncate text-[13px]" title={event.detail}>{event.name}</span>
-                  <span className={cx('shrink-0 text-[13px] font-semibold tabular-nums', event.direction === 'in' ? 'text-income' : 'text-text')}>
-                    {event.direction === 'in' ? '+' : '−'}{formatMoney(event.amount, { whole: true })}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <SideCard
+          title="Where the money is"
+          subtitle="Balances today"
+          total={sheet.totalCash}
+          tone="pos"
+          lines={sheet.holdings}
+          emptyLabel="No accounts yet."
+          actionLabel="Accounts"
+          onAction={onGoToAccounts}
+        />
+        <SideCard
+          title="What's owed"
+          subtitle="Balances today"
+          total={sheet.totalDebt}
+          tone="neg"
+          lines={sheet.liabilities}
+          emptyLabel="No debts tracked."
+          actionLabel="Debts"
+          onAction={onGoToDebts}
+        />
       </div>
-    </div>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+        <TrajectoryCard title="Cash and debt, next 12 months" data={chartData} lowIndex={lowIndex} />
+        <UpcomingCard events={events} totals={totals} />
+      </div>
+    </>
+  );
+}
+
+/** One side of the balance sheet, each line showing its share of the whole. */
+function SideCard({
+  title, subtitle, total, tone, lines, emptyLabel, actionLabel, onAction,
+}: {
+  title: string;
+  subtitle: string;
+  total: number;
+  tone: 'pos' | 'neg';
+  lines: BalanceLine[];
+  emptyLabel: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  const bar = tone === 'pos' ? 'bg-net-pos' : 'bg-expense';
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
+          <p className="text-[11.5px] text-muted">{subtitle}</p>
+        </div>
+        <span className={cx('text-[15px] font-bold tabular-nums', tone === 'pos' ? 'text-text' : 'text-expense')}>
+          {formatMoney(total, { whole: true })}
+        </span>
+      </div>
+
+      {lines.length === 0 ? (
+        <p className="py-6 text-center text-[13px] text-muted">{emptyLabel}</p>
+      ) : (
+        <ul className="flex flex-col gap-2.5">
+          {lines.map((line) => (
+            <li key={line.id}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 flex-1 truncate text-[13px]">
+                  {line.name}
+                  {line.overLimit && (
+                    <span className="ml-1.5 text-[11px] font-bold uppercase text-expense">over limit</span>
+                  )}
+                </span>
+                <span className="shrink-0 text-[13px] font-semibold tabular-nums">
+                  {formatMoney(line.amount, { whole: true })}
+                </span>
+              </div>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-2">
+                {/* A proportion, so the width has to be computed. */}
+                <div className={cx('h-full rounded-full', bar)} style={{ width: `${Math.round(line.share * 100)}%` }} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Button variant="ghost" size="sm" className="mt-4 self-start" onClick={onAction}>
+        {actionLabel}
+      </Button>
+    </Card>
+  );
+}
+
+/* ----------------------------- Shared pieces ----------------------------- */
+
+function TrajectoryCard({
+  title, note, data, lowIndex,
+}: {
+  title: string;
+  note?: React.ReactNode;
+  data: ChartPoint[];
+  lowIndex?: number;
+}) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
+        {note && <p className="text-[12.5px] text-muted">{note}</p>}
+      </div>
+      <Suspense fallback={<div className="grid h-[240px] place-items-center text-[13px] text-muted">Loading chart…</div>}>
+        <RunwayChart data={data} lowIndex={lowIndex} />
+      </Suspense>
+      <div className="mt-3 flex items-center gap-4 text-[12px] text-muted">
+        <Legend className="bg-net-pos" label="Cash" />
+        <Legend className="bg-expense" label="Debt" />
+      </div>
+    </Card>
+  );
+}
+
+function UpcomingCard({ events, totals }: { events: UpcomingEvent[]; totals: UpcomingTotals }) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <h2 className="text-[15px] font-semibold tracking-tight">Next 30 days</h2>
+        <span className={cx('text-[13px] font-semibold', totals.net >= 0 ? 'text-income' : 'text-expense')}>
+          {totals.net >= 0 ? '+' : ''}{formatMoney(totals.net, { whole: true })}
+        </span>
+      </div>
+      <p className="mb-3 text-[12px] text-muted">
+        {formatMoney(totals.in, { whole: true })} in · {formatMoney(totals.out, { whole: true })} out
+      </p>
+
+      {events.length === 0 ? (
+        <p className="py-6 text-center text-[13px] text-muted">Nothing scheduled in the next 30 days.</p>
+      ) : (
+        <ul className="-mx-2 flex max-h-[300px] flex-col overflow-y-auto">
+          {events.map((event) => (
+            <li key={event.key} className="flex items-baseline gap-3 rounded-control px-2 py-1.5 hover:bg-surface-2">
+              <span className="w-[72px] shrink-0 text-[11.5px] text-muted">{whenLabel(event)}</span>
+              <span className="min-w-0 flex-1 truncate text-[13px]" title={event.detail}>{event.name}</span>
+              <span className={cx('shrink-0 text-[13px] font-semibold tabular-nums', event.direction === 'in' ? 'text-income' : 'text-text')}>
+                {event.direction === 'in' ? '+' : '−'}{formatMoney(event.amount, { whole: true })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -146,10 +378,10 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'pos
   );
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ className, label }: { className: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="h-0.5 w-4 rounded-full" style={{ background: color }} />
+      <span className={cx('h-0.5 w-4 rounded-full', className)} />
       {label}
     </span>
   );

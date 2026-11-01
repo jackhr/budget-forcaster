@@ -153,6 +153,19 @@ describe('tenant isolation', () => {
     expect((await (await api('/settings', { cookie: bob })).json()).currency).toBeUndefined();
   });
 
+  it('keeps the home layout per user, and rejects one it does not offer', async () => {
+    const set = (value, cookie) => api('/settings/home_layout', { method: 'PUT', body: { value }, cookie });
+
+    expect((await set('balance', alice)).status).toBe(200);
+    expect((await (await api('/settings', { cookie: alice })).json()).home_layout).toBe('balance');
+    expect((await (await api('/settings', { cookie: bob })).json()).home_layout).toBeUndefined();
+
+    // An unknown layout must not reach the database — the client would then
+    // fall back to the default and the saved choice would look ignored.
+    expect((await set('goals', alice)).status).toBe(400);
+    expect((await (await api('/settings', { cookie: alice })).json()).home_layout).toBe('balance');
+  });
+
   it("404s when Bob reads, updates or deletes Alice's rows by id", async () => {
     const targets = [
       ['/income', aliceIds.income, { name: 'hacked', monthly_amount: 1 }],

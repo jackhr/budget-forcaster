@@ -84,7 +84,23 @@ Common to all: money is a plain `REAL` in the display currency (no currency conv
 | `inflation_rate` | Annual %, compounded monthly, **applied to expenses only**. | `0` |
 | `debt_strategy` | `none \| avalanche \| snowball` | `none` |
 | `debt_extra` | Extra monthly debt budget (ignored when strategy is `none`). | `0` |
+| `home_layout` | Which shape the Home screen takes: `runway \| balance`. | `runway` |
 | `starting_balance` | Legacy, pre-accounts. Only used to seed the first account and as a fallback when comparing old scenarios. | — |
+
+`PUT /api/settings/:key` validates the value of every key above (`server/lib/settings.js`); an unknown key is still stored as-is. A stored value the client doesn't recognize resolves to the default rather than rendering nothing — see `src/lib/homeLayout.ts`.
+
+### Home layouts
+
+Both layouts answer "where do I stand?", and differ in what they lead with. Each one also shows the headline stats (net worth, cash, total debt), the 12-month cash-and-debt chart, and the next 30 days.
+
+| layout | leads with |
+|---|---|
+| `runway` (default) | Whether any **single account** is projected to go negative, and when. A healthy total can hide one overdrawn account, so `findRunwayRisk` looks per account. |
+| `balance` | Where net worth is heading over the window, then **today's** balances on each side — what's held, and what's owed, each line as a share of its side. |
+
+**The two sides are today's balances, deliberately**, so they agree with the Accounts and Debts pages rather than with the forecast. The headline "Net worth" stat comes from the projection's first month instead, which is a different basis — so the balance layout shows no second net-worth total ([10 G10](10-known-gaps-and-decisions.md#g10)).
+
+Goal progress is the intended third layout; it needs the goals entity first ([ICEBOX I3](../ICEBOX.md)).
 
 ## Scenario (`scenarios`)
 

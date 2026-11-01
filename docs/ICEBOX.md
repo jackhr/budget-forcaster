@@ -43,8 +43,10 @@ This is not a bug list — confirmed bugs and gaps live in [business-logic/10-kn
 
 **Why deferred:** likely overkill, and it's the wrong thing to design before the layouts themselves have settled. **Runway & safety is the default**; the choice is a setting from day one, so nothing blocks adding a picker later.
 
+**Done since:** the preference is a server-side per-user setting (`app_settings.home_layout`), with an in-page picker on Home. Two layouts exist — `runway` and `balance`. Adding one means an entry in `src/lib/homeLayout.ts`, the matching id in `server/lib/settings.js`, and a branch in `Home.tsx`.
+
 **What has to change:**
-- The home layout preference needs to be a server-side per-user setting (not localStorage) so it survives a device change — that part ships with the home screen.
+- A third layout, **goal progress**, needs the goals entity to exist. Until it does, a first-run picker would be choosing between two options, which isn't worth a flow.
 - An onboarding flow also wants a "have you finished setting up?" signal: an account, some income, some expenses. That state doesn't exist today.
 
 **Open question:** whether onboarding should instead be about *getting data in* (connect a bank, add your income) rather than about choosing a view. Connecting Plaid first would populate every layout and make the choice obvious.

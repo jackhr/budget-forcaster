@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findRunwayRisk, findCashLow, upcomingEvents, totalsFor, whenLabel } from './home';
+import { buildBalanceSheet, findCashLow, findRunwayRisk, netWorthTrend, totalsFor, upcomingEvents, whenLabel } from './home';
 import type { Breakdown } from './forecast';
 import type { MonthBreakdown, MonthObligation } from './monthlyBreakdown';
 
@@ -152,5 +152,87 @@ describe('whenLabel', () => {
 
   it('includes the year when it differs', () => {
     expect(whenLabel(at('2027-01-05'), NOW)).toBe('Jan 5, 2027');
+  });
+});
+
+describe('buildBalanceSheet', () => {
+  const accounts = [
+    { id: 1, name: 'Checking', balance: 2400 },
+    { id: 2, name: 'Savings', balance: 7600 },
+    { id: 3, name: 'Spending', balance: -200 },
+  ];
+  const debts = [
+    { id: 10, name: 'Card A', balance: 1500, credit_limit: 1000, debt_type: 'credit_card' },
+    { id: 11, name: 'Car loan', balance: 8500, credit_limit: null, debt_type: 'loan' },
+  ];
+
+  it('orders each side largest first', () => {
+    const sheet = buildBalanceSheet(accounts, debts);
+    expect(sheet.holdings.map((h) => h.name)).toEqual(['Savings', 'Checking', 'Spending']);
+    expect(sheet.liabilities.map((l) => l.name)).toEqual(['Car loan', 'Card A']);
+  });
+
+  it('totals both sides and nets them', () => {
+    const sheet = buildBalanceSheet(accounts, debts);
+    expect(sheet.totalCash).toBe(9800);
+    expect(sheet.totalDebt).toBe(10000);
+    expect(sheet.netWorth).toBe(-200);
+  });
+
+  it('takes cash shares against the positive side, so an overdraft cannot skew them', () => {
+    const sheet = buildBalanceSheet(accounts, debts);
+    const savings = sheet.holdings.find((h) => h.name === 'Savings')!;
+    // 7600 of the 10000 actually held, not of the 9800 net.
+    expect(savings.share).toBeCloseTo(0.76, 5);
+    expect(sheet.holdings.every((h) => h.share <= 1)).toBe(true);
+  });
+
+  it('flags a card over its limit but never a loan', () => {
+    const sheet = buildBalanceSheet(accounts, debts);
+    expect(sheet.liabilities.find((l) => l.name === 'Card A')!.overLimit).toBe(true);
+    expect(sheet.liabilities.find((l) => l.name === 'Car loan')!.overLimit).toBe(false);
+  });
+
+  it('handles having nothing at all', () => {
+    const sheet = buildBalanceSheet([], []);
+    expect(sheet).toEqual({ holdings: [], liabilities: [], totalCash: 0, totalDebt: 0, netWorth: 0 });
+  });
+
+  it('gives a zero share rather than dividing by zero', () => {
+    const sheet = buildBalanceSheet([{ id: 1, name: 'Empty', balance: 0 }], []);
+    expect(sheet.holdings[0].share).toBe(0);
+  });
+});
+
+describe('netWorthTrend', () => {
+  const points = [
+    { label: 'Nov 26', netWorth: -38420 },
+    { label: 'Dec 26', netWorth: -36000 },
+    { label: 'Jan 27', netWorth: -31000 },
+  ];
+
+  it('measures from the first point to the end of the window', () => {
+    const trend = netWorthTrend(points, 12)!;
+    expect(trend.from).toBe(-38420);
+    expect(trend.to).toBe(-31000);
+    expect(trend.change).toBe(7420);
+    expect(trend.toLabel).toBe('Jan 27');
+    expect(trend.monthsAhead).toBe(2);
+  });
+
+  it('stops at the window when there is more projection than that', () => {
+    const trend = netWorthTrend(points, 2)!;
+    expect(trend.toLabel).toBe('Dec 26');
+    expect(trend.monthsAhead).toBe(1);
+  });
+
+  it('reports no movement for a single point', () => {
+    const trend = netWorthTrend([points[0]])!;
+    expect(trend.change).toBe(0);
+    expect(trend.monthsAhead).toBe(0);
+  });
+
+  it('returns null with nothing to trend', () => {
+    expect(netWorthTrend([])).toBeNull();
   });
 });

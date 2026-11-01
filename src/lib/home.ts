@@ -135,3 +135,95 @@ export function whenLabel(event: UpcomingEvent, now: Date = new Date()): string 
     year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
   });
 }
+
+/* ----------------------------- Balance sheet ----------------------------- */
+
+export interface BalanceLine {
+  id: number;
+  name: string;
+  amount: number;
+  /** Share of this side's total, 0–1. Zero when the side totals nothing. */
+  share: number;
+  /** Set for debts: the balance is above the credit line. */
+  overLimit?: boolean;
+}
+
+export interface BalanceSheet {
+  holdings: BalanceLine[];
+  liabilities: BalanceLine[];
+  totalCash: number;
+  totalDebt: number;
+  netWorth: number;
+}
+
+interface AccountLike { id: number; name: string; balance: number }
+interface DebtLike {
+  id: number;
+  name: string;
+  balance: number;
+  credit_limit?: number | null;
+  debt_type?: string;
+}
+
+function shares<T extends { amount: number }>(lines: T[], total: number): (T & { share: number })[] {
+  return lines.map((line) => ({ ...line, share: total > 0 ? line.amount / total : 0 }));
+}
+
+/**
+ * Where the money is and what is owed, each side ordered largest first — the
+ * question "what do I actually have?" rather than "what happens next?".
+ *
+ * Both sides use the balances as they stand today, so this agrees with the
+ * accounts and debts pages rather than with the forecast.
+ */
+export function buildBalanceSheet(accounts: AccountLike[], debts: DebtLike[]): BalanceSheet {
+  const holdingRows = accounts
+    .map((a) => ({ id: a.id, name: a.name, amount: a.balance }))
+    .sort((a, b) => b.amount - a.amount);
+  const liabilityRows = debts
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      amount: d.balance,
+      overLimit: d.debt_type !== 'loan' && d.credit_limit != null && d.balance > d.credit_limit + 0.005,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  // Cash can be negative (an overdrawn account), so the total is a plain sum
+  // while the shares are taken against the positive side only.
+  const totalCash = holdingRows.reduce((sum, a) => sum + a.amount, 0);
+  const totalDebt = liabilityRows.reduce((sum, d) => sum + d.amount, 0);
+
+  return {
+    holdings: shares(holdingRows, holdingRows.reduce((sum, a) => sum + Math.max(0, a.amount), 0)),
+    liabilities: shares(liabilityRows, totalDebt),
+    totalCash,
+    totalDebt,
+    netWorth: totalCash - totalDebt,
+  };
+}
+
+export interface NetWorthTrend {
+  /** Net worth at the start and at the end of the window shown. */
+  from: number;
+  to: number;
+  change: number;
+  /** The last label in the window, for "…by Nov 2027". */
+  toLabel: string;
+  monthsAhead: number;
+}
+
+/** How net worth moves across the next `months` of the projection. */
+export function netWorthTrend(points: { label: string; netWorth: number }[], months = 12): NetWorthTrend | null {
+  if (points.length === 0) return null;
+  const lastIndex = Math.min(months - 1, points.length - 1);
+  const from = points[0].netWorth;
+  const to = points[lastIndex].netWorth;
+  return {
+    from,
+    to,
+    change: to - from,
+    toLabel: points[lastIndex].label,
+    monthsAhead: lastIndex,
+  };
+}

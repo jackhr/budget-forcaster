@@ -18,9 +18,10 @@ import Accounts from './components/Accounts';
 import PlaidConnect from './components/PlaidConnect';
 import HeaderControls from './components/HeaderControls';
 import AppShell from './components/AppShell';
+import { DEFAULT_HOME_LAYOUT, resolveHomeLayout, type HomeLayout } from './lib/homeLayout';
 import { NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS, type ProjectionView, type Tab } from './lib/nav';
 import Home from './components/Home';
-import { Banner } from './ui';
+import { Banner, Segmented } from './ui';
 import Toolbar from './components/Toolbar';
 import type { PayoffMarker } from './components/NetWorthChart';
 
@@ -113,6 +114,7 @@ export default function App() {
   const [inflation, setInflation] = useState(0);
   const [debtExtra, setDebtExtra] = useState(0);
   const [debtStrategy, setDebtStrategy] = useState<DebtStrategy>('none');
+  const [homeLayout, setHomeLayout] = useState<HomeLayout>(DEFAULT_HOME_LAYOUT);
   const [months, setMonths] = useState(() => Number(localStorage.getItem('bf.months')) || 12);
   const [startMonth, setStartMonth] = useState(() => Number(localStorage.getItem('bf.startMonth')) || 0);
   // Stored ids come from whatever build the user last ran, so they're resolved
@@ -168,6 +170,7 @@ export default function App() {
       setInflation(parseFloat(settings.inflation_rate ?? '0') || 0);
       setDebtExtra(parseFloat(settings.debt_extra ?? '0') || 0);
       setDebtStrategy((settings.debt_strategy as DebtStrategy) || 'none');
+      setHomeLayout(resolveHomeLayout(settings.home_layout));
       const cur = settings.currency || 'USD';
       setCurrency(cur); setCurrencyState(cur);
       setError(null);
@@ -466,6 +469,9 @@ export default function App() {
   const changeDebtStrategy = (value: DebtStrategy) => guard(async () => {
     setDebtStrategy(value); await settingsApi.set('debt_strategy', value);
   }, 'Could not save strategy');
+  const changeHomeLayout = (value: HomeLayout) => guard(async () => {
+    setHomeLayout(value); await settingsApi.set('home_layout', value);
+  }, 'Could not save home layout');
 
   const addGroup = (name: string, kind: GroupKind) => guard(async () => {
     const group = await groupsApi.create({ name, kind });
@@ -587,29 +593,28 @@ export default function App() {
     >
         {tab === 'home' && (
           <Home
+            layout={homeLayout}
+            onLayoutChange={changeHomeLayout}
             totalCash={totalCash}
             netWorth={netWorth}
             accountSeries={accountSeries}
+            accounts={accounts}
+            debts={debts}
             monthBreakdowns={[thisMonth, nextMonth]}
             onGoToPlan={() => setTab('expenses')}
             onGoToProjections={() => setTab('projections')}
+            onGoToAccounts={() => setTab('accounts')}
+            onGoToDebts={() => setTab('debts')}
           />
         )}
 
         {tab === 'projections' && (
-          <div className="flex w-fit gap-1 rounded-control border border-border bg-bg p-1">
-            {PROJECTION_VIEWS.map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setProjectionView(id)}
-                className={projectionView === id
-                  ? 'rounded-[6px] bg-primary px-4 py-1.5 text-[13px] font-semibold text-white'
-                  : 'rounded-[6px] px-4 py-1.5 text-[13px] font-medium text-muted hover:text-text'}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            ariaLabel="Projection"
+            options={PROJECTION_VIEWS.map(([id, label]) => ({ id, label }))}
+            value={projectionView}
+            onChange={setProjectionView}
+          />
         )}
 
         {tab === 'projections' && projectionView === 'cashflow' && (

@@ -25,6 +25,15 @@ Still open:
 - **Expenses** are never auto-detected, only marked manually. Matching bills to transactions (by amount, date window, and funding account) is the intended next step.
 - **Income** is only reconciled for twice-monthly sources. Weekly, biweekly, monthly, and lump income have no month-0 adjustment, so a paycheck already in today's balance is counted again ([07 Month 0](07-forecast-pipeline.md#month-0-semantics)). This probably belongs with G1, since per-payday occurrences need a date-accurate engine.
 
+<a id="g10"></a>
+
+### G10: The Home headline stats mix two bases (INCONSISTENCY)
+On Home, "Cash on hand" is `totalCash` — the raw sum of `accounts.balance`, i.e. **today**. "Net worth" and "Total debt" come from `netWorth[0]`, which is the **end of the first forecast month**: cash after this month's remaining flows, and debt after one payment. So the three numbers sitting side by side aren't as of the same moment, and "Net worth" doesn't equal "Cash on hand" − "Total debt".
+
+Found while adding the `balance` home layout. That layout sidesteps it — its two sides are explicitly labelled "Balances today" and it shows no second net-worth total — but the stat row above it is unchanged.
+
+**Not yet decided** which basis the row should use. Today's balances are what the Accounts and Debts pages show and are the easier number to verify by hand; month-end is what the rest of the forecast is built on. Deciding this probably belongs with [G1](#g1), since "month 0" is the same ambiguity.
+
 ### Minor notes
 - Savings single-account payoff markers use `account_id` or primary and ignore allocations and rules.
 - `groups` route error text says "(income|expense)", but `debt` is also valid.
