@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { pickStored, resolveTab } from './viewPrefs';
 
-const TABS = ['home', 'accounts', 'income', 'expenses', 'debts', 'projections', 'breakdown', 'account', 'outflows', 'transactions'];
+const TABS = ['home', 'accounts', 'income', 'expenses', 'debts', 'goals', 'projections', 'breakdown', 'transactions', 'settings'];
 
 describe('pickStored', () => {
   it('keeps a value that is still legal', () => {
@@ -32,6 +32,12 @@ describe('resolveTab', () => {
     expect(resolveTab('savings', TABS, 'home')).toEqual({ tab: 'projections', view: 'savings' });
     expect(resolveTab('networth', TABS, 'home')).toEqual({ tab: 'projections', view: 'networth' });
     expect(resolveTab('overview', TABS, 'home')).toEqual({ tab: 'projections', view: 'overview' });
+  });
+
+  it('carries Activity and Outflows onto Breakdown, and Budgets onto Expenses', () => {
+    expect(resolveTab('account', TABS, 'home')).toEqual({ tab: 'breakdown', view: 'account' });
+    expect(resolveTab('outflows', TABS, 'home')).toEqual({ tab: 'breakdown', view: 'outflows' });
+    expect(resolveTab('budgets', TABS, 'home')).toEqual({ tab: 'expenses', view: null });
   });
 
   it('falls back to home for an id from no known version', () => {

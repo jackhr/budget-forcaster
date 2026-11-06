@@ -16,22 +16,26 @@ import {
 
 interface CardOption { id: number; name: string }
 
-interface Props {
+interface BucketsProps {
   buckets: Bucket[];
+  accounts: Account[];
+  bucketPlan: BucketPlan;
+  /** Month labels for the forecast, so a month index reads as "Mar 27". */
+  labels: string[];
+  onAdd: (data: BucketInput) => Promise<void>;
+  onUpdate: (id: number, data: BucketInput) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
+  onReorder: (ids: number[]) => void;
+}
+
+interface BudgetsProps {
   budgets: Expense[];
   accounts: Account[];
   cards: CardOption[];
   categories: BudgetCategory[];
-  bucketPlan: BucketPlan;
-  /** Month labels for the forecast, so a month index reads as "Mar 27". */
-  labels: string[];
-  onAddBucket: (data: BucketInput) => Promise<void>;
-  onUpdateBucket: (id: number, data: BucketInput) => Promise<void>;
-  onDeleteBucket: (id: number) => Promise<void>;
-  onReorderBuckets: (ids: number[]) => void;
-  onAddBudget: (data: ItemFormData) => Promise<void>;
-  onUpdateBudget: (id: number, data: ItemFormData) => Promise<void>;
-  onDeleteBudget: (id: number) => Promise<void>;
+  onAdd: (data: ItemFormData) => Promise<void>;
+  onUpdate: (id: number, data: ItemFormData) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
 }
 
 function firstOfThisMonth(): string {
@@ -429,28 +433,117 @@ function BudgetRow({
   );
 }
 
-/* ---------------------------------- Page ---------------------------------- */
+/* --------------------------------- Buckets -------------------------------- */
 
-export default function Budgets({
-  buckets, budgets, accounts, cards, categories, bucketPlan, labels,
-  onAddBucket, onUpdateBucket, onDeleteBucket, onReorderBuckets,
-  onAddBudget, onUpdateBudget, onDeleteBudget,
-}: Props) {
-  const [addingBucket, setAddingBucket] = useState(false);
-  const [editingBucketId, setEditingBucketId] = useState<number | null>(null);
-  const [addingBudget, setAddingBudget] = useState(false);
-  const [editingBudgetId, setEditingBudgetId] = useState<number | null>(null);
-  const bucketsSection = useCollapsed('buckets');
-  const budgetsSection = useCollapsed('budgets');
-  const dnd = useDnd<Bucket>(buckets, onReorderBuckets);
+/** Lives on the Accounts page: a bucket is money inside an account. */
+export function BucketsPanel({
+  buckets, accounts, bucketPlan, labels, onAdd, onUpdate, onDelete, onReorder,
+}: BucketsProps) {
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const section = useCollapsed('buckets');
+  const dnd = useDnd<Bucket>(buckets, onReorder);
 
-  const editingBucket = buckets.find((b) => b.id === editingBucketId) ?? null;
-  const editingBudget = budgets.find((b) => b.id === editingBudgetId) ?? null;
+  const editing = buckets.find((b) => b.id === editingId) ?? null;
   const setAside = buckets.reduce((sum, b) => sum + b.balance, 0);
+  const shortAccounts = bucketPlan.shortfalls.length;
+
+  return (
+    <>
+      <Panel>
+        <PanelHeader
+          title="Buckets"
+          description="Money set aside inside an account. It stays in the account, but it's no longer free to spend."
+          badges={shortAccounts > 0 && <Pill tone="danger">{shortAccounts} account{shortAccounts === 1 ? '' : 's'} short</Pill>}
+          stats={buckets.length > 0 ? [{ label: 'Set aside', value: formatMoney(setAside, { whole: true }), className: 'text-net-pos' }] : undefined}
+          collapsed={section.collapsed}
+          onToggle={section.toggle}
+        />
+        {!section.collapsed && (
+          <>
+            {accounts.length > 0 && buckets.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-muted">
+                {accounts.filter((a) => bucketPlan.committedByAccount.has(a.id)).map((a) => {
+                  const free = bucketPlan.availableToday.get(a.id) ?? a.balance;
+                  return (
+                    <span key={a.id}>
+                      {a.name}: <strong className={cx(free < 0 ? 'text-expense' : 'text-text')}>{formatMoney(free, { whole: true })}</strong> free of {formatMoney(a.balance, { whole: true })}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              {buckets.map((b) => (
+                <BucketRow
+                  key={b.id}
+                  bucket={b}
+                  accounts={accounts}
+                  plan={bucketPlan}
+                  labels={labels}
+                  onEdit={() => setEditingId(b.id)}
+                  onDelete={() => onDelete(b.id)}
+                  drag={dnd.handlers(b)}
+                  dragging={dnd.dragId === b.id}
+                />
+              ))}
+              {buckets.length === 0 && (
+                <EmptyState>
+                  <span className="inline-flex items-center gap-1.5">
+                    <PiggyBank size={14} strokeWidth={2} aria-hidden="true" />
+                    No buckets yet. Set money aside for an emergency fund, a trip, or next year's insurance.
+                  </span>
+                </EmptyState>
+              )}
+            </div>
+            <AddButton accent="cash" onClick={() => setAdding(true)} className="mt-3 w-full" disabled={accounts.length === 0}>
+              + Add Bucket
+            </AddButton>
+          </>
+        )}
+      </Panel>
+
+      {adding && (
+        <BucketEditor
+          title="Add Bucket"
+          accounts={accounts}
+          availableToday={bucketPlan.availableToday}
+          initial={{
+            name: '', account_id: null, balance: 0, contribution: 0, frequency: 'monthly',
+            start_date: null, end_date: null, target_amount: null, note: null,
+          }}
+          onCancel={() => setAdding(false)}
+          onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
+        />
+      )}
+      {editing && (
+        <BucketEditor
+          title={`Edit ${editing.name}`}
+          accounts={accounts}
+          availableToday={bucketPlan.availableToday}
+          initial={editing}
+          onCancel={() => setEditingId(null)}
+          onSubmit={async (data) => { await onUpdate(editing.id, data); setEditingId(null); }}
+        />
+      )}
+    </>
+  );
+}
+
+/* --------------------------------- Budgets -------------------------------- */
+
+/** Lives on the Expenses page: a budget is an expense with a spending limit. */
+export function BudgetsPanel({
+  budgets, accounts, cards, categories, onAdd, onUpdate, onDelete,
+}: BudgetsProps) {
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const section = useCollapsed('budgets');
+
+  const editing = budgets.find((b) => b.id === editingId) ?? null;
   const budgeted = budgets.reduce((sum, b) => sum + b.monthly_amount, 0);
   const spent = budgets.reduce((sum, b) => sum + ((b.budget_categories ?? []).length ? (b.spent_this_month ?? 0) : 0), 0);
   const trackedBudgeted = budgets.reduce((sum, b) => sum + ((b.budget_categories ?? []).length ? b.monthly_amount : 0), 0);
-  const shortAccounts = bucketPlan.shortfalls.length;
 
   const toBudgetData = (data: { name: string; amount: number; source: string; categories: string[] }, existing?: Expense): ItemFormData => {
     const [type, id] = data.source.split(':');
@@ -476,69 +569,16 @@ export default function Budgets({
     <>
       <Panel>
         <PanelHeader
-          title="Buckets"
-          description="Money set aside inside an account. It stays in the account, but it's no longer free to spend."
-          badges={shortAccounts > 0 && <Pill tone="danger">{shortAccounts} account{shortAccounts === 1 ? '' : 's'} short</Pill>}
-          stats={buckets.length > 0 ? [{ label: 'Set aside', value: formatMoney(setAside, { whole: true }), className: 'text-net-pos' }] : undefined}
-          collapsed={bucketsSection.collapsed}
-          onToggle={bucketsSection.toggle}
-        />
-        {!bucketsSection.collapsed && (
-          <>
-            {accounts.length > 0 && buckets.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-muted">
-                {accounts.filter((a) => bucketPlan.committedByAccount.has(a.id)).map((a) => {
-                  const free = bucketPlan.availableToday.get(a.id) ?? a.balance;
-                  return (
-                    <span key={a.id}>
-                      {a.name}: <strong className={cx(free < 0 ? 'text-expense' : 'text-text')}>{formatMoney(free, { whole: true })}</strong> free of {formatMoney(a.balance, { whole: true })}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            <div className="flex flex-col gap-2">
-              {buckets.map((b) => (
-                <BucketRow
-                  key={b.id}
-                  bucket={b}
-                  accounts={accounts}
-                  plan={bucketPlan}
-                  labels={labels}
-                  onEdit={() => setEditingBucketId(b.id)}
-                  onDelete={() => onDeleteBucket(b.id)}
-                  drag={dnd.handlers(b)}
-                  dragging={dnd.dragId === b.id}
-                />
-              ))}
-              {buckets.length === 0 && (
-                <EmptyState>
-                  <span className="inline-flex items-center gap-1.5">
-                    <PiggyBank size={14} strokeWidth={2} aria-hidden="true" />
-                    No buckets yet. Set money aside for an emergency fund, a trip, or next year's insurance.
-                  </span>
-                </EmptyState>
-              )}
-            </div>
-            <AddButton accent="cash" onClick={() => setAddingBucket(true)} className="mt-3 w-full" disabled={accounts.length === 0}>
-              + Add Bucket
-            </AddButton>
-          </>
-        )}
-      </Panel>
-
-      <Panel>
-        <PanelHeader
           title="Budgets"
-          description="Spending limits for costs that vary. Each one is an expense in the forecast; tracked categories show what's been spent this month."
+          description="Spending limits for costs that vary, like groceries or gas. Each counts as a monthly expense; this month only the unspent part is still to come."
           stats={budgets.length > 0 ? [
             ...(trackedBudgeted > 0 ? [{ label: 'Spent', value: `${formatMoney(spent, { whole: true })} / ${formatMoney(trackedBudgeted, { whole: true })}`, className: spent > trackedBudgeted ? 'text-expense' : 'text-text' }] : []),
             { label: 'Per month', value: formatMoney(budgeted, { whole: true }), className: 'text-expense' },
           ] : undefined}
-          collapsed={budgetsSection.collapsed}
-          onToggle={budgetsSection.toggle}
+          collapsed={section.collapsed}
+          onToggle={section.toggle}
         />
-        {!budgetsSection.collapsed && (
+        {!section.collapsed && (
           <>
             <div className="flex flex-col gap-2">
               {budgets.map((b) => (
@@ -547,8 +587,8 @@ export default function Budgets({
                   budget={b}
                   accounts={accounts}
                   cards={cards}
-                  onEdit={() => setEditingBudgetId(b.id)}
-                  onDelete={() => onDeleteBudget(b.id)}
+                  onEdit={() => setEditingId(b.id)}
+                  onDelete={() => onDelete(b.id)}
                 />
               ))}
               {budgets.length === 0 && (
@@ -560,64 +600,41 @@ export default function Budgets({
                 </EmptyState>
               )}
             </div>
-            <AddButton accent="expense" onClick={() => setAddingBudget(true)} className="mt-3 w-full">
+            <AddButton accent="expense" onClick={() => setAdding(true)} className="mt-3 w-full">
               + Add Budget
             </AddButton>
           </>
         )}
       </Panel>
 
-      {addingBucket && (
-        <BucketEditor
-          title="Add Bucket"
-          accounts={accounts}
-          availableToday={bucketPlan.availableToday}
-          initial={{
-            name: '', account_id: null, balance: 0, contribution: 0, frequency: 'monthly',
-            start_date: null, end_date: null, target_amount: null, note: null,
-          }}
-          onCancel={() => setAddingBucket(false)}
-          onSubmit={async (data) => { await onAddBucket(data); setAddingBucket(false); }}
-        />
-      )}
-      {editingBucket && (
-        <BucketEditor
-          title={`Edit ${editingBucket.name}`}
-          accounts={accounts}
-          availableToday={bucketPlan.availableToday}
-          initial={editingBucket}
-          onCancel={() => setEditingBucketId(null)}
-          onSubmit={async (data) => { await onUpdateBucket(editingBucket.id, data); setEditingBucketId(null); }}
-        />
-      )}
-      {addingBudget && (
+      {adding && (
         <BudgetEditor
           title="Add Budget"
           accounts={accounts}
           cards={cards}
           categories={categories}
           initial={{ name: '', amount: null, source: '', categories: [], split: false }}
-          onCancel={() => setAddingBudget(false)}
-          onSubmit={async (data) => { await onAddBudget(toBudgetData(data)); setAddingBudget(false); }}
+          onCancel={() => setAdding(false)}
+          onSubmit={async (data) => { await onAdd(toBudgetData(data)); setAdding(false); }}
         />
       )}
-      {editingBudget && (
+      {editing && (
         <BudgetEditor
-          title={`Edit ${editingBudget.name}`}
+          title={`Edit ${editing.name}`}
           accounts={accounts}
           cards={cards}
           categories={categories}
           initial={{
-            name: editingBudget.name,
-            amount: editingBudget.monthly_amount,
-            source: sourceValue(editingBudget.funding_allocations),
-            categories: editingBudget.budget_categories ?? [],
-            split: hasSplit(editingBudget),
+            name: editing.name,
+            amount: editing.monthly_amount,
+            source: sourceValue(editing.funding_allocations),
+            categories: editing.budget_categories ?? [],
+            split: hasSplit(editing),
           }}
-          onCancel={() => setEditingBudgetId(null)}
+          onCancel={() => setEditingId(null)}
           onSubmit={async (data) => {
-            await onUpdateBudget(editingBudget.id, toBudgetData(data, editingBudget));
-            setEditingBudgetId(null);
+            await onUpdate(editing.id, toBudgetData(data, editing));
+            setEditingId(null);
           }}
         />
       )}

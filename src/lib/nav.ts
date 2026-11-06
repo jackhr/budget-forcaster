@@ -2,8 +2,8 @@
 // every destination has a page can be tested — a nav id with no PAGE_META
 // entry crashed the whole app once, because the title lookup is unguarded.
 import {
-  ArrowLeftRight, ArrowUpRight, BarChart3, CreditCard, LayoutDashboard,
-  LineChart, List, PiggyBank, Receipt, Settings, Target, TrendingUp, Wallet, type LucideIcon,
+  BarChart3, CreditCard, LayoutDashboard, LineChart, List, Receipt, Settings,
+  Target, TrendingUp, Wallet, type LucideIcon,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -21,13 +21,17 @@ export interface NavGroup {
 
 export type Tab =
   | 'home'
-  | 'accounts' | 'income' | 'expenses' | 'debts' | 'budgets' | 'goals'
-  | 'projections' | 'breakdown' | 'account' | 'outflows' | 'transactions'
-  // Labelled "Account"; the id `account` was already taken by the Activity view.
+  | 'accounts' | 'income' | 'expenses' | 'debts' | 'goals'
+  | 'projections' | 'breakdown' | 'transactions'
+  // Labelled "Account". The id `account` belonged to the old Activity page, and
+  // stored copies of it still resolve to Breakdown, so it can't be reused.
   | 'settings';
 
 // Planning and viewing are deliberately separate: the editors live under PLAN
-// and nowhere else, so a view is just a view.
+// and nowhere else, so a view is just a view. Each concept lives on the page of
+// the thing it belongs to: buckets are money inside an account (Accounts),
+// budgets are expenses with a limit (Expenses), and every per-item view of the
+// forecast is a mode of Breakdown rather than a page of its own.
 export const NAV: NavGroup[] = [
   { items: [{ id: 'home', label: 'Home', icon: LayoutDashboard }] },
   {
@@ -37,7 +41,6 @@ export const NAV: NavGroup[] = [
       { id: 'income', label: 'Income', icon: TrendingUp },
       { id: 'expenses', label: 'Expenses', icon: Receipt },
       { id: 'debts', label: 'Debts', icon: CreditCard },
-      { id: 'budgets', label: 'Budgets', icon: PiggyBank },
       { id: 'goals', label: 'Goals', icon: Target },
     ],
   },
@@ -46,8 +49,6 @@ export const NAV: NavGroup[] = [
     items: [
       { id: 'projections', label: 'Projections', icon: LineChart },
       { id: 'breakdown', label: 'Breakdown', icon: BarChart3 },
-      { id: 'account', label: 'Activity', icon: ArrowLeftRight },
-      { id: 'outflows', label: 'Outflows', icon: ArrowUpRight },
       { id: 'transactions', label: 'Transactions', icon: List },
     ],
   },
@@ -58,16 +59,13 @@ export const TAB_IDS = NAV.flatMap((group) => group.items.map((item) => item.id)
 
 export const PAGE_META: Record<Tab, { title: string; subtitle?: string }> = {
   home: { title: 'Home', subtitle: 'Where you stand, and what’s coming' },
-  accounts: { title: 'Accounts', subtitle: 'The cash piles income lands in and bills are paid from' },
+  accounts: { title: 'Accounts', subtitle: 'Where your cash sits, and what’s set aside in it' },
   income: { title: 'Income', subtitle: 'Money coming in, by pay frequency' },
-  expenses: { title: 'Expenses', subtitle: 'Ongoing and time-boxed costs, and what funds each' },
+  expenses: { title: 'Expenses', subtitle: 'Bills, one-offs, and budgets for what varies' },
   debts: { title: 'Debts', subtitle: 'Balances, payoff strategy, and projected free dates' },
-  budgets: { title: 'Budgets & buckets', subtitle: 'Money set aside, and limits on what varies' },
   goals: { title: 'Goals', subtitle: 'Where you’re trying to get to, and when the plan gets you there' },
   projections: { title: 'Projections', subtitle: 'Cash flow, savings and net worth over time' },
-  breakdown: { title: 'Breakdown', subtitle: 'Item by item, by range or by month' },
-  account: { title: 'Activity', subtitle: 'What moves in and out of one account or debt' },
-  outflows: { title: 'Outflows', subtitle: 'What each account pays for, month by month' },
+  breakdown: { title: 'Breakdown', subtitle: 'The forecast item by item — over time, one month, or one account' },
   transactions: { title: 'Transactions', subtitle: 'Synced from your linked institutions' },
   settings: { title: 'Account', subtitle: 'Your profile, how the app looks, and your data' },
 };
@@ -83,3 +81,15 @@ export const PROJECTION_VIEWS: [ProjectionView, string][] = [
 ];
 
 export const PROJECTION_IDS = PROJECTION_VIEWS.map(([id]) => id);
+
+// Breakdown's modes. `account` and `outflows` were pages of their own.
+export type BreakdownMode = 'range' | 'month' | 'account' | 'outflows';
+
+export const BREAKDOWN_VIEWS: [BreakdownMode, string][] = [
+  ['range', 'Over time'],
+  ['month', 'One month'],
+  ['account', 'One account'],
+  ['outflows', 'Who pays'],
+];
+
+export const BREAKDOWN_MODES = BREAKDOWN_VIEWS.map(([id]) => id);

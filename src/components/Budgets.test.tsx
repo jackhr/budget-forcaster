@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import Budgets, { categoryLabel } from './Budgets';
+import { BucketsPanel, BudgetsPanel, categoryLabel } from './Budgets';
 import { buildBucketPlan } from '../lib/buckets';
 import type { Account, Bucket, Expense } from '../types';
 
@@ -28,21 +28,26 @@ const budget = (over: Partial<Expense> = {}): Expense => ({
 
 function page(buckets: Bucket[], budgets: Expense[]) {
   return renderToStaticMarkup(
-    <Budgets
-      buckets={buckets}
-      budgets={budgets}
-      accounts={accounts}
-      cards={[]}
-      categories={[]}
-      bucketPlan={buildBucketPlan(buckets, accounts, series, 3, NOW)}
-      labels={series.labels}
-      onAddBucket={noop} onUpdateBucket={noop} onDeleteBucket={noop} onReorderBuckets={() => {}}
-      onAddBudget={noop} onUpdateBudget={noop} onDeleteBudget={noop}
-    />,
+    <>
+      <BucketsPanel
+        buckets={buckets}
+        accounts={accounts}
+        bucketPlan={buildBucketPlan(buckets, accounts, series, 3, NOW)}
+        labels={series.labels}
+        onAdd={noop} onUpdate={noop} onDelete={noop} onReorder={() => {}}
+      />
+      <BudgetsPanel
+        budgets={budgets}
+        accounts={accounts}
+        cards={[]}
+        categories={[]}
+        onAdd={noop} onUpdate={noop} onDelete={noop}
+      />
+    </>,
   );
 }
 
-describe('Budgets page', () => {
+describe('Buckets and budgets panels', () => {
   it('invites a first bucket and a first budget when there are none', () => {
     const html = page([], []);
     expect(html).toContain('No buckets yet');

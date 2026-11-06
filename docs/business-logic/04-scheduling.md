@@ -5,7 +5,7 @@ There are **two scheduling engines** that can disagree. Know which one you're to
 | | Monthly engine | Day engine |
 |---|---|---|
 | Code | `src/lib/forecast.ts` (`incomeCashAtMonth`, `expenseOccurrenceAtMonth`, `paymentCashAtMonth`, `fundingRuleValue`) | `src/lib/monthlyBreakdown.ts` (`occurrenceDates`, `incomeOccurrenceDates`) |
-| Feeds | Forecast, Savings, Net Worth, Breakdown (range), Overview, Activity, Outflows, debt plan | Breakdown → Month view (daily chart, calendar, liquidity) |
+| Feeds | Forecast, Savings, Net Worth, Breakdown (range), Overview, Breakdown (one account, who pays), debt plan | Breakdown → Month view (daily chart, calendar, liquidity) |
 | Granularity | Month offset only. **The day of the month is ignored.** | Real calendar dates |
 | Owner intent | Approximation, to be replaced | **Source of truth** ([01](01-product-intent.md#direction-owner-confirmed-not-yet-built)) |
 
@@ -72,5 +72,5 @@ Rule dates are day-precision in the UI but **month-precision in the monthly math
 ## Horizon and windows
 
 - `months` (horizon) is 1–120. `startMonth` hides earlier months from charts but **does not change the math**. Everything is still computed from month 0, so balances at the window start include earlier months.
-- The Activity tab computes a horizon of `activityMonth + 1` and shows only that month.
+- Breakdown › One account computes a horizon of `activityMonth + 1` and shows only that month.
 - The Month view (Breakdown → Month) chains months: month N's opening liquidity = month N−1's projected closing liquidity from the day engine.

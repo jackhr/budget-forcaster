@@ -60,7 +60,7 @@ Weekly, biweekly, monthly, and lump income have **no** such adjustment, so a pay
 | **Breakdown → Month** | `buildMonthBreakdown` chained month by month | See [08](08-monthly-obligations.md). |
 | **Overview** | income, expenses (ongoing only), cash balance, debt remaining | |
 | **Activity** | `buildAccountActivity` / `buildDebtActivity` for one month | Per-item in/out with a funding detail string. Paid items are shown but excluded from totals. |
-| **Outflows** | `expensePlan.outByAccount` + `debtOutByAccount` | Stacked by account per month; list view with a category split. |
+| **Breakdown › Who pays** | `expensePlan.outByAccount` + `debtOutByAccount` | Stacked by account per month; list view with a category split. |
 | **Transactions** | Plaid cache, not the forecast | See [09](09-plaid.md). |
 
 "This month out" strip (all tabs except Transactions): month-0 expenses and debt payments, plus net.

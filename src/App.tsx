@@ -17,11 +17,14 @@ import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import AccountSettings from './components/AccountSettings';
 import Goals, { type GoalInput } from './components/Goals';
-import Budgets from './components/Budgets';
+import { BucketsPanel, BudgetsPanel } from './components/Budgets';
 import { buildBucketPlan } from './lib/buckets';
 import AppShell from './components/AppShell';
 import { DEFAULT_HOME_LAYOUT, resolveHomeLayout, type HomeLayout } from './lib/homeLayout';
-import { NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS, type ProjectionView, type Tab } from './lib/nav';
+import {
+  BREAKDOWN_MODES, BREAKDOWN_VIEWS, NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS,
+  type BreakdownMode, type ProjectionView, type Tab,
+} from './lib/nav';
 import Home from './components/Home';
 import { Banner, Panel, Segmented } from './ui';
 import Toolbar from './components/Toolbar';
@@ -39,9 +42,7 @@ const AccountOutflows = lazy(() => import('./components/AccountOutflows'));
 const Transactions = lazy(() => import('./components/Transactions'));
 
 const BREAKDOWN_SECTIONS: BreakdownSection[] = ['account', 'income', 'expense', 'debt'];
-const BREAKDOWN_MODES: BreakdownMode[] = ['range', 'month'];
 type BreakdownSection = 'account' | 'income' | 'expense' | 'debt';
-type BreakdownMode = 'range' | 'month';
 
 function reorderBy<T extends { id: number }>(arr: T[], ids: number[]): T[] {
   const pos = new Map(ids.map((id, i) => [id, i]));
@@ -124,23 +125,20 @@ export default function App() {
   const [startMonth, setStartMonth] = useState(() => Number(localStorage.getItem('bf.startMonth')) || 0);
   // Stored ids come from whatever build the user last ran, so they're resolved
   // against the ids that exist now; a retired tab maps forward where it can.
-  const [tab, setTab] = useState<Tab>(
-    () => resolveTab(localStorage.getItem('bf.tab'), TAB_IDS, 'home').tab as Tab,
-  );
-  const [projectionView, setProjectionView] = useState<ProjectionView>(() => {
-    const carriedOver = resolveTab(localStorage.getItem('bf.tab'), TAB_IDS, 'home').view;
-    return (carriedOver as ProjectionView)
-      ?? pickStored(localStorage.getItem('bf.projection'), PROJECTION_IDS, 'cashflow');
-  });
+  const [storedTab] = useState(() => resolveTab(localStorage.getItem('bf.tab'), TAB_IDS, 'home'));
+  const [tab, setTab] = useState<Tab>(storedTab.tab as Tab);
+  const [projectionView, setProjectionView] = useState<ProjectionView>(() =>
+    (storedTab.tab === 'projections' && storedTab.view as ProjectionView)
+      || pickStored(localStorage.getItem('bf.projection'), PROJECTION_IDS, 'cashflow'));
   const [compareId, setCompareId] = useState<number | null>(null);
   const [breakdownSection, setBreakdownSection] = useState<BreakdownSection>(
     () => pickStored(localStorage.getItem('bf.breakdown'), BREAKDOWN_SECTIONS, 'debt'),
   );
-  const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>(
-    () => pickStored(localStorage.getItem('bf.breakdownMode'), BREAKDOWN_MODES, 'range'),
-  );
+  const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>(() =>
+    (storedTab.tab === 'breakdown' && storedTab.view as BreakdownMode)
+      || pickStored(localStorage.getItem('bf.breakdownMode'), BREAKDOWN_MODES, 'range'));
   const [breakdownMonth, setBreakdownMonth] = useState(() => Number(localStorage.getItem('bf.breakdownMonth')) || 0);
-  const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for the Activity tab
+  const [activeEntity, setActiveEntity] = useState<string>(''); // 'account:id' | 'debt:id' for Breakdown › One account
   const [activityMonth, setActivityMonth] = useState(() => Number(localStorage.getItem('bf.activityMonth')) || 0);
   const [savingsAccountId, setSavingsAccountId] = useState<number | null>(null); // null = all accounts
   // "Paid this month" for debts and expenses: manual overrides + Plaid detection, from the server.
@@ -712,25 +710,6 @@ export default function App() {
           />
         )}
 
-        {tab === 'budgets' && (
-          <Budgets
-            buckets={buckets}
-            budgets={expenses.filter((e) => e.is_budget)}
-            accounts={accounts}
-            cards={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name }))}
-            categories={budgetCategories}
-            bucketPlan={bucketPlan}
-            labels={savings.map((s) => s.label)}
-            onAddBucket={addBucket}
-            onUpdateBucket={updateBucket}
-            onDeleteBucket={deleteBucket}
-            onReorderBuckets={reorderBuckets}
-            onAddBudget={addBudget}
-            onUpdateBudget={updateExpense}
-            onDeleteBudget={deleteExpense}
-          />
-        )}
-
         {tab === 'settings' && (
           <AccountSettings
             currency={currency}
@@ -811,7 +790,7 @@ export default function App() {
             <OverviewChart data={visible(overviewData)} startMonth={startMonth} months={months} onStartMonthChange={changeStartMonth} onMonthsChange={changeEndMonth} payoffMarkers={payoffMarkers} />
           </Suspense>
         )}
-        {tab === 'account' && (() => {
+        {tab === 'breakdown' && breakdownMode === 'account' && (() => {
           const entities = [
             ...accounts.map((a) => ({ id: a.id, name: a.name, kind: 'account' as const, isPrimary: !!a.is_primary })),
             ...debts.map((d) => ({ id: d.id, name: d.name, kind: 'debt' as const })),
@@ -865,7 +844,7 @@ export default function App() {
             <div className="flex flex-wrap items-center justify-between gap-2.5">
               <Segmented
                 ariaLabel="Breakdown mode"
-                options={[{ id: 'range', label: 'Range' }, { id: 'month', label: 'Month' }]}
+                options={BREAKDOWN_VIEWS.map(([id, label]) => ({ id, label }))}
                 value={breakdownMode}
                 onChange={setBreakdownMode}
               />
@@ -883,7 +862,7 @@ export default function App() {
                 />
               )}
             </div>
-            {breakdownMode === 'range' ? (
+            {breakdownMode === 'range' && (
               <Suspense fallback={<ChartFallback />}>
                 <BreakdownChart
                   title={breakdownTitle} subtitle={breakdownSubtitle} breakdown={visibleBreakdown}
@@ -896,14 +875,15 @@ export default function App() {
                   chipGroups={breakdownSection === 'debt' ? debtChipGroups : undefined}
                 />
               </Suspense>
-            ) : (
+            )}
+            {breakdownMode === 'month' && (
               <Suspense fallback={<ChartFallback />}>
                 <MonthlyBreakdown breakdown={monthlyBreakdown} month={breakdownMonth} onMonthChange={setBreakdownMonth} initialView="daily" />
               </Suspense>
             )}
           </>
         )}
-        {tab === 'outflows' && (
+        {tab === 'breakdown' && breakdownMode === 'outflows' && (
           <Suspense fallback={<ChartFallback />}>
             <AccountOutflows
               accounts={accounts.map((a) => ({ id: a.id, name: a.name, is_primary: a.is_primary }))}
@@ -938,14 +918,24 @@ export default function App() {
           </Suspense>
         )}
 
-        {/* Budget data & editors — shown on every tab except the standalone Transactions page. */}
+        {/* The Plan pages: the only place anything is edited. */}
         {tab === 'accounts' && (
           <>
             <Accounts
-        accounts={accounts}
-        onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount}
-        onMakePrimary={makePrimary} onReorder={reorderAccounts}
-      />
+              accounts={accounts}
+              onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount}
+              onMakePrimary={makePrimary} onReorder={reorderAccounts}
+            />
+            <BucketsPanel
+              buckets={buckets}
+              accounts={accounts}
+              bucketPlan={bucketPlan}
+              labels={savings.map((s) => s.label)}
+              onAdd={addBucket}
+              onUpdate={updateBucket}
+              onDelete={deleteBucket}
+              onReorder={reorderBuckets}
+            />
           </>
         )}
 
@@ -964,9 +954,10 @@ export default function App() {
         )}
 
         {tab === 'expenses' && (
+          <>
           <LineItemTable
-          title="Expenses" description="Ongoing costs by frequency — split across cash & credit via Edit"
-          items={expenses} accent="expense" totalLabel="Total Per Payment"
+          title="Bills & costs" description="Fixed costs by frequency — split across cash & credit via Edit"
+          items={expenses.filter((e) => !e.is_budget)} accent="expense" totalLabel="Total Per Payment"
           kind="expense" groups={groups} showFrequency showFunding
           isPaidThisMonth={(item) => isExpensePaidThisMonth(item as Expense)}
           onTogglePaid={(item) => toggleExpensePaid(item as Expense)}
@@ -976,6 +967,16 @@ export default function App() {
           onAddGroup={(name) => addGroup(name, 'expense')} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup}
           onReorder={reorderExpenses} onReorderGroup={reorderGroups}
         />
+          <BudgetsPanel
+            budgets={expenses.filter((e) => e.is_budget)}
+            accounts={accounts}
+            cards={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name }))}
+            categories={budgetCategories}
+            onAdd={addBudget}
+            onUpdate={updateExpense}
+            onDelete={deleteExpense}
+          />
+          </>
         )}
 
         {tab === 'debts' && (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NAV, PAGE_META, PROJECTION_IDS, PROJECTION_VIEWS, TAB_IDS } from './nav';
+import { BREAKDOWN_MODES, BREAKDOWN_VIEWS, NAV, PAGE_META, PROJECTION_IDS, PROJECTION_VIEWS, TAB_IDS } from './nav';
 import { LEGACY_TABS, resolveTab } from './viewPrefs';
 
 describe('navigation', () => {
@@ -38,7 +38,19 @@ describe('navigation', () => {
 
   it('separates planning from viewing', () => {
     const plan = NAV.find((g) => g.heading === 'Plan');
-    expect(plan?.items.map((i) => i.id)).toEqual(['accounts', 'income', 'expenses', 'debts', 'budgets', 'goals']);
+    expect(plan?.items.map((i) => i.id)).toEqual(['accounts', 'income', 'expenses', 'debts', 'goals']);
+  });
+});
+
+describe('page modes', () => {
+  it('keeps breakdown ids and labels in step', () => {
+    expect(BREAKDOWN_MODES).toEqual(BREAKDOWN_VIEWS.map(([id]) => id));
+    expect(new Set(BREAKDOWN_MODES).size).toBe(BREAKDOWN_MODES.length);
+  });
+
+  it('keeps the nav short', () => {
+    // The point of the reorganisation: one page per thing you plan or view.
+    expect(TAB_IDS.length).toBeLessThanOrEqual(10);
   });
 });
 
@@ -55,13 +67,14 @@ describe('legacy tabs resolve against the real nav', () => {
       const resolved = resolveTab(legacyId, TAB_IDS, 'home');
       expect({ legacyId, tab: resolved.tab }).toEqual({ legacyId, tab: target.tab });
       expect(resolved.tab in PAGE_META).toBe(true);
-      expect(PROJECTION_IDS).toContain(resolved.view);
+      const modes: readonly string[] = { projections: PROJECTION_IDS, breakdown: BREAKDOWN_MODES }[resolved.tab] ?? [];
+      if (resolved.view !== null) expect(modes).toContain(resolved.view);
     }
   });
 
   it('covers every tab the previous version had', () => {
     // What shipped before the sidebar redesign.
-    const previous = ['forecast', 'savings', 'networth', 'breakdown', 'overview', 'account', 'outflows', 'transactions'];
+    const previous = ['forecast', 'savings', 'networth', 'breakdown', 'overview', 'account', 'outflows', 'transactions', 'budgets'];
     for (const id of previous) {
       const { tab } = resolveTab(id, TAB_IDS, 'home');
       expect({ id, landsOnARealPage: tab in PAGE_META }).toEqual({ id, landsOnARealPage: true });

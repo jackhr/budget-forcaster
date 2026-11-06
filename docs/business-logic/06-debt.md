@@ -40,9 +40,9 @@ simulateDebtPlan(debts, extra, strategy, months, charges, paymentSchedule?, paid
 
 | Plan | Args | Used for |
 |---|---|---|
-| `plan` | user strategy + extra, all charges, schedule, paid set | Forecast, Savings, Net Worth, Overview, Outflows, Debt breakdown, payoff markers, over-limit badges, invalid-target banner |
+| `plan` | user strategy + extra, all charges, schedule, paid set | Forecast, Savings, Net Worth, Overview, Breakdown › Who pays, Debt breakdown, payoff markers, over-limit badges, invalid-target banner |
 | `basePlan` | `none`, extra 0, same charges, schedule, and paid set | "saves $X · N mo sooner" in the Debts header (`basePlan.totalInterest − plan.totalInterest`) |
-| activity plan | horizon = selected month + 1, **no paid set** | Activity tab |
+| activity plan | horizon = selected month + 1, **no paid set** | Breakdown › One account |
 | scenario plan | from the snapshot, no paid set | Compare overlay |
 
 ## Charges
@@ -78,7 +78,7 @@ Purpose: account balances are as-of-today, but month 0 would otherwise subtract 
 
 `netWorth[m] = savings.balance[m] − plan.remaining[m]`. There's no separate asset class: imported investment accounts count as cash, and home equity isn't modeled.
 
-## Debt Activity (Activity tab → a debt)
+## Debt Activity (Breakdown › One account → a debt)
 
 - **In** (grows the balance): charges grouped by source name, plus interest.
 - **Out** (pays it down): payments, one row per funding account ("from Checking"). If no valid account funds it, a single "Funding account not set" row.
