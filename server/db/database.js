@@ -187,6 +187,11 @@ for (const table of ['accounts', 'debts']) {
   }
 }
 
+// --- Migration: goals gained a progress baseline after the table first shipped ---
+if (!db.prepare('PRAGMA table_info(goals)').all().some((c) => c.name === 'start_amount')) {
+  db.exec('ALTER TABLE goals ADD COLUMN start_amount REAL');
+}
+
 // --- Migration: add sort_order to reorderable tables ---
 for (const table of ['income_sources', 'expenses', 'debts', 'line_item_groups']) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
