@@ -49,6 +49,15 @@ function parseGoal(body, userId) {
     accountId = body.account_id;
   }
 
+  // A savings goal tracks a bucket instead of a raw balance when one is given.
+  let bucketId = null;
+  if (kind === 'savings' && body?.bucket_id != null) {
+    const owned = db.prepare('SELECT 1 FROM buckets WHERE id = ? AND user_id = ?').get(body.bucket_id, userId);
+    if (!owned) return { error: 'bucket_id does not exist' };
+    bucketId = body.bucket_id;
+    accountId = null;
+  }
+
   let debtId = null;
   if (kind === 'debt_payoff' && body?.debt_id != null) {
     const owned = db.prepare('SELECT 1 FROM debts WHERE id = ? AND user_id = ?').get(body.debt_id, userId);
@@ -58,7 +67,7 @@ function parseGoal(body, userId) {
 
   const note = body?.note == null ? null : String(body.note).trim().slice(0, 500) || null;
 
-  return { value: { name, kind, targetAmount, targetDate, accountId, debtId, note } };
+  return { value: { name, kind, targetAmount, targetDate, accountId, bucketId, debtId, note } };
 }
 
 /**
@@ -91,10 +100,10 @@ router.post('/', (req, res) => {
   if (error) return res.status(400).json({ error });
 
   const result = db.prepare(
-    `INSERT INTO goals (user_id, name, kind, target_amount, start_amount, target_date, account_id, debt_id, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO goals (user_id, name, kind, target_amount, start_amount, target_date, account_id, bucket_id, debt_id, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(req.user.id, value.name, value.kind, value.targetAmount, startAmountFor(value, req.user.id),
-    value.targetDate, value.accountId, value.debtId, value.note);
+    value.targetDate, value.accountId, value.bucketId, value.debtId, value.note);
 
   res.status(201).json(db.prepare('SELECT * FROM goals WHERE id = ?').get(result.lastInsertRowid));
 });
@@ -113,9 +122,9 @@ router.put('/:id', (req, res) => {
 
   db.prepare(
     `UPDATE goals SET name = ?, kind = ?, target_amount = ?, start_amount = ?, target_date = ?,
-     account_id = ?, debt_id = ?, note = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`
+     account_id = ?, bucket_id = ?, debt_id = ?, note = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`
   ).run(value.name, value.kind, value.targetAmount, startAmount, value.targetDate, value.accountId,
-    value.debtId, value.note, req.params.id, req.user.id);
+    value.bucketId, value.debtId, value.note, req.params.id, req.user.id);
 
   res.json(db.prepare('SELECT * FROM goals WHERE id = ?').get(req.params.id));
 });

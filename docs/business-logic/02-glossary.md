@@ -10,6 +10,9 @@
 | **Occurrence** (income) | One scheduled payday of a twice-monthly income, which can be overridden: moved to another day in the same month, marked received, or skipped. | `income_occurrences` |
 | **Detected** | Inferred from Plaid at read time, never stored. A twice-monthly payday matched to a deposit, or a debt payment found in liability data or transactions. | `server/routes/income.js:serialize`, `server/lib/paidDetection.js` |
 | **Expense** | An ongoing recurring cost. `monthly_amount` is **per occurrence**. Inflation applies. | `expenses` |
+| **Budget** | An expense marked `is_budget`: a monthly spending limit tracked against Plaid categories. Month 0 bills only the unspent part. | `expenses.is_budget`, [03](03-entities.md#budget-an-expense-with-is_budget--1) |
+| **Bucket** | Money set aside inside an account. Never moves cash; it only reduces what's **available**. | `buckets`, `src/lib/buckets.ts` |
+| **Available** | An account's balance minus what its buckets hold. Can go negative, which is flagged as a bucket shortfall. | `buckets.ts:buildBucketPlan` |
 | **Debt** | A credit card or loan with a balance, APR, and monthly payment. | `debts` |
 | **Credit card** (`credit_card`) | Revolving debt. **Can be charged**, meaning it can fund expenses. May have a `credit_limit`. | `debts.debt_type` |
 | **Loan** (`loan`) | Installment debt. **Cannot be charged.** Has no credit limit. | `debts.debt_type` |
@@ -28,7 +31,7 @@
 | **Horizon** | Number of months forecast (`months`, 1–120), plus a visible window start (`startMonth`). | localStorage `bf.months`, `bf.startMonth` |
 | **Month 0** | The current calendar month. | |
 | **Scenario** | A named full snapshot of the plan data. It can be compared as an overlay or restored, which replaces all data. | `scenarios` |
-| **Group** | A named bucket for income, expenses, or debts, used for display and subtotals only. It has no effect on the math. | `line_item_groups` |
+| **Group** | A named set of income, expenses, or debts, used for display and subtotals only. It has no effect on the math. | `line_item_groups` |
 | **Liquidity** | In the Month view: cash in accounts plus available credit on cards that have a limit. The "available to play with" figure. | [08](08-monthly-obligations.md) |
 | **Item** (Plaid) | One linked login at one institution. It can contain several accounts. | `plaid_items` |
 | **Import** / **Resync** | Import creates app accounts or debts from Plaid accounts. Resync copies fresh Plaid values into already-imported rows. | [09](09-plaid.md) |

@@ -94,6 +94,25 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Money set aside inside an account. It never leaves the account; it just
+  -- isn't free to spend. Contributions follow the same frequency/start/end
+  -- schedule as an expense, and stop once target_amount is reached.
+  CREATE TABLE IF NOT EXISTS buckets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,  -- null = primary
+    balance REAL NOT NULL DEFAULT 0,          -- set aside today
+    target_amount REAL,                       -- null = no cap
+    contribution REAL NOT NULL DEFAULT 0,     -- per occurrence
+    frequency TEXT NOT NULL DEFAULT 'monthly',
+    start_date TEXT,                          -- null = from this month
+    end_date TEXT,                            -- null = ongoing
+    note TEXT,
+    sort_order INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS scenarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -190,6 +209,22 @@ for (const table of ['accounts', 'debts']) {
 // --- Migration: goals gained a progress baseline after the table first shipped ---
 if (!db.prepare('PRAGMA table_info(goals)').all().some((c) => c.name === 'start_amount')) {
   db.exec('ALTER TABLE goals ADD COLUMN start_amount REAL');
+}
+// A savings goal can track a bucket. No foreign key: a goal whose bucket was
+// deleted should report "untracked", not silently fall back to an account.
+if (!db.prepare('PRAGMA table_info(goals)').all().some((c) => c.name === 'bucket_id')) {
+  db.exec('ALTER TABLE goals ADD COLUMN bucket_id INTEGER');
+}
+
+// --- Migration: budgets are expenses with a spending limit and Plaid categories ---
+{
+  const cols = db.prepare('PRAGMA table_info(expenses)').all();
+  if (!cols.some((c) => c.name === 'is_budget')) {
+    db.exec('ALTER TABLE expenses ADD COLUMN is_budget INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.some((c) => c.name === 'budget_categories')) {
+    db.exec("ALTER TABLE expenses ADD COLUMN budget_categories TEXT NOT NULL DEFAULT '[]'");
+  }
 }
 
 // --- Migration: add sort_order to reorderable tables ---
@@ -331,7 +366,7 @@ db.exec(`
 // Added nullable so an existing single-user database keeps working; the first
 // account registered adopts every unowned row (see claimUnownedData).
 const OWNED_TABLES = [
-  'accounts', 'income_sources', 'expenses', 'debts', 'line_item_groups', 'goals',
+  'accounts', 'income_sources', 'expenses', 'debts', 'line_item_groups', 'goals', 'buckets',
   'scenarios', 'income_occurrences', 'plaid_items', 'plaid_accounts', 'plaid_transactions',
 ];
 for (const table of OWNED_TABLES) {

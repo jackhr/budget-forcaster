@@ -67,7 +67,7 @@ afterAll(() => {
 
 describe('authentication', () => {
   it('rejects every data endpoint without a session', async () => {
-    for (const route of ['/income', '/expenses', '/debts', '/accounts', '/goals', '/groups', '/settings', '/paid', '/scenarios', '/export', '/plaid/status']) {
+    for (const route of ['/income', '/expenses', '/debts', '/accounts', '/goals', '/buckets', '/expenses/budget-categories', '/groups', '/settings', '/paid', '/scenarios', '/export', '/plaid/status']) {
       const res = await api(route);
       expect({ route, status: res.status }).toEqual({ route, status: 401 });
     }
@@ -126,6 +126,11 @@ describe('tenant isolation', () => {
       group: await mk('/groups', { name: 'Alice Group', kind: 'expense' }),
     };
     aliceIds.goal = await mk('/goals', { name: 'Alice Fund', kind: 'savings', target_amount: 10000 });
+    aliceIds.bucket = await mk('/buckets', { name: 'Alice Rainy Day', account_id: aliceIds.account, balance: 500, contribution: 100 });
+    aliceIds.budget = await mk('/expenses', {
+      name: 'Alice Groceries', monthly_amount: 600, frequency: 'weekly', start_date: '2026-01-01',
+      is_budget: true, budget_categories: ['FOOD_AND_DRINK', 'TRANSFER_OUT', 'bad category'],
+    });
     await api('/settings/currency', { method: 'PUT', body: { value: 'GBP' }, cookie: alice });
   });
 
@@ -136,6 +141,7 @@ describe('tenant isolation', () => {
       ['/debts', 'Alice Card'],
       ['/groups', 'Alice Group'],
       ['/goals', 'Alice Fund'],
+      ['/buckets', 'Alice Rainy Day'],
     ]) {
       const mine = await (await api(route, { cookie: alice })).json();
       expect(mine.map((r) => r.name)).toContain(aliceName);
@@ -174,6 +180,36 @@ describe('tenant isolation', () => {
     expect((await (await api('/goals', { cookie: bob })).json())).toEqual([]);
   });
 
+  it("refuses to put a bucket in another user's account, or a goal on another user's bucket", async () => {
+    const bucket = await api('/buckets', { method: 'POST', body: { name: 'Theirs', account_id: aliceIds.account }, cookie: bob });
+    expect(bucket.status).toBe(400);
+
+    const goal = await api('/goals', {
+      method: 'POST',
+      body: { name: 'Theirs', kind: 'savings', target_amount: 100, bucket_id: aliceIds.bucket },
+      cookie: bob,
+    });
+    expect(goal.status).toBe(400);
+
+    const mine = await api('/goals', {
+      method: 'POST',
+      body: { name: 'Rainy day', kind: 'savings', target_amount: 2000, bucket_id: aliceIds.bucket },
+      cookie: alice,
+    });
+    expect(mine.status).toBe(201);
+    expect((await mine.json()).bucket_id).toBe(aliceIds.bucket);
+  });
+
+  it('keeps a budget monthly, and only real spending categories', async () => {
+    const budget = (await (await api('/expenses', { cookie: alice })).json()).find((e) => e.id === aliceIds.budget);
+    expect(budget.is_budget).toBe(1);
+    expect(budget.frequency).toBe('monthly');
+    // Transfers aren't spending, and junk isn't a category.
+    expect(budget.budget_categories).toEqual(['FOOD_AND_DRINK']);
+    expect(budget.spent_this_month).toBe(0);
+    expect((await (await api('/expenses/budget-categories', { cookie: bob })).json())).toEqual([]);
+  });
+
   it('validates what a goal can be', async () => {
     const post = (body) => api('/goals', { method: 'POST', body, cookie: alice });
 
@@ -196,6 +232,7 @@ describe('tenant isolation', () => {
     const exported = async (cookie) => (await (await api('/export', { cookie })).json()).data;
 
     expect((await exported(bob)).goals.map((g) => g.name)).not.toContain('Alice Fund');
+    expect((await exported(bob)).buckets).toEqual([]);
 
     const mine = (await exported(alice)).goals;
     expect(mine.map((g) => g.name)).toContain('Alice Fund');
@@ -244,6 +281,7 @@ describe('tenant isolation', () => {
       ['/accounts', aliceIds.account, { name: 'hacked', balance: 1 }],
       ['/groups', aliceIds.group, { name: 'hacked' }],
       ['/goals', aliceIds.goal, { name: 'hacked', kind: 'savings', target_amount: 1 }],
+      ['/buckets', aliceIds.bucket, { name: 'hacked' }],
     ];
     for (const [route, id, body] of targets) {
       const put = await api(`${route}/${id}`, { method: 'PUT', body, cookie: bob });

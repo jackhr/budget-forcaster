@@ -14,6 +14,8 @@ It answers questions like: *Will checking go negative in March? When is the car 
 
 It is **not** a transaction-categorizing budget app (like YNAB or Mint). Real bank data (Plaid) keeps balances current and confirms what actually happened. The plan itself is a model the user maintains.
 
+**Budgets and buckets fit that, not the other way round.** A budget is a planned expense whose month-0 remainder is reconciled against Plaid's own categories — the user never categorizes a transaction. A bucket earmarks money inside an account without moving it, so "what can I spend" stops counting money that's already promised.
+
 ## Audience
 
 - **Today:** multi-user. Each account holds one household's plan, isolated from every other account ([11](11-accounts-and-access.md)). Still self-hosted rather than a public service.

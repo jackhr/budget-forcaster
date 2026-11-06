@@ -60,9 +60,15 @@ These went back and forth in history. **Don't reopen them without the owner.**
 | Plaid $0 minimum | Never overwrite an existing `monthly_payment` with a $0 or missing minimum (cards and loans). | cards only (`82ac06c`) → all debts (`75bbb3b`). |
 | Unlink keeps imported rows | Detach the link; reattach by name on relink. | `4ed3786`. |
 | "Paid this month" precedence | Manual override → Plaid detection (debts) → autopay-day default (debts) / unpaid (expenses). Stored server-side. | localStorage (`fbae2a8`) → server + detection (`75bbb3b`). |
+| Budgets | A budget is an **expense** with `is_budget`, not a new table. Month 0 bills `max(0, amount − spent this month)`. | Added 2026-11. |
+| Buckets | Earmarks only: never move cash. An account that can't cover its buckets is **flagged**, never capped. | Added 2026-11. |
+| Reaching a goal | The target must be met **and held** through the horizon; touching it once is `off-track`. | first touch → **held** (2026-11). |
 | Privacy | Repo is public: no household data in code, docs, tests, or commit messages. | Confirmed 2026-09. |
 
 ## Resolved
+
+### G11: A goal read "on track" when the plan only touched the target (BUG → fixed, 2026-11)
+A savings goal on a checking account showed "On track" for the month an annual bonus landed, though the account was spent back below the target within two months. `firstMonthMeeting` returned the first month the series met the target. Fixed by requiring the target to hold through the end of the horizon (`goals.ts:firstMonthHolding`), reporting the touch separately (`touchesLabel`), and adding buckets so the money can actually be set aside. Tests: `a target the plan touches but does not keep`.
 
 All in `75bbb3b` unless noted.
 

@@ -1,4 +1,4 @@
-import type { Account, AuthUser, Debt, Expense, Goal, GroupKind, IncomeSource, LineItemGroup, PaidStatus } from '../types';
+import type { Account, AuthUser, Bucket, BudgetCategory, Debt, Expense, Goal, GroupKind, IncomeSource, LineItemGroup, PaidStatus } from '../types';
 
 const BASE = '/api';
 
@@ -61,8 +61,19 @@ export const goalsApi = {
   reorder: (ids: number[]) => reorder('goals', ids),
 };
 
+export type BucketInput = Omit<Bucket, 'id' | 'sort_order' | 'created_at' | 'updated_at'>;
+
+export const bucketsApi = {
+  getAll: () => req<Bucket[]>('/buckets'),
+  create: (data: BucketInput) => req<Bucket>('/buckets', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: Partial<BucketInput>) =>
+    req<Bucket>(`/buckets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => req<void>(`/buckets/${id}`, { method: 'DELETE' }),
+  reorder: (ids: number[]) => reorder('buckets', ids),
+};
+
 type IncomeInput = Omit<IncomeSource, 'id' | 'created_at' | 'updated_at' | 'occurrences'>;
-type ExpenseInput = Omit<Expense, 'id' | 'created_at' | 'updated_at'>;
+type ExpenseInput = Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'spent_this_month'>;
 
 const reorder = (resource: string, ids: number[]) =>
   req<{ ok: boolean }>(`/${resource}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) });
@@ -89,6 +100,7 @@ export const expensesApi = {
     req<Expense>(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => req<void>(`/expenses/${id}`, { method: 'DELETE' }),
   reorder: (ids: number[]) => reorder('expenses', ids),
+  budgetCategories: () => req<BudgetCategory[]>('/expenses/budget-categories'),
 };
 
 export const groupsApi = {

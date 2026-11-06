@@ -112,8 +112,76 @@ describe('payoff goals', () => {
   });
 
   it('is met once the balance is clear', () => {
-    const cleared = { ...inputs, debts: [{ id: 7, balance: 0 }] };
+    const cleared = { ...inputs, debts: [{ id: 7, balance: 0 }], remainingByDebt: new Map([[7, [0, 0, 0, 0, 0, 0]]]) };
     expect(goalProgress(payoff(), cleared, NOW).status).toBe('met');
+  });
+
+  it('is not met when a cleared card is charged back up', () => {
+    const recharged = { ...inputs, debts: [{ id: 7, balance: 0 }], remainingByDebt: new Map([[7, [0, 0, 400, 800, 1200, 1600]]]) };
+    const p = goalProgress(payoff(), recharged, NOW);
+    expect(p.status).toBe('off-track');
+  });
+});
+
+describe('a target the plan touches but does not keep', () => {
+  // A bonus lands in January and is spent back down by spring.
+  const spiky: GoalInputs = {
+    ...inputs,
+    accountSeries: {
+      ...inputs.accountSeries,
+      series: [{ id: 2, name: 'Checking', values: [5000, 2600, 23000, 21000, 16800, 11000] }],
+    },
+    accounts: [{ id: 2, balance: 1100 }],
+  };
+
+  it('is off-track, and says when it touches', () => {
+    const p = goalProgress(goal({ target_amount: 20000, account_id: 2 }), spiky, NOW);
+    expect(p.status).toBe('off-track');
+    expect(p.monthIndex).toBeNull();
+    expect(p.touchesLabel).toBe('Jan 2027');
+  });
+
+  it('projects the month it reaches the target for good, not the first touch', () => {
+    const dipThenHold = {
+      ...spiky,
+      accountSeries: { ...spiky.accountSeries, series: [{ id: 2, name: 'Checking', values: [9000, 21000, 15000, 20500, 22000, 23000] }] },
+    };
+    const p = goalProgress(goal({ target_amount: 20000, account_id: 2 }), dipThenHold, NOW);
+    expect(p.status).toBe('on-track');
+    expect(p.monthIndex).toBe(3);
+    expect(p.touchesLabel).toBeNull();
+  });
+
+  it('is not met while the plan drains it, even if it is there today', () => {
+    const p = goalProgress(goal({ target_amount: 1000, account_id: 2 }), {
+      ...spiky,
+      accountSeries: { ...spiky.accountSeries, series: [{ id: 2, name: 'Checking', values: [900, 800, 700, 600, 500, 400] }] },
+    }, NOW);
+    expect(p.status).toBe('off-track');
+  });
+});
+
+describe('bucket goals', () => {
+  const bucket = {
+    id: 9, name: 'Emergency', account_id: 2, balance: 2000, target_amount: 6000, contribution: 1000,
+    frequency: 'monthly' as const, start_date: null, end_date: null, note: null, sort_order: 0, created_at: '', updated_at: '',
+  };
+  const withBucket: GoalInputs = {
+    ...inputs,
+    buckets: [bucket],
+    bucketSeries: new Map([[9, [3000, 4000, 5000, 6000, 6000, 6000]]]),
+  };
+
+  it('tracks the bucket instead of the account', () => {
+    const p = goalProgress(goal({ target_amount: 6000, account_id: 2, bucket_id: 9 }), withBucket, NOW);
+    expect(p.current).toBe(2000);
+    expect(p.monthIndex).toBe(3);
+    expect(p.status).toBe('on-track');
+  });
+
+  it('reports untracked when the bucket is gone, rather than falling back to the account', () => {
+    const p = goalProgress(goal({ target_amount: 6000, account_id: 2, bucket_id: 404 }), withBucket, NOW);
+    expect(p.status).toBe('untracked');
   });
 });
 

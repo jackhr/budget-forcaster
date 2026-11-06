@@ -32,6 +32,7 @@ app.use('/api/groups', require('./routes/groups'));
 app.use('/api/debts', require('./routes/debts'));
 app.use('/api/accounts', require('./routes/accounts'));
 app.use('/api/goals', require('./routes/goals'));
+app.use('/api/buckets', require('./routes/buckets'));
 app.use('/api/plaid', require('./routes/plaid'));
 app.use('/api/scenarios', require('./routes/scenarios'));
 app.use('/api/paid', require('./routes/paid').router);

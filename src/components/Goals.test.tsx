@@ -41,6 +41,7 @@ function page(goals: Goal[]) {
       goals={goals}
       accounts={accounts}
       debts={debts}
+      buckets={[]}
       inputs={inputs}
       onAdd={noop}
       onUpdate={noop}

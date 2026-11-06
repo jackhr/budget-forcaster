@@ -3,7 +3,7 @@
 // entry crashed the whole app once, because the title lookup is unguarded.
 import {
   ArrowLeftRight, ArrowUpRight, BarChart3, CreditCard, LayoutDashboard,
-  LineChart, List, Receipt, Settings, Target, TrendingUp, Wallet, type LucideIcon,
+  LineChart, List, PiggyBank, Receipt, Settings, Target, TrendingUp, Wallet, type LucideIcon,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -21,7 +21,7 @@ export interface NavGroup {
 
 export type Tab =
   | 'home'
-  | 'accounts' | 'income' | 'expenses' | 'debts' | 'goals'
+  | 'accounts' | 'income' | 'expenses' | 'debts' | 'budgets' | 'goals'
   | 'projections' | 'breakdown' | 'account' | 'outflows' | 'transactions'
   // Labelled "Account"; the id `account` was already taken by the Activity view.
   | 'settings';
@@ -37,6 +37,7 @@ export const NAV: NavGroup[] = [
       { id: 'income', label: 'Income', icon: TrendingUp },
       { id: 'expenses', label: 'Expenses', icon: Receipt },
       { id: 'debts', label: 'Debts', icon: CreditCard },
+      { id: 'budgets', label: 'Budgets', icon: PiggyBank },
       { id: 'goals', label: 'Goals', icon: Target },
     ],
   },
@@ -61,6 +62,7 @@ export const PAGE_META: Record<Tab, { title: string; subtitle?: string }> = {
   income: { title: 'Income', subtitle: 'Money coming in, by pay frequency' },
   expenses: { title: 'Expenses', subtitle: 'Ongoing and time-boxed costs, and what funds each' },
   debts: { title: 'Debts', subtitle: 'Balances, payoff strategy, and projected free dates' },
+  budgets: { title: 'Budgets & buckets', subtitle: 'Money set aside, and limits on what varies' },
   goals: { title: 'Goals', subtitle: 'Where you’re trying to get to, and when the plan gets you there' },
   projections: { title: 'Projections', subtitle: 'Cash flow, savings and net worth over time' },
   breakdown: { title: 'Breakdown', subtitle: 'Item by item, by range or by month' },

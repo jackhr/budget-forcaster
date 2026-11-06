@@ -4,6 +4,7 @@ const db = require('../db/database');
 const { reorder, ORDER_BY } = require('../lib/data');
 const { normalizeDate, dateError } = require('../lib/dates');
 const { cleanAllocations, cleanFundingRules, parseJsonArray } = require('../lib/funding');
+const { cleanCategories, parseCategories, monthBounds, spentIn, categorySummary } = require('../lib/budgets');
 
 const VALID_FREQUENCIES = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annually', 'one-time'];
 
@@ -29,17 +30,39 @@ function rangeError(res, startDate, endDate) {
   return false;
 }
 
-function serialize(row) {
+// A budget's categories, and what's already been spent in them this month.
+// The spend is what lets the forecast bill only the rest of the budget in
+// month 0, the same way a "paid this month" flag skips a bill.
+function serialize(row, userId) {
+  const categories = parseCategories(row.budget_categories);
   return {
     ...row,
     funding_allocations: parseJsonArray(row.funding_allocations),
     funding_rules: parseJsonArray(row.funding_rules),
+    budget_categories: categories,
+    spent_this_month: row.is_budget ? spentIn(db, userId, categories, monthBounds()) : null,
   };
+}
+
+// A budget is a monthly spending limit; any other cadence has no "this month's
+// share" to track against.
+function budgetFields(body, existing) {
+  const isBudget = body.is_budget !== undefined ? (body.is_budget ? 1 : 0) : (existing?.is_budget ?? 0);
+  const categories = body.budget_categories !== undefined
+    ? cleanCategories(body.budget_categories)
+    : parseCategories(existing?.budget_categories);
+  return { isBudget, categories: isBudget ? categories : [] };
 }
 
 router.get('/', (req, res) => {
   const rows = db.prepare(`SELECT * FROM expenses WHERE user_id = ? ${ORDER_BY}`).all(req.user.id);
-  res.json(rows.map(serialize));
+  res.json(rows.map((row) => serialize(row, req.user.id)));
+});
+
+// Spending categories seen in this user's synced transactions, for picking a
+// budget's categories. Empty when no bank is linked.
+router.get('/budget-categories', (req, res) => {
+  res.json(categorySummary(db, req.user.id));
 });
 
 router.post('/reorder', (req, res) => {
@@ -52,7 +75,8 @@ router.post('/', (req, res) => {
   if (!name || !isAmount(monthly_amount) || monthly_amount < 0 || !start_date) {
     return res.status(400).json({ error: 'name, a non-negative numeric monthly_amount and start_date are required' });
   }
-  const normalizedFrequency = normalizeFrequency(frequency);
+  const budget = budgetFields(req.body, null);
+  const normalizedFrequency = budget.isBudget ? 'monthly' : normalizeFrequency(frequency);
   let normalizedStart;
   let normalizedEnd;
   let cleanedRules;
@@ -66,16 +90,18 @@ router.post('/', (req, res) => {
   }
   if (rangeError(res, normalizedStart, normalizedEnd)) return;
   const stmt = db.prepare(
-    'INSERT INTO expenses (user_id, name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    `INSERT INTO expenses (user_id, name, monthly_amount, group_id, funding_allocations, funding_rules, frequency, start_date, end_date, is_budget, budget_categories)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     req.user.id, name, monthly_amount, group_id ?? null,
     JSON.stringify(cleanAllocations(funding_allocations)),
     JSON.stringify(cleanedRules),
     normalizedFrequency, normalizedStart, normalizedEnd,
+    budget.isBudget, JSON.stringify(budget.categories),
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(serialize(row));
+  res.status(201).json(serialize(row, req.user.id));
 });
 
 router.put('/:id', (req, res) => {
@@ -83,7 +109,10 @@ router.put('/:id', (req, res) => {
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM expenses WHERE id = ? AND user_id = ?').get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const normalizedFrequency = frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency;
+  const budget = budgetFields(req.body, existing);
+  const normalizedFrequency = budget.isBudget
+    ? 'monthly'
+    : frequency ? normalizeFrequency(frequency, existing.frequency) : existing.frequency;
   let cleanedRules = existing.funding_rules;
   let normalizedStart = existing.start_date;
   let normalizedEnd = existing.end_date;
@@ -101,7 +130,8 @@ router.put('/:id', (req, res) => {
 
   db.prepare(
     `UPDATE expenses
-     SET name = ?, monthly_amount = ?, group_id = ?, funding_allocations = ?, funding_rules = ?, frequency = ?, start_date = ?, end_date = ?, updated_at = datetime('now')
+     SET name = ?, monthly_amount = ?, group_id = ?, funding_allocations = ?, funding_rules = ?, frequency = ?, start_date = ?, end_date = ?,
+         is_budget = ?, budget_categories = ?, updated_at = datetime('now')
      WHERE id = ? AND user_id = ?`
   ).run(
     name ?? existing.name,
@@ -112,10 +142,11 @@ router.put('/:id', (req, res) => {
     normalizedFrequency,
     normalizedStart,
     normalizedEnd,
+    budget.isBudget, JSON.stringify(budget.categories),
     id, req.user.id,
   );
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
-  res.json(serialize(row));
+  res.json(serialize(row, req.user.id));
 });
 
 router.delete('/:id', (req, res) => {

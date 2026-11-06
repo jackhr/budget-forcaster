@@ -503,3 +503,32 @@ describe('buildDebtActivity', () => {
     expect(act.items.some((i) => i.name === 'New TV')).toBe(false);
   });
 });
+
+describe('budgets', () => {
+  const groceries = (over: Partial<Expense> = {}) =>
+    expense({ name: 'Groceries', monthly_amount: 800, is_budget: 1, budget_categories: ['FOOD_AND_DRINK'], ...over });
+
+  it("bills only what's left of a budget this month, and all of it after", () => {
+    const ep = buildExpensePlan([groceries({ spent_this_month: 300 })], [acct(1, 'Cash', 0, true)], 3, 0, NOW);
+    expect(ep.ongoingCashOut).toEqual([500, 800, 800]);
+  });
+
+  it('bills nothing more once a budget is overspent, rather than a negative amount', () => {
+    const ep = buildExpensePlan([groceries({ spent_this_month: 950 })], [acct(1, 'Cash', 0, true)], 2, 0, NOW);
+    expect(ep.ongoingCashOut).toEqual([0, 800]);
+  });
+
+  it('ignores spending on an expense that is not a budget', () => {
+    const ep = buildExpensePlan([expense({ monthly_amount: 800, spent_this_month: 300 })], [acct(1, 'Cash', 0, true)], 1, 0, NOW);
+    expect(ep.ongoingCashOut).toEqual([800]);
+  });
+
+  it('charges only the remainder to a card in month 0', () => {
+    const onCard = groceries({
+      spent_this_month: 200,
+      funding_allocations: [{ source_type: 'debt', source_id: 5, alloc_type: 'percent', value: 100 }],
+    });
+    const ep = buildExpensePlan([onCard], [acct(1, 'Cash', 0, true)], 2, 0, NOW);
+    expect(ep.charges.map((c) => [c.monthIndex, c.amount])).toEqual([[0, 600], [1, 800]]);
+  });
+});

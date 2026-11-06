@@ -55,6 +55,16 @@ This is not a bug list — confirmed bugs and gaps live in [business-logic/10-kn
 
 ---
 
+## I5: Spend from a bucket (sinking funds)
+
+**What:** let an expense draw from a bucket — "car repairs come out of the Car bucket" — so the bucket fills monthly and empties when the bill lands, instead of only ever growing.
+
+**Why deferred:** buckets shipped as pure earmarks (they never move cash and their series only rises), which keeps the cash engine untouched. A draw has to agree with the expense's funding: the cash must leave the account that holds the bucket, or the bucket and the cash diverge. That's a funding-model change, not a bucket change.
+
+**What has to change:** an optional `bucket_id` on expenses; `buckets.ts:bucketSeries` subtracting that expense's occurrences; and a rule (or validation) that the expense's cash comes from the bucket's account. The goal "hold" rule ([03](business-logic/03-entities.md#goal-goals)) then applies to buckets too, since they could fall.
+
+---
+
 ## I4: Encrypted Plaid tokens — key management
 
 **What:** proper key management for the Plaid access-token encryption (rotation, a KMS or at minimum a key loaded from the environment rather than derived from one long-lived secret).

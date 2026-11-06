@@ -32,7 +32,7 @@ Everything else sits behind `requireAuth` — mounted as `app.use('/api', requir
 
 ## Tenancy
 
-`user_id` is on **all 12 data tables**: `accounts`, `income_sources`, `expenses`, `debts`, `line_item_groups`, `scenarios`, `income_occurrences`, `plaid_items`, `plaid_accounts`, `plaid_transactions`, `app_settings`, `paid_status`.
+`user_id` is on **all 14 data tables**: `accounts`, `income_sources`, `expenses`, `debts`, `line_item_groups`, `goals`, `buckets`, `scenarios`, `income_occurrences`, `plaid_items`, `plaid_accounts`, `plaid_transactions`, `app_settings`, `paid_status`.
 
 Two of those needed a rebuilt primary key, because their natural key is only unique *per user*:
 - `app_settings`: `(key)` → `(user_id, key)`

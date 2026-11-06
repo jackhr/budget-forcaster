@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import type { Account, Debt, Expense, Goal, GroupKind, IncomeSource, ItemFormData, LineItemGroup, PaidStatus } from './types';
+import type { Account, Bucket, BudgetCategory, Debt, Expense, Goal, GroupKind, IncomeSource, ItemFormData, LineItemGroup, PaidStatus } from './types';
 import {
-  accountsApi, dataApi, debtsApi, expensesApi, goalsApi, groupsApi, incomeApi, paidApi, scenariosApi, settingsApi,
-  type Scenario,
+  accountsApi, bucketsApi, dataApi, debtsApi, expensesApi, goalsApi, groupsApi, incomeApi, paidApi, scenariosApi, settingsApi,
+  type BucketInput, type Scenario,
 } from './api/client';
 import { buildForecast, buildSavings, buildNetWorth, buildExpensePlan, buildDebtPaymentSchedule, buildIncomeBreakdown, buildExpenseBreakdown, buildAccountSeries, buildDebtOutByAccount, buildAccountActivity, buildDebtActivity, buildAccountSavings, type Breakdown } from './lib/forecast';
 import { buildMonthBreakdown } from './lib/monthlyBreakdown';
@@ -17,6 +17,8 @@ import Debts from './components/Debts';
 import Accounts from './components/Accounts';
 import AccountSettings from './components/AccountSettings';
 import Goals, { type GoalInput } from './components/Goals';
+import Budgets from './components/Budgets';
+import { buildBucketPlan } from './lib/buckets';
 import AppShell from './components/AppShell';
 import { DEFAULT_HOME_LAYOUT, resolveHomeLayout, type HomeLayout } from './lib/homeLayout';
 import { NAV, PAGE_META, PROJECTION_VIEWS, PROJECTION_IDS, TAB_IDS, type ProjectionView, type Tab } from './lib/nav';
@@ -109,6 +111,8 @@ export default function App() {
   const [debts, setDebts] = useState<Debt[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [buckets, setBuckets] = useState<Bucket[]>([]);
+  const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [groups, setGroups] = useState<LineItemGroup[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [currency, setCurrencyState] = useState('USD');
@@ -160,13 +164,16 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [inc, exp, dbts, accts, grps, scen, settings, paid, gls] = await Promise.all([
+      const [inc, exp, dbts, accts, grps, scen, settings, paid, gls, bkts, cats] = await Promise.all([
         incomeApi.getAll(), expensesApi.getAll(),
         debtsApi.getAll(), accountsApi.getAll(), groupsApi.getAll(), scenariosApi.getAll(), settingsApi.getAll(),
-        paidApi.get(), goalsApi.getAll(),
+        paidApi.get(), goalsApi.getAll(), bucketsApi.getAll(),
+        // Only a picker's suggestions; the app works without them.
+        expensesApi.budgetCategories().catch(() => [] as BudgetCategory[]),
       ]);
       setIncomeSources(inc); setExpenses(exp); setDebts(dbts);
       setAccounts(accts); setGroups(grps); setScenarios(scen); setGoals(gls);
+      setBuckets(bkts); setBudgetCategories(cats);
       setPaidStatus(await migrateLocalPaidFlags(paid));
       setInflation(parseFloat(settings.inflation_rate ?? '0') || 0);
       setDebtExtra(parseFloat(settings.debt_extra ?? '0') || 0);
@@ -261,9 +268,15 @@ export default function App() {
   // Per-account balances drive Home's runway warning, so build them always.
   const accountSeries = buildAccountSeries(accounts, incomeSources, savings, expensePlan.outByAccount, debtOutByAccount);
 
+  // Buckets sit on top of the per-account projection: they never move cash,
+  // they only say how much of each account is spoken for.
+  const bucketPlan = buildBucketPlan(buckets, accounts, accountSeries, months);
+
   // What a goal is measured against: today's balances for where it stands, and
   // the projections for when the plan gets there.
   const goalInputs = {
+    buckets,
+    bucketSeries: bucketPlan.series,
     accountSeries,
     netWorth,
     remainingByDebt: plan.remainingByDebt,
@@ -458,8 +471,9 @@ export default function App() {
   }, 'Could not update account');
   const deleteAccount = (id: number) => guard(async () => {
     await accountsApi.delete(id);
-    const [accts, inc] = await Promise.all([accountsApi.getAll(), incomeApi.getAll()]);
-    setAccounts(accts); setIncomeSources(inc); // income may have been reassigned to primary
+    const [accts, inc, bkts] = await Promise.all([accountsApi.getAll(), incomeApi.getAll(), bucketsApi.getAll()]);
+    // Income and buckets in that account fall back to the primary.
+    setAccounts(accts); setIncomeSources(inc); setBuckets(bkts);
   }, 'Could not delete account');
   const makePrimary = (id: number) => guard(async () => {
     await accountsApi.update(id, { is_primary: 1 });
@@ -486,6 +500,34 @@ export default function App() {
     setGoals((prev) => reorderBy(prev, ids));
     await goalsApi.reorder(ids);
   }, 'Could not reorder goals');
+
+  const addBucket = (data: BucketInput) => guard(async () => {
+    const bucket = await bucketsApi.create(data);
+    setBuckets((prev) => [...prev, bucket]);
+  }, 'Could not add bucket');
+  const updateBucket = (id: number, data: BucketInput) => guard(async () => {
+    const bucket = await bucketsApi.update(id, data);
+    setBuckets((prev) => prev.map((b) => (b.id === id ? bucket : b)));
+  }, 'Could not update bucket');
+  const deleteBucket = (id: number) => guard(async () => {
+    await bucketsApi.delete(id);
+    setBuckets((prev) => prev.filter((b) => b.id !== id));
+  }, 'Could not delete bucket');
+  const reorderBuckets = (ids: number[]) => guard(async () => {
+    setBuckets((prev) => reorderBy(prev, ids));
+    await bucketsApi.reorder(ids);
+  }, 'Could not reorder buckets');
+
+  // A budget is an expense; these only add the budget fields.
+  const addBudget = (data: ItemFormData) => guard(async () => {
+    const item = await expensesApi.create({
+      name: data.name, monthly_amount: data.monthly_amount, frequency: 'monthly',
+      start_date: data.start_date ?? null, end_date: data.end_date ?? null, group_id: data.group_id ?? null,
+      funding_allocations: data.funding_allocations ?? [], funding_rules: data.funding_rules ?? [],
+      is_budget: 1, budget_categories: data.budget_categories ?? [],
+    });
+    setExpenses((prev) => [...prev, item]);
+  }, 'Could not add budget');
 
   const changeCurrency = (code: string) => guard(async () => {
     setCurrency(code); setCurrencyState(code); await settingsApi.set('currency', code);
@@ -591,6 +633,16 @@ export default function App() {
           {' '}appear in both Expenses and Debts.
         </Banner>
       )}
+      {!error && bucketPlan.shortfalls.map((short) => {
+        const account = accounts.find((a) => a.id === short.accountId);
+        return (
+          <Banner key={short.accountId} tone="danger">
+            {account?.name ?? 'An account'} can't cover its buckets{' '}
+            {short.monthIndex < 0 ? 'today' : <>from <strong>{savings[short.monthIndex]?.label}</strong></>}
+            {' '}— it's <strong>{formatMoney(short.shortBy, { whole: true })}</strong> short. The plan is setting aside money it doesn't have.
+          </Banner>
+        );
+      })}
       {!error && uncoveredAny && (
         <Banner tone="danger">
           Invalid funding target — {uncoveredThisMonth > 0.005
@@ -651,11 +703,31 @@ export default function App() {
             goals={goals}
             accounts={accounts}
             debts={debts}
+            buckets={buckets}
             inputs={goalInputs}
             onAdd={addGoal}
             onUpdate={updateGoal}
             onDelete={deleteGoal}
             onReorder={reorderGoals}
+          />
+        )}
+
+        {tab === 'budgets' && (
+          <Budgets
+            buckets={buckets}
+            budgets={expenses.filter((e) => e.is_budget)}
+            accounts={accounts}
+            cards={debts.filter((d) => d.debt_type === 'credit_card').map((d) => ({ id: d.id, name: d.name }))}
+            categories={budgetCategories}
+            bucketPlan={bucketPlan}
+            labels={savings.map((s) => s.label)}
+            onAddBucket={addBucket}
+            onUpdateBucket={updateBucket}
+            onDeleteBucket={deleteBucket}
+            onReorderBuckets={reorderBuckets}
+            onAddBudget={addBudget}
+            onUpdateBudget={updateExpense}
+            onDeleteBudget={deleteExpense}
           />
         )}
 

@@ -277,9 +277,15 @@ export function buildMonthBreakdown(
   for (const item of expenses) {
     for (const occurrence of occurrenceDates(item.frequency, item.start_date, item.end_date, year, month)) {
       const paid = monthOffset === 0 && !!paidExpenseIds?.has(item.id);
+      // A budget's spending so far this month is already in the balances, so
+      // only the rest is still to come — matching the monthly engine.
+      const spent = monthOffset === 0 && item.is_budget ? (item.spent_this_month ?? 0) : 0;
+      const amount = Math.max(0, item.monthly_amount - spent);
+      if (amount <= 0.005 && !paid) continue;
       const sources = fundingSources(item.funding_rules, item.funding_allocations, accounts, debts, primary?.name ?? 'primary account');
-      const changes = fundingChanges(item.monthly_amount, item.funding_rules, item.funding_allocations, accounts, debts, 'account', primary?.id ?? null);
-      push(`expense:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, item.name, 'expense', 'out', item.monthly_amount, `from ${sources}`, paid, changes);
+      const changes = fundingChanges(amount, item.funding_rules, item.funding_allocations, accounts, debts, 'account', primary?.id ?? null);
+      const label = spent > 0 ? `${item.name} (rest of budget)` : item.name;
+      push(`expense:${item.id}:${isoDate(occurrence.date)}`, occurrence.date, occurrence.specified, label, 'expense', 'out', amount, `from ${sources}`, paid, changes);
     }
   }
 

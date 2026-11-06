@@ -86,6 +86,48 @@ export interface Expense {
   group_id: number | null;
   funding_allocations: ExpenseAllocation[]; // remainder draws from the primary account
   funding_rules: FundingRule[]; // scheduled funding plan; empty = use funding_allocations
+  /** 1 = a monthly spending limit (groceries, gas) rather than a fixed bill. */
+  is_budget?: 0 | 1;
+  /** Plaid categories (primary or detailed) whose spending counts against the budget. */
+  budget_categories?: string[];
+  /**
+   * Posted spending in those categories so far this month, from the server.
+   * It's already in today's balances, so month 0 bills only what's left.
+   * Null for an expense that isn't a budget.
+   */
+  spent_this_month?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A spending category seen in synced transactions, for picking a budget's. */
+export interface BudgetCategory {
+  category: string;
+  this_month: number;
+  monthly_average: number;
+}
+
+/**
+ * Money set aside inside an account. It never leaves the account — it just
+ * isn't free to spend. Contributions follow an expense-style schedule and stop
+ * at the target.
+ */
+export interface Bucket {
+  id: number;
+  name: string;
+  /** Which account holds it; null = primary. */
+  account_id: number | null;
+  /** Set aside today. */
+  balance: number;
+  /** Stop contributing here; null = no cap. */
+  target_amount: number | null;
+  /** Per occurrence of `frequency`. */
+  contribution: number;
+  frequency: Frequency;
+  start_date: string | null;
+  end_date: string | null;
+  note: string | null;
+  sort_order: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -176,6 +218,8 @@ export interface Goal {
   target_date: string | null;
   /** `savings`: which account, or null for all cash. */
   account_id: number | null;
+  /** `savings`: a bucket to track instead of an account. Wins over account_id. */
+  bucket_id?: number | null;
   /** `debt_payoff`: which debt, or null for everything owed. */
   debt_id: number | null;
   note: string | null;
@@ -198,4 +242,6 @@ export interface ItemFormData {
   account_id?: number | null;
   funding_allocations?: ExpenseAllocation[];
   funding_rules?: FundingRule[];
+  is_budget?: 0 | 1;
+  budget_categories?: string[];
 }

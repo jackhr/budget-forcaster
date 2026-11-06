@@ -158,7 +158,8 @@ export default function LineItemRow({ item, onUpdate, onDelete, accent, showFreq
   })();
   const receivedCount = incomeOccurrences.filter((occurrence) => occurrence.status === 'received' || occurrence.status === 'detected').length;
   const allReceived = incomeOccurrences.length > 0 && receivedCount === incomeOccurrences.length;
-  const hasTags = (showFrequency && itemFreq !== 'monthly') || dateLabel || notStarted || !!onTogglePaid;
+  const isBudget = 'is_budget' in item && !!item.is_budget;
+  const hasTags = (showFrequency && itemFreq !== 'monthly') || dateLabel || notStarted || isBudget || !!onTogglePaid;
 
   return (
     <>
@@ -184,6 +185,11 @@ export default function LineItemRow({ item, onUpdate, onDelete, accent, showFreq
                   <span className={cx('text-[10px] font-bold', allReceived ? 'text-income' : 'text-muted')}>
                     {receivedCount} of {incomeOccurrences.length} received this month
                   </span>
+                )}
+                {isBudget && (
+                  <Pill tone="primary" title="A spending limit — its categories and this month's spending are on the Budgets page.">
+                    Budget
+                  </Pill>
                 )}
                 {notStarted && (
                   <Pill tone="future" title="Hasn't started yet — it enters the forecast on its first occurrence.">

@@ -161,3 +161,28 @@ describe('buildMonthBreakdown', () => {
     expect(allCash.values[19]).toBe(1400);
   });
 });
+
+describe('budgets in the month view', () => {
+  const groceries: Expense = {
+    id: 3, name: 'Groceries', monthly_amount: 800, frequency: 'monthly', start_date: '2026-01-20', end_date: null,
+    group_id: null, funding_allocations: [], funding_rules: [], is_budget: 1, budget_categories: ['FOOD_AND_DRINK'],
+    spent_this_month: 300, created_at: '', updated_at: '',
+  };
+
+  it('shows the rest of a budget this month, matching the monthly engine', () => {
+    const result = buildMonthBreakdown([], [groceries], [], accounts, 0, NOW);
+    const event = result.events.find((e) => e.name.startsWith('Groceries'))!;
+    expect(event.amount).toBe(500);
+    expect(event.name).toBe('Groceries (rest of budget)');
+  });
+
+  it('shows the whole budget in later months', () => {
+    const result = buildMonthBreakdown([], [groceries], [], accounts, 1, NOW);
+    expect(result.events.find((e) => e.name === 'Groceries')?.amount).toBe(800);
+  });
+
+  it('drops a fully spent budget from the rest of this month', () => {
+    const result = buildMonthBreakdown([], [{ ...groceries, spent_this_month: 900 }], [], accounts, 0, NOW);
+    expect(result.events.some((e) => e.name.startsWith('Groceries'))).toBe(false);
+  });
+});

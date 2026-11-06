@@ -67,13 +67,36 @@ export function monthlyExpenseTotal(expenses: Expense[]): number {
 // Pre-inflation amount an expense bills in a given month, honoring its frequency
 // and optional start/end range (frequency cycle anchored to the start).
 function expenseOccurrenceAtMonth(e: Expense, monthIndex: number, now: Date): number {
-  const startOff = e.start_date ? monthOffset(e.start_date, now) : 0;
+  const amount = scheduledAtMonth(e.monthly_amount, e.frequency, e.start_date, e.end_date, monthIndex, now);
+  // What's already been spent against a budget this month is in today's
+  // balances, so only the rest of it is still to come.
+  if (monthIndex === 0 && e.is_budget && amount > 0) {
+    return Math.max(0, amount - (e.spent_this_month ?? 0));
+  }
+  return amount;
+}
+
+/**
+ * How much of a schedule falls in a month: `amount` per occurrence at
+ * `frequency`, from `start` (null = this month) through `end` (null = ongoing).
+ * The cycle is anchored to the start. Shared by expenses and bucket
+ * contributions so the two can never disagree about when money moves.
+ */
+export function scheduledAtMonth(
+  amount: number,
+  frequency: Frequency | undefined,
+  start: string | null,
+  end: string | null,
+  monthIndex: number,
+  now: Date,
+): number {
+  const startOff = start ? monthOffset(start, now) : 0;
   if (monthIndex < startOff) return 0;
-  const endOff = e.end_date ? monthOffset(e.end_date, now) : Infinity;
+  const endOff = end ? monthOffset(end, now) : Infinity;
   if (monthIndex > endOff) return 0;
   const since = monthIndex - startOff;
-  const a = e.monthly_amount;
-  switch (e.frequency ?? 'monthly') {
+  const a = amount;
+  switch (frequency ?? 'monthly') {
     case 'weekly': return a * (52 / 12);
     case 'biweekly': return a * (26 / 12);
     case 'semimonthly': return a * 2;

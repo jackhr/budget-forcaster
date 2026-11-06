@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Account, Debt, Goal, GoalKind } from '../types';
+import type { Account, Bucket, Debt, Goal, GoalKind } from '../types';
 import { GOAL_KINDS, STATUS_LABEL, type GoalInputs, type GoalProgress, goalBoard } from '../lib/goals';
 import { formatMoney } from '../lib/format';
 import { useDnd } from '../lib/useDnd';
@@ -18,6 +18,7 @@ interface Props {
   goals: Goal[];
   accounts: Account[];
   debts: Debt[];
+  buckets: Bucket[];
   inputs: GoalInputs;
   onAdd: (data: GoalInput) => Promise<void>;
   onUpdate: (id: number, data: GoalInput) => Promise<void>;
@@ -40,23 +41,25 @@ function today(): string {
 }
 
 /** What a goal is tracking, in words. */
-function targetLabel(goal: Goal, accounts: Account[], debts: Debt[]): string {
+function targetLabel(goal: Goal, accounts: Account[], debts: Debt[], buckets: Bucket[]): string {
   if (goal.kind === 'net_worth') return 'net worth';
   if (goal.kind === 'debt_payoff') {
     if (goal.debt_id == null) return 'everything owed';
     return debts.find((d) => d.id === goal.debt_id)?.name ?? 'a deleted debt';
   }
+  if (goal.bucket_id != null) return buckets.find((b) => b.id === goal.bucket_id)?.name ?? 'a deleted bucket';
   if (goal.account_id == null) return 'all cash';
   return accounts.find((a) => a.id === goal.account_id)?.name ?? 'a deleted account';
 }
 
 function GoalEditor({
-  title, initial, accounts, debts, onCancel, onSubmit,
+  title, initial, accounts, debts, buckets, onCancel, onSubmit,
 }: {
   title: string;
   initial: GoalInput;
   accounts: Account[];
   debts: Debt[];
+  buckets: Bucket[];
   onCancel: () => void;
   onSubmit: (data: GoalInput) => Promise<void>;
 }) {
@@ -64,7 +67,12 @@ function GoalEditor({
   const [kind, setKind] = useState<GoalKind>(initial.kind);
   const [amount, setAmount] = useState(initial.target_amount != null ? String(initial.target_amount) : '');
   const [date, setDate] = useState(initial.target_date ?? '');
-  const [accountId, setAccountId] = useState<number | null>(initial.account_id);
+  // One select covers both: "bucket:3", "account:2", or "" for all cash.
+  const [tracking, setTracking] = useState(
+    initial.bucket_id != null ? `bucket:${initial.bucket_id}` : initial.account_id != null ? `account:${initial.account_id}` : '',
+  );
+  const [trackKind, trackIdText] = tracking.split(':');
+  const trackId = trackIdText ? Number(trackIdText) : null;
   const [debtId, setDebtId] = useState<number | null>(initial.debt_id);
   const [note, setNote] = useState(initial.note ?? '');
   const [saving, setSaving] = useState(false);
@@ -85,7 +93,8 @@ function GoalEditor({
       kind,
       target_amount: needsAmount ? amountNum : null,
       target_date: date || null,
-      account_id: kind === 'savings' ? accountId : null,
+      account_id: kind === 'savings' && trackKind === 'account' ? trackId : null,
+      bucket_id: kind === 'savings' && trackKind === 'bucket' ? trackId : null,
       debt_id: kind === 'debt_payoff' ? debtId : null,
       note: note.trim() || null,
     });
@@ -114,14 +123,20 @@ function GoalEditor({
         </Field>
 
         {kind === 'savings' && (
-          <Field label="Tracking" hint="One account, or everything you hold in cash.">
-            <select
-              value={accountId ?? ''}
-              onChange={(e) => setAccountId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full"
-            >
+          <Field
+            label="Tracking"
+            hint="A bucket counts only money you've set aside, so spending elsewhere in the account can't make the goal look closer than it is."
+          >
+            <select value={tracking} onChange={(e) => setTracking(e.target.value)} className="w-full">
               <option value="">All cash accounts</option>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+              {buckets.length > 0 && (
+                <optgroup label="Buckets">
+                  {buckets.map((b) => <option key={b.id} value={`bucket:${b.id}`}>{b.name}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="Accounts">
+                {accounts.map((a) => <option key={a.id} value={`account:${a.id}`}>{a.name}{a.is_primary ? ' ★' : ''}</option>)}
+              </optgroup>
             </select>
           </Field>
         )}
@@ -183,11 +198,12 @@ function GoalEditor({
 }
 
 function GoalRow({
-  progress, accounts, debts, onEdit, onDelete, drag, dragging,
+  progress, accounts, debts, buckets, onEdit, onDelete, drag, dragging,
 }: {
   progress: GoalProgress;
   accounts: Account[];
   debts: Debt[];
+  buckets: Bucket[];
   onEdit: () => void;
   onDelete: () => void;
   drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -214,8 +230,8 @@ function GoalRow({
           </div>
           <div className="mt-0.5 text-[12.5px] text-muted">
             {payoff
-              ? <>Clear {targetLabel(goal, accounts, debts)} · {formatMoney(progress.current, { whole: true })} left</>
-              : <>{formatMoney(progress.current, { whole: true })} of {formatMoney(progress.target, { whole: true })} · {targetLabel(goal, accounts, debts)}</>}
+              ? <>Clear {targetLabel(goal, accounts, debts, buckets)} · {formatMoney(progress.current, { whole: true })} left</>
+              : <>{formatMoney(progress.current, { whole: true })} of {formatMoney(progress.target, { whole: true })} · {targetLabel(goal, accounts, debts, buckets)}</>}
             {goal.target_date && <> · due {goal.target_date}</>}
           </div>
           {goal.note && <p className="mt-0.5 text-[12px] text-faint">{goal.note}</p>}
@@ -247,7 +263,11 @@ function GoalRow({
                   {progress.slackMonths != null && progress.slackMonths < 0 && (
                     <> · {Math.abs(progress.slackMonths)} month{Math.abs(progress.slackMonths) === 1 ? '' : 's'} late</>
                   )}</>
-                : status === 'met' ? 'Done.' : 'Not reached inside the forecast.'}
+                : status === 'met'
+                  ? 'Done.'
+                  : progress.touchesLabel
+                    ? <>Touches it in <strong className="text-text">{progress.touchesLabel}</strong>, but the plan spends it again</>
+                    : 'Not reached inside the forecast.'}
           </span>
         </div>
       </div>
@@ -255,7 +275,7 @@ function GoalRow({
   );
 }
 
-export default function Goals({ goals, accounts, debts, inputs, onAdd, onUpdate, onDelete, onReorder }: Props) {
+export default function Goals({ goals, accounts, debts, buckets, inputs, onAdd, onUpdate, onDelete, onReorder }: Props) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { collapsed, toggle } = useCollapsed('goals');
@@ -290,6 +310,7 @@ export default function Goals({ goals, accounts, debts, inputs, onAdd, onUpdate,
                 progress={progress}
                 accounts={accounts}
                 debts={debts}
+                buckets={buckets}
                 onEdit={() => setEditingId(progress.goal.id)}
                 onDelete={() => onDelete(progress.goal.id)}
                 drag={dnd.handlers(progress.goal)}
@@ -317,9 +338,10 @@ export default function Goals({ goals, accounts, debts, inputs, onAdd, onUpdate,
           title="Add Goal"
           accounts={accounts}
           debts={debts}
+          buckets={buckets}
           initial={{
             name: '', kind: 'savings', target_amount: null, target_date: null,
-            account_id: null, debt_id: null, note: null,
+            account_id: null, bucket_id: null, debt_id: null, note: null,
           }}
           onCancel={() => setAdding(false)}
           onSubmit={async (data) => { await onAdd(data); setAdding(false); }}
@@ -330,9 +352,10 @@ export default function Goals({ goals, accounts, debts, inputs, onAdd, onUpdate,
           title={`Edit ${editing.name}`}
           accounts={accounts}
           debts={debts}
+          buckets={buckets}
           initial={{
             name: editing.name, kind: editing.kind, target_amount: editing.target_amount,
-            target_date: editing.target_date, account_id: editing.account_id,
+            target_date: editing.target_date, account_id: editing.account_id, bucket_id: editing.bucket_id ?? null,
             debt_id: editing.debt_id, note: editing.note,
           }}
           onCancel={() => setEditingId(null)}

@@ -84,13 +84,49 @@ A destination. **Optional by design** — the whole app works with none, and not
 - `target_amount`: required above zero, except for `debt_payoff`, whose target is zero by definition.
 - `start_amount`: what was owed when a payoff goal was set, captured once at creation. Without it "40% paid off" has no baseline; re-reading it later would make progress vanish every time the balance moved. Re-baselined only when an edit changes *what* the goal tracks, never when it changes the name or the date.
 - `target_date`: optional. With no date a goal still gets a **projected** date from the forecast; with one it is also **ahead** or **behind**.
-- `account_id` (savings; null = all cash) and `debt_id` (payoff; null = everything owed). The route rejects an id belonging to another user, so a goal can't be attached to someone else's balance.
+- `account_id` (savings; null = all cash), `bucket_id` (savings; tracks a [bucket](#bucket-buckets) instead, and wins over `account_id`) and `debt_id` (payoff; null = everything owed). The route rejects an id belonging to another user, so a goal can't be attached to someone else's balance. `bucket_id` has no foreign key on purpose: a goal whose bucket was deleted reports `untracked` instead of quietly falling back to an account.
 
-**Status** (`src/lib/goals.ts`, pure and tested): `met` → `ahead`/`behind` (dated) or `on-track` (undated) → `off-track` when the forecast never reaches it → `untracked` when the account or debt has been deleted. `met` wins over a deadline: a goal already reached isn't late.
+**Reaching a goal means staying there.** The projected month is the first month from which the series meets the target *through the end of the horizon* (`goals.ts:firstMonthHolding`), not the first month it touches it. A balance that reaches $20k the month a bonus lands and is spent back down by spring hasn't saved $20k; a card cleared and then charged back up isn't paid off. When the plan touches the target without keeping it, the goal is `off-track` and reports `touchesLabel` so the page can say so. Tracking a bucket is the usual fix: a bucket only grows, so it holds.
+
+**Status** (`src/lib/goals.ts`, pure and tested): `met` (there today *and* holds) → `ahead`/`behind` (dated) or `on-track` (undated) → `off-track` when the forecast never reaches it for good → `untracked` when the account, bucket or debt has been deleted. `met` wins over a deadline: a goal already reached isn't late.
 
 Goals are part of export/import and scenarios. A goal pointing at an account or debt the snapshot doesn't carry comes back **untargeted** rather than dangling — foreign keys are on, so inserting it as-is would abort the whole restore.
 
 Suggesting *how* to reach a goal is deliberately not here; see [ICEBOX I2](../ICEBOX.md).
+
+## Bucket (`buckets`)
+
+Money set aside **inside** an account: an emergency fund, a trip, next year's insurance. Optional, like goals.
+
+- `account_id`: which account holds it; null (or a deleted account) = primary. Deleting the account sets it null (`ON DELETE SET NULL`), so the bucket moves to the primary rather than vanishing.
+- `balance`: what's set aside today. `contribution` + `frequency` + `start_date` / `end_date`: a schedule, resolved by the same `forecast.ts:scheduledAtMonth` as expenses, so an annual contribution anchored to January lands every January — e.g. putting part of a yearly bonus away.
+- `target_amount`: optional cap. Contributions stop once it's reached and never overshoot it.
+
+**A bucket never moves cash.** The account balance is whatever the forecast says; the bucket only says how much of it is spoken for. So the cash engine is untouched and every existing invariant holds. `src/lib/buckets.ts:buildBucketPlan` derives, per account:
+
+- `committedByAccount` — what its buckets hold each month (a bucket's series only rises; the plan never schedules a withdrawal),
+- `availableByAccount` — projected balance minus that (may go negative),
+- `shortfalls` — the first month (or today, `monthIndex: -1`) an account holds less than its buckets.
+
+**A shortfall is a warning, not a correction** (principle 1). The bucket keeps growing on schedule and a danger banner says which account can't cover it and from when. Silently capping the bucket at what the account holds would make the plan look funded when it isn't.
+
+Buckets are in export/import and scenarios. A bucket whose account isn't in the snapshot comes back in the primary account.
+
+Not yet: paying an expense *out of* a bucket (a sinking fund that's drawn down) — see [ICEBOX I5](../ICEBOX.md).
+
+## Budget (an expense with `is_budget = 1`)
+
+A monthly spending limit for costs without a fixed bill — groceries, eating out, gas. **It is an expense, not a new table**, so "one cost entity" ([10](10-known-gaps-and-decisions.md#decisions)) still holds: the forecast, funding, charges and every view treat it exactly like a monthly expense of that amount.
+
+- `is_budget`: forces `frequency = 'monthly'` on write — a limit has no meaning at another cadence.
+- `budget_categories`: Plaid categories (primary like `FOOD_AND_DRINK`, or detailed) whose spending counts against it. Cleaned by `server/lib/budgets.js:cleanCategories`, which drops `INCOME`, `TRANSFER_*` and `LOAN_*` — those aren't spending, and counting them would double-count debts or invert the sign.
+- `spent_this_month` (read-only, computed on `GET /api/expenses`): posted (non-pending) Plaid spending in those categories since the 1st, refunds netted off, floored at 0.
+
+**Month 0 bills only what's left**: `max(0, amount − spent_this_month)`, in both engines (`forecast.ts:expenseOccurrenceAtMonth`, `monthlyBreakdown.ts`). The spending already happened, so it's already in today's account and card balances; billing the full budget again would double-count it — the same reason "paid this month" skips a bill. Later months bill the full amount. Overspending bills nothing more in month 0; it never goes negative. "Paid this month" still wins if set.
+
+Pending transactions are excluded because the balances the forecast starts from are posted balances. A budget with no categories is an ordinary forecast amount with no tracking.
+
+`GET /api/expenses/budget-categories` lists the categories in the user's transactions with this month's spend and the average of the three full months before, for picking categories and a realistic amount. It is empty with no bank linked.
 
 ## Settings (`app_settings`, key/value strings)
 
@@ -123,7 +159,7 @@ Goal progress is the intended third layout; it needs the goals entity first ([IC
 
 ## Scenario (`scenarios`)
 
-- A full JSON snapshot of `server/lib/data.js:TABLES`: `accounts, line_item_groups, income_sources, income_occurrences, expenses, debts, goals, app_settings, paid_status`.
+- A full JSON snapshot of `server/lib/data.js:TABLES`: `accounts, line_item_groups, income_sources, income_occurrences, expenses, debts, buckets, goals, app_settings, paid_status`.
 - **Not included:** the Plaid cache tables and other scenarios.
 - **Compare** re-runs a simplified pipeline over the snapshot (no paid-this-month, no occurrences) and overlays net, savings, and net worth.
 - **Restore** is destructive: it deletes those tables and re-inserts the snapshot with the same ids. Export/Import use the same code. A table **missing from the snapshot** (older backups) keeps its current rows, minus rows whose parent no longer exists ([10 G8](10-known-gaps-and-decisions.md#g8)).

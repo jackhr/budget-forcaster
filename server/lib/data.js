@@ -9,6 +9,7 @@ const TABLES = [
   'income_occurrences',
   'expenses',
   'debts',
+  'buckets',
   'goals',
   'app_settings',
   'paid_status',
@@ -41,6 +42,7 @@ function untargetMissing(db, row, userId) {
     ...row,
     account_id: present('accounts', row.account_id) ? row.account_id : null,
     debt_id: present('debts', row.debt_id) ? row.debt_id : null,
+    ...(row.bucket_id !== undefined && { bucket_id: present('buckets', row.bucket_id) ? row.bucket_id : null }),
   };
 }
 
@@ -76,7 +78,16 @@ function importData(db, data, userId) {
     for (const t of TABLES) {
       const incoming = Array.isArray(data?.[t]) ? data[t].map(withoutUserId) : [];
       const rows = (kept[t] ? kept[t].filter((row) => referenceExists(db, t, row, userId)) : incoming)
-        .map((row) => (t === 'goals' ? untargetMissing(db, row, userId) : row));
+        .map((row) => {
+          if (t === 'goals') return untargetMissing(db, row, userId);
+          // A bucket whose account isn't in the snapshot falls back to the primary.
+          if (t === 'buckets') {
+            const ok = row.account_id == null
+              || !!db.prepare('SELECT 1 FROM accounts WHERE id = ? AND user_id = ?').get(row.account_id, userId);
+            return ok ? row : { ...row, account_id: null };
+          }
+          return row;
+        });
       for (const row of rows) {
         const cols = Object.keys(row);
         if (cols.length === 0) continue;
